@@ -36,13 +36,6 @@ export interface EditorInputState {
   isRightClickFired: boolean;
   rightClickScreenXPx: number;
   rightClickScreenYPx: number;
-  /** Right mouse button currently held down (persistent, not one-shot). */
-  isRightMouseDown: boolean;
-  /** Middle mouse button currently held down for camera panning. */
-  isMiddleMouseDown: boolean;
-  /** Accumulated middle-drag movement in CSS screen pixels. */
-  middleDragDeltaXPx: number;
-  middleDragDeltaYPx: number;
   /** Ctrl+Z pressed (one-shot). */
   isUndoPressed: boolean;
   /** Ctrl+Y pressed (one-shot). */
@@ -51,18 +44,12 @@ export interface EditorInputState {
   isCopyPressed: boolean;
   /** Ctrl+V pressed (one-shot). */
   isPastePressed: boolean;
-  /** Delete or Backspace pressed (one-shot). */
-  isDeleteSelectionPressed: boolean;
   /** F key pressed (one-shot) — flips the current placement horizontally. */
   isFlipPressed: boolean;
   /** Q key pressed (one-shot) — rotates placement counter-clockwise. */
   isRotateLeftPressed: boolean;
   /** E key pressed (one-shot) — rotates placement clockwise. */
   isRotateRightPressed: boolean;
-  /** '+'/'=' pressed (one-shot) — zooms the editor camera in. */
-  isZoomInPressed: boolean;
-  /** '-' pressed (one-shot) — zooms the editor camera out. */
-  isZoomOutPressed: boolean;
   /** World coordinates at drag start. */
   dragStartWorldX: number;
   dragStartWorldY: number;
@@ -89,20 +76,13 @@ export function createEditorInputState(): EditorInputState {
     isRightClickFired: false,
     rightClickScreenXPx: 0,
     rightClickScreenYPx: 0,
-    isRightMouseDown: false,
-    isMiddleMouseDown: false,
-    middleDragDeltaXPx: 0,
-    middleDragDeltaYPx: 0,
     isUndoPressed: false,
     isRedoPressed: false,
     isCopyPressed: false,
     isPastePressed: false,
-    isDeleteSelectionPressed: false,
     isFlipPressed: false,
     isRotateLeftPressed: false,
     isRotateRightPressed: false,
-    isZoomInPressed: false,
-    isZoomOutPressed: false,
     dragStartWorldX: 0,
     dragStartWorldY: 0,
   };
@@ -146,19 +126,9 @@ export function attachEditorInputListeners(
     // Ctrl+C → copy, Ctrl+V → paste
     if ((e.ctrlKey || e.metaKey) && key === 'c') { state.isCopyPressed = true; e.preventDefault(); }
     if ((e.ctrlKey || e.metaKey) && key === 'v') { state.isPastePressed = true; e.preventDefault(); }
-    if ((key === 'delete' || key === 'backspace') && !e.repeat) {
-      state.isDeleteSelectionPressed = true;
-      e.preventDefault();
-    }
     if (key === 'f' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isFlipPressed = true; e.preventDefault(); }
     if (key === 'q' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isRotateLeftPressed = true; e.preventDefault(); }
     if (key === 'e' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isRotateRightPressed = true; e.preventDefault(); }
-    // Zoom shortcuts work regardless of active tool. e.key already covers the
-    // numpad +/- keys ('NumpadAdd' -> '+', 'NumpadSubtract' -> '-'), so no
-    // separate e.code check is needed. preventDefault stops browser/Electron
-    // page-zoom from firing on these keys.
-    if ((key === '+' || key === '=') && !e.ctrlKey && !e.metaKey) { state.isZoomInPressed = true; e.preventDefault(); }
-    if (key === '-' && !e.ctrlKey && !e.metaKey) { state.isZoomOutPressed = true; e.preventDefault(); }
   }
 
   function onKeyUp(e: KeyboardEvent): void {
@@ -175,10 +145,6 @@ export function attachEditorInputListeners(
   function onMouseMove(e: MouseEvent): void {
     state.mouseScreenXPx = e.clientX;
     state.mouseScreenYPx = e.clientY;
-    if (state.isMiddleMouseDown) {
-      state.middleDragDeltaXPx += e.movementX;
-      state.middleDragDeltaYPx += e.movementY;
-    }
   }
 
   function onMouseDown(e: MouseEvent): void {
@@ -190,29 +156,19 @@ export function attachEditorInputListeners(
       state.clickScreenYPx = e.clientY;
     } else if (e.button === 2) {
       state.isRightClickFired = true;
-      state.isRightMouseDown = true;
       state.rightClickScreenXPx = e.clientX;
       state.rightClickScreenYPx = e.clientY;
-    } else if (e.button === 1) {
-      state.isMiddleMouseDown = true;
-      e.preventDefault();
     }
   }
 
   function onMouseUp(e: MouseEvent): void {
     if (e.button === 0) {
       state.isMouseDown = false;
-    } else if (e.button === 2) {
-      state.isRightMouseDown = false;
-    } else if (e.button === 1) {
-      state.isMiddleMouseDown = false;
     }
   }
 
   function onWheel(e: WheelEvent): void {
     if (!editorState.isActive) return;
-    // Always preventDefault while editor is active so the wheel never
-    // scrolls the surrounding editor UI, regardless of active tool.
     e.preventDefault();
     state.wheelDelta += e.deltaY > 0 ? 1 : -1;
   }
@@ -255,12 +211,7 @@ export function clearEditorOneShots(state: EditorInputState): void {
   state.isRedoPressed = false;
   state.isCopyPressed = false;
   state.isPastePressed = false;
-  state.isDeleteSelectionPressed = false;
   state.isFlipPressed = false;
   state.isRotateLeftPressed = false;
   state.isRotateRightPressed = false;
-  state.isZoomInPressed = false;
-  state.isZoomOutPressed = false;
-  state.middleDragDeltaXPx = 0;
-  state.middleDragDeltaYPx = 0;
 }

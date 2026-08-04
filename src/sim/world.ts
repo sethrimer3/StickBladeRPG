@@ -1,118 +1,48 @@
 import { ParticleBuffers, createParticleBuffers, MAX_PARTICLES } from './particles/state';
 import { ClusterState } from './clusters/state';
 import { RngState, createRng } from './rng';
-import { GrappleWorldState, createGrappleWorldState } from './worldGrappleState';
-import { HazardWorldState, createHazardWorldState, MAX_WATER_ZONES } from './worldHazardState';
-import { type CombatMode, DEFAULT_COMBAT_MODE } from './combatMode';
-import { PixelMaterialSystem } from './pixelMaterials/pixelMaterialSystem';
-import { NATIVE_WIDTH_PX, NATIVE_HEIGHT_PX } from './pixelMaterials/pixelMaterialTypes';
-import { createChallengeModeState, type ChallengeModeState } from './challengeMode';
-import type { RuntimeGate } from './gates/gateState';
-import type { SurfaceRimStyle } from '../render/walls/surfaceRimStyle';
-import { SURFACE_RIM_STYLE_INDEX_DEFAULT } from '../render/walls/surfaceRimStyle';
-import { createShieldWeaveState, type ShieldWeaveState } from './stormweave/shieldWeave';
-import {
-  createTimeStopFieldPlayerState,
-  type TimeStopFieldPlayerState,
-} from './timeStopField/timeStopFieldPlayerState';
-import {
-  createPoisonExposureState,
-  type PoisonExposureState,
-} from './poisonField/poisonExposureState';
-import { createSecondaryWeaveGestureState, type SecondaryWeaveGestureState } from '../input/secondaryWeaveGesture';
-import { createVoidDashState, type VoidDashState } from './clusters/voidDash';
-
-/** Fixed capacity for this tick's Verdant flower-bloom spawn events (see verdantFlowerEventCount). */
-export const VERDANT_FLOWER_EVENTS_CAPACITY = 16;
-
-// Re-export constants from sub-state files so existing imports from world.ts still work.
-export { MAX_GRAPPLE_WRAP_POINTS } from './worldGrappleState';
-export {
-  MAX_SPIKES, MAX_SPRINGBOARDS, MAX_WATER_ZONES, MAX_LAVA_ZONES,
-  MAX_BREAKABLE_BLOCKS, MAX_BREAK_EVENTS, MAX_CONTACT_DAMAGE_BLOCKS, MAX_CRUMBLE_BLOCKS, MAX_BOUNCE_PADS,
-  MAX_DUST_BOOST_JARS, MAX_FIREFLY_JARS, MAX_FIREFLIES, FIREFLIES_PER_JAR,
-  MAX_DUST_PILES, MAX_GRASSHOPPERS, GRASSHOPPER_INITIAL_TIMER_MAX_TICKS,
-  MAX_SQUARE_STAMPEDE, SQUARE_STAMPEDE_TRAIL_COUNT, MAX_SLIME_SNAILS, SLIME_SNAIL_TRAIL_COUNT, MAX_BEE_SWARMS, BEES_PER_SWARM,
-  MAX_DUST_CONSTELLATIONS, MAX_MOTES_PER_CONSTELLATION,
-  MAX_ORBITAL_DUST_CORES, MAX_RINGS_PER_ODC, MAX_MOTES_PER_RING_ODC, MOTES_PER_ODC_SLOT,
-  MAX_DUST_BLOCK_MIMICS, MAX_MOTES_PER_DBM,
-  MAX_DUST_WEAVER_ARCHITECTS, MAX_MOTES_PER_DWA, MAX_ARCHITECT_BLOCKS, MAX_NAILS_PER_DWA,
-  MAX_VOID_SINGULARITIES, MAX_MOTES_PER_VS, MAX_PROJS_PER_VSP,
-  MAX_DUST_LEECHES, MAX_DUST_ECHOES, MAX_MOTES_PER_DL, MAX_MOTES_PER_DE,
-  MAX_CW_FIRE_DUST, MAX_CW_PROJECTILES, MAX_CW_SMOKE, MAX_CW_TELEGRAPHS,
-  MAX_PHANTASMAL_BLOCKS, MAX_PHANTASMAL_SHOCKWAVES, MAX_PHANTASMAL_SPIKES,
-  MAX_VOID_LASERS, MAX_VOID_LASER_DUST,
-  MAX_ICE_SPIKES,
-  MAX_KINETIC_BLOCKS, MAX_GRAPPLE_CARRY_BLOCKS, MAX_PHANTASMAL_TILES,
-  MAX_CUSTOM_BLOCK_WIND_VENTS,
-} from './worldHazardState';
 
 /** Maximum number of axis-aligned wall rectangles supported per world. */
-export const MAX_WALLS = 6000;
-/** Maximum number of cracked-block shatter events recorded in a single tick. */
-export const MAX_SHATTER_EVENTS = 16;
-/** Maximum number of simultaneously fading web strands. */
-export const MAX_FADING_WEBS = 24;
-/** Maximum number of ropes per room. */
-export const MAX_ROPES = 16;
-/** Maximum number of Verlet segments per rope (includes anchors). */
-export const MAX_ROPE_SEGMENTS = 32;
+export const MAX_WALLS = 2000;
 
-/** Number of positions stored in the momentum trail circular buffer. */
-export const MOMENTUM_TRAIL_MAX_POINTS = 8;
+/** Maximum number of spike hazards per room. */
+export const MAX_SPIKES = 32;
+/** Maximum number of springboards per room. */
+export const MAX_SPRINGBOARDS = 16;
+/** Maximum number of water zones per room. */
+export const MAX_WATER_ZONES = 8;
+/** Maximum number of lava zones per room. */
+export const MAX_LAVA_ZONES = 8;
+/** Maximum number of breakable blocks per room. */
+export const MAX_BREAKABLE_BLOCKS = 32;
+/** Maximum number of dust boost jars per room. */
+export const MAX_DUST_BOOST_JARS = 16;
+/** Maximum number of firefly jars per room. */
+export const MAX_FIREFLY_JARS = 16;
+/** Maximum number of active fireflies at once. */
+export const MAX_FIREFLIES = 32;
+/** Number of fireflies spawned from each broken firefly jar. */
+export const FIREFLIES_PER_JAR = 4;
+/** Maximum number of dust piles per room. */
+export const MAX_DUST_PILES = 32;
 
+/** Maximum number of grasshopper critters per room. */
+export const MAX_GRASSHOPPERS = 32;
 /**
- * Maximum canonical motes derived from player life (mirrors MAX_LIFE_MOTES in
- * stormweave/lifeMotes.ts — the two must stay equal).
- *
- * Sized to comfortably cover base capacity (PLAYER_BASE_MOTE_CAPACITY = 10)
- * plus permanent Dust Container upgrades (currently a handful authored across
- * the campaign, 4 motes each) plus realistic one-shot overhealth grants from
- * Dust Boost Jars / Dust Swarms (authored/test dustCount values top out
- * around 30; see src/tests/*.test.ts and roomComplexity.test.ts). 48 leaves
- * meaningful headroom over both without being unbounded — indices beyond this
- * are safely clamped (no crash), so exceeding it only stops adding further
- * visible canonical motes rather than truncating current health.
+ * Max ticks for the initial staggered hop timer (so grasshoppers don't all
+ * hop on tick 0).
  */
-export const MAX_CANONICAL_MOTES = 48;
-export const MAX_SWORD_SLASH_MOTES = 8;
-export const MAX_BOW_ARROW_MOTES = 5;
-export const MIN_BOW_ARROW_MOTES = 3;
+export const GRASSHOPPER_INITIAL_TIMER_MAX_TICKS = 60;
 
-export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWorldState {
-  /** Deterministic, non-serialized Void Dust brake-and-launch state. */
-  voidDash: VoidDashState;
-  /** Directional Shield Weave collision state, derived from canonical player life. */
-  shieldWeave: ShieldWeaveState;
-  /**
-   * Player suspended-momentum + connected-region-membership state for the
-   * TimeStop Field mechanic. See sim/timeStopField/timeStopFieldPlayerState.ts.
-   */
-  timeStopField: TimeStopFieldPlayerState;
-  /**
-   * Deterministic Poison Field exposure/timing state. See
-   * sim/poisonField/poisonExposureState.ts. Never serialized to saves.
-   */
-  poisonExposure: PoisonExposureState;
-  /** Temporary, instance-local state for the currently loaded room's challenge elements. */
-  challengeMode: ChallengeModeState;
-  gates: RuntimeGate[];
-  /** Active combat mode. 'momentum' = speed-based; 'legacy' = dust/weave. */
-  combatMode: CombatMode;
+/** Maximum number of square-stampede enemies per room. */
+export const MAX_SQUARE_STAMPEDE = 8;
+/**
+ * Number of trail ring-buffer slots per square-stampede enemy.
+ * Each slot stores one past position; 19 slots → 19 ghost trail copies.
+ */
+export const SQUARE_STAMPEDE_TRAIL_COUNT = 19;
 
-  /**
-   * Identity tag: the `RoomDef.id` this world's static geometry (walls,
-   * bgWallGrid, hazards) was built for.  Set whenever a room's world is
-   * built/loaded (main load path and resident builds) and checked before a
-   * resident hot-swap so a world built for one room can never be activated
-   * under another room's id.  Empty string = not yet tagged.
-   *
-   * This is a defensive integrity check, not gameplay state — a mismatch
-   * indicates a caching / build-scheduling bug (see the resident hot-swap in
-   * gameScreen.ts) and triggers a safe full-reload fallback.
-   */
-  builtForRoomId: string;
-
+export interface WorldState extends ParticleBuffers {
   tick: number;
   dtMs: number;
   particleCount: number;
@@ -147,37 +77,11 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
   wallPlatformEdge: Uint8Array;
   /** Per-wall theme index: 0=blackRock, 1=brownRock, 2=dirt.  255=use room default. */
   wallThemeIndex: Uint8Array;
-  /**
-   * Per-wall Surface Rim style index — index into `wallSurfaceRimStyleTable`,
-   * or `SURFACE_RIM_STYLE_INDEX_DEFAULT` (0xFFFF) to use the default
-   * (original hard-coded) exposed-edge presentation. Mirrors `wallThemeIndex`
-   * — set at room load time and propagated whenever a wall slot is recycled
-   * (falling blocks, crumble blocks, room crossing).
-   */
-  wallSurfaceRimStyleIndex: Uint16Array;
-  /**
-   * Room-level dedup table of non-default Surface Rim styles, indexed by
-   * `wallSurfaceRimStyleIndex`. Rebuilt at room load; small (one entry per
-   * distinct custom style actually used in the room, not per-wall).
-   */
-  wallSurfaceRimStyleTable: SurfaceRimStyle[];
-  /** Per-wall sound hardness index: 0=soft, 1=normal, 2=hard. */
-  wallSoundHardnessIndex: Uint8Array;
   /** 1 if the corresponding wall is invisible (collision-only boundary, not rendered). */
   wallIsInvisibleFlag: Uint8Array;
   /**
-   * Shape orientation index, shared by ramps and stairs:
-   *   0-3 = legacy ramp   — 0=rises right(/), 1=rises left(\), 2=ceiling(⌐), 3=ceiling(¬)
-   *   4-7 = stairs        — same four orientations, offset by 4
-   *   255 = plain rectangular wall (treat as full AABB)
-   *
-   * Discriminate with `isRampOrientationIndex` / `isStairsOrientationIndex` /
-   * `isPlainRectOrientationIndex` from `levels/stairsGeometry.ts`. A bare
-   * `!== 255` test means "this wall is not a plain rectangle" and is correct
-   * only where both shapes should be excluded.
-   *
-   * The name is retained (rather than renamed to `wallShapeOrientationIndex`)
-   * because it is mirrored verbatim into serialized baked wall templates.
+   * Ramp orientation index. 255 = not a ramp (treat as full AABB).
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
    */
   wallRampOrientationIndex: Uint8Array;
   /**
@@ -185,129 +89,8 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * Only meaningful for 1×2 pillar walls.
    */
   wallIsPillarHalfWidthFlag: Uint8Array;
-  /**
-   * 1 if the corresponding wall is a bounce pad.
-   * The collision resolver reflects cluster velocity instead of zeroing it.
-   */
-  wallIsBouncePadFlag: Uint8Array;
-  /**
-   * Bounce pad speed-factor index for this wall:
-   *   0 = 50 % restitution (dim glowing core)
-   *   1 = 100 % restitution (bright glowing core)
-   * Only meaningful when wallIsBouncePadFlag[wi] === 1.
-   */
-  wallBouncePadSpeedFactorIndex: Uint8Array;
 
-  /**
-   * 1 if the corresponding wall uses the 'ice' block theme.
-   * Set at room load time from wallThemeIndex; used by the collision resolver
-   * to flag ice landings and by the grapple system to reject attachment.
-   */
-  wallIsIceFlag: Uint8Array;
-
-  /**
-   * 1 if the corresponding wall uses the 'ultraIceBlock' theme.
-   * Ultra ice locks the player's lateral velocity on contact and prevents
-   * grapple recharge from ground landings.  Grapple attachment is also rejected
-   * (same bounce behaviour as regular ice).
-   */
-  wallIsUltraIceFlag: Uint8Array;
-
-  /**
-   * 1 if the corresponding wall uses the 'rocketBlock' theme.
-   * Jumping off a rocket block grants the player uncapped horizontal air
-   * acceleration (Movement V2 rocket boost) until they next land.
-   */
-  wallIsRocketBlockFlag: Uint8Array;
-
-  /**
-   * 1 if the corresponding wall is a kinetic block (gives the player a
-   * directional velocity boost on contact, rather than reflecting like a
-   * bounce pad).
-   */
-  wallIsKineticBlockFlag: Uint8Array;
-  /**
-   * Index into the kinetic block arrays in HazardWorldState for this wall.
-   * -1 if this wall is not a kinetic block.
-   */
-  wallKineticBlockIndex: Int16Array;
-  /**
-   * Index into the crumble block arrays in HazardWorldState for this wall.
-   * -1 if this wall is not a crumble ("cracked") block. Used by the collision
-   * resolver to detect momentum-speed impacts and trigger an instant shatter.
-   */
-  wallCrumbleBlockIndex: Int16Array;
-
-  // ---- Cracked-block shatter events (visual-only, drained each tick) -----
-  /** Number of shatter events recorded this tick. Reset to 0 at the start of applyHazards. */
-  shatterEventCount: number;
-  /** World-space center X of the destroyed block's footprint. */
-  shatterEventXWorld: Float32Array;
-  /** World-space center Y of the destroyed block's footprint. */
-  shatterEventYWorld: Float32Array;
-  /** World-space footprint width. */
-  shatterEventWWorld: Float32Array;
-  /** World-space footprint height. */
-  shatterEventHWorld: Float32Array;
-  /** World-space X of the point of impact (player position at moment of shatter). */
-  shatterEventImpactXWorld: Float32Array;
-  /** World-space Y of the point of impact. */
-  shatterEventImpactYWorld: Float32Array;
-  /** Impacted surface normal X (-1, 0, or 1) — burst is biased away from this. */
-  shatterEventNormalX: Float32Array;
-  /** Impacted surface normal Y (-1, 0, or 1). */
-  shatterEventNormalY: Float32Array;
-  /** Crumble block theme index at time of destruction (see wallThemeIndex). */
-  shatterEventThemeIndex: Uint8Array;
-  /** Crumble block variant index at time of destruction (see crumbleBlockVariant). */
-  shatterEventVariantIndex: Uint8Array;
-  /** Player horizontal speed (world units/sec) at the moment of shatter — used to scale particle energy/count. */
-  shatterEventSpeedWorld: Float32Array;
-
-  /** Width of background wall grid (in block units). */
-  bgWallGridWidth: number;
-  /** Height of background wall grid (in block units). */
-  bgWallGridHeight: number;
-  /** Background wall occupancy grid: 1 = has background wall at this block position. */
-  bgWallGrid: Uint8Array;
-
-  // ── Ropes ──────────────────────────────────────────────────────────────────
-  /** Number of ropes in the current room. */
-  ropeCount: number;
-  /** Number of Verlet segments per rope (includes both anchors). */
-  ropeSegmentCount: Uint8Array;
-  /** World X of each rope's fixed top anchor. */
-  ropeAnchorAXWorld: Float32Array;
-  /** World Y of each rope's fixed top anchor. */
-  ropeAnchorAYWorld: Float32Array;
-  /** World X of each rope's bottom anchor. */
-  ropeAnchorBXWorld: Float32Array;
-  /** World Y of each rope's bottom anchor. */
-  ropeAnchorBYWorld: Float32Array;
-  /** 1 if each rope's bottom anchor is also fixed (both ends pinned). */
-  ropeIsAnchorBFixedFlag: Uint8Array;
-  /**
-   * Destructibility index: 0=indestructible, 1=playerOnly, 2=any.
-   */
-  ropeDestructibilityIndex: Uint8Array;
-  /**
-   * Per-rope collision and visual half-thickness in world units.
-   * Derived from thicknessIndex at load time: 0→4, 1→8, 2→12 world units.
-   */
-  ropeHalfThickWorld: Float32Array;
-  /**
-   * Verlet positions for each segment, laid flat as [rope0seg0, rope0seg1, ..., rope1seg0, ...].
-   * Index = ropeIndex * MAX_ROPE_SEGMENTS + segIndex.
-   */
-  ropeSegPosXWorld: Float32Array;
-  /** Y positions parallel to ropeSegPosXWorld. */
-  ropeSegPosYWorld: Float32Array;
-  /** Previous X positions for Verlet integration. */
-  ropeSegPrevXWorld: Float32Array;
-  /** Previous Y positions for Verlet integration. */
-  ropeSegPrevYWorld: Float32Array;
-  /** Rest length between adjacent segments (world units) — one value per rope. */
-  ropeSegRestLenWorld: Float32Array;
+  // ---- Player combat state ------------------------------------------------
   /**
    * World tick on which the most recent blocked hit (0-damage enemy attack)
    * occurred.  Initialised to -1 (no event yet).  Written by forces.ts;
@@ -331,8 +114,6 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
   playerPrimaryWeaveId: string;
   /** ID of the equipped secondary Weave. */
   playerSecondaryWeaveId: string;
-  /** 1 when progression has authorized the equipped secondary weave. */
-  canUsePlayerSecondaryWeaveFlag: 0 | 1;
   /** Set to 1 for one tick when the primary Weave should activate. */
   playerPrimaryWeaveTriggeredFlag: 0 | 1;
   /** Set to 1 for one tick when the secondary Weave should activate. */
@@ -358,6 +139,8 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    */
   playerMoveInputDxWorld: number;
   playerMoveInputDyWorld: number;
+  /** 1 while the sprint key (Shift) is held down. */
+  playerSprintHeldFlag: 0 | 1;
   /** 1 while the crouch key (S / ArrowDown) is held and player is on the ground. */
   playerCrouchHeldFlag: 0 | 1;
   /** Selected character identifier ('knight', 'demonFox', 'princess', or 'outcast'). */
@@ -369,230 +152,238 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
   /** 1 while the jump key is physically held down — used for variable-height jump cut. */
   playerJumpHeldFlag: 0 | 1;
 
-  // ---- Skid debris visual flags (read by renderer) ------------------------
+  // ---- Grapple hook -------------------------------------------------------
+  /** 1 while the player's grapple hook is attached to an anchor point. */
+  isGrappleActiveFlag: 0 | 1;
+  /** World-space X coordinate of the grapple anchor point. */
+  grappleAnchorXWorld: number;
+  /** World-space Y coordinate of the grapple anchor point. */
+  grappleAnchorYWorld: number;
+  /**
+   * Fixed rope length (world units) set at fire time.
+   * The player is constrained to stay within this distance of the anchor.
+   */
+  grappleLengthWorld: number;
+  /**
+   * Total amount of rope pulled in during the current grapple session (world units).
+   * Accumulates while the jump button is held; grapple breaks when this exceeds
+   * GRAPPLE_MAX_PULL_IN_WORLD.  Reset to 0 on each new grapple fire.
+   */
+  grapplePullInAmountWorld: number;
+  /** Remaining ticks for the grapple attach sparkle burst effect. */
+  grappleAttachFxTicks: number;
+  /** World-space effect center for grapple attach burst. */
+  grappleAttachFxXWorld: number;
+  grappleAttachFxYWorld: number;
+  /**
+   * Start index in the particle buffer of the GRAPPLE_SEGMENT_COUNT chain particles.
+   * -1 if not yet allocated. These slots are reserved by the game screen at startup.
+   */
+  grappleParticleStartIndex: number;
+  /**
+   * Number of consecutive ticks the jump button has been held while the grapple
+   * is active.  Used for tap-vs-hold detection:
+   *   • ≤ GRAPPLE_JUMP_TAP_THRESHOLD_TICKS on release → tap → release grapple
+   *   • > threshold while held → hold → retract rope
+   * Reset to 0 on grapple fire / release.
+   */
+  grappleJumpHeldTickCount: number;
+
+  /**
+   * 1 when the player has a grapple charge available; 0 when spent.
+   * Resets to 1 when the player touches the ground or grapples onto a top surface.
+   * Prevents firing a second grapple until recharged.
+   */
+  hasGrappleChargeFlag: 0 | 1;
+
+  // ---- Grapple top-surface mechanics ---------------------------------------
+  /** 1 when the active grapple is attached to the top surface of a wall block. */
+  isGrappleTopSurfaceFlag: 0 | 1;
+  /** 1 when the player has arrived at a top-surface grapple anchor and is sticking. */
+  isGrappleStuckFlag: 0 | 1;
+  /**
+   * Ticks since the player came to a complete stop while grapple-stuck.
+   * Used for super-jump detection: if the player jumps within 10 ticks
+   * of stopping, they receive 100% extra vertical jump height.
+   * 0 while still decelerating.
+   */
+  grappleStuckStoppedTickCount: number;
+
+  // ---- Grapple miss state (limp chain) ------------------------------------
+  /** 1 while the grapple chain is in "miss" mode (extended to full length, falling limp). */
+  isGrappleMissActiveFlag: 0 | 1;
+  /** 1 while the grapple chain is retracting back to the player and cannot attach. */
+  isGrappleRetractingFlag: 0 | 1;
+  /** Direction X the grapple was fired in (normalized). */
+  grappleMissDirXWorld: number;
+  /** Direction Y the grapple was fired in (normalized). */
+  grappleMissDirYWorld: number;
+  /** Ticks since the grapple miss started. */
+  grappleMissTickCount: number;
+
+  // ---- Skid debris visual flag (read by renderer) -------------------------
   /** 1 while the player is skidding and debris should be spawned. */
   isPlayerSkiddingFlag: 0 | 1;
-  /** X position of the skid debris origin (bottom-front corner or player center on landing). */
+  /** X position of the skid debris origin (bottom-front corner). */
   skidDebrisXWorld: number;
   /** Y position of the skid debris origin (bottom edge). */
   skidDebrisYWorld: number;
   /** 1 for a single tick to force a skid-debris burst from an initial wall jump. */
   wallJumpSkidDebrisBurstFlag: 0 | 1;
+
+  // ---- Environmental hazards -----------------------------------------------
+
+  // ── Spikes ─────────────────────────────────────────────────────────────────
+  /** Number of active spikes. */
+  spikeCount: number;
+  /** Center X of each spike (world units). */
+  spikeXWorld: Float32Array;
+  /** Center Y of each spike (world units). */
+  spikeYWorld: Float32Array;
   /**
-   * Scale factor for skid debris when landing from high horizontal speed.
-   * 0 = normal skidding.  >0 = high-speed landing skid; proportional to how far
-   * above the landing-skid threshold the horizontal speed is.
-   * Renderer multiplies spawn rate, spread, and velocity variance by (1 + factor).
-   * Set per tick in applyClusterMovement; read by skidDebrisRenderer.
+   * Direction each spike points: 0=up, 1=down, 2=left, 3=right.
+   * Encoded as Uint8 for hot-path reads.
    */
-  playerLandingSkidSpeedFactor: number;
+  spikeDirection: Uint8Array;
+  /** Invulnerability cooldown ticks after spike damage. */
+  spikeInvulnTicks: number;
+
+  // ── Springboards ───────────────────────────────────────────────────────────
+  /** Number of active springboards. */
+  springboardCount: number;
+  /** Center X of each springboard (world units). */
+  springboardXWorld: Float32Array;
+  /** Center Y of each springboard (world units). */
+  springboardYWorld: Float32Array;
+  /** Animation timer per springboard (ticks remaining in bounce anim). */
+  springboardAnimTicks: Uint8Array;
+
+  // ── Water zones ────────────────────────────────────────────────────────────
+  /** Number of active water zones. */
+  waterZoneCount: number;
+  /** Left edge X of each water zone (world units). */
+  waterZoneXWorld: Float32Array;
+  /** Top edge Y of each water zone (world units). */
+  waterZoneYWorld: Float32Array;
+  /** Width of each water zone (world units). */
+  waterZoneWWorld: Float32Array;
+  /** Height of each water zone (world units). */
+  waterZoneHWorld: Float32Array;
+
+  // ── Lava zones ─────────────────────────────────────────────────────────────
+  /** Number of active lava zones. */
+  lavaZoneCount: number;
+  /** Left edge X of each lava zone (world units). */
+  lavaZoneXWorld: Float32Array;
+  /** Top edge Y of each lava zone (world units). */
+  lavaZoneYWorld: Float32Array;
+  /** Width of each lava zone (world units). */
+  lavaZoneWWorld: Float32Array;
+  /** Height of each lava zone (world units). */
+  lavaZoneHWorld: Float32Array;
+  /** Invulnerability cooldown ticks after lava damage. */
+  lavaInvulnTicks: number;
+
+  // ── Breakable blocks ───────────────────────────────────────────────────────
+  /** Number of breakable blocks (active + broken). */
+  breakableBlockCount: number;
+  /** Center X of each breakable block (world units). */
+  breakableBlockXWorld: Float32Array;
+  /** Center Y of each breakable block (world units). */
+  breakableBlockYWorld: Float32Array;
+  /** 1 if block is still intact, 0 if broken. */
+  isBreakableBlockActiveFlag: Uint8Array;
   /**
-   * Signed horizontal velocity (world units/s) latched when the player's
-   * current direction-reversal skid began. Set per tick in
-   * applyClusterMovement while isPlayerSkiddingFlag is due to a normal skid
-   * (not a high-speed landing skid); read by skidDebrisRenderer to derive
-   * speed-scaled particle spawn rate, velocity, and spread. Deliberately
-   * distinct from playerLandingSkidSpeedFactor, which drives the separate
-   * high-speed-landing debris effect.
+   * Wall index in the wall arrays that corresponds to each breakable block.
+   * -1 if no corresponding wall (should not happen in practice).
    */
-  playerSkidEntryVelocityXWorld: number;
+  breakableBlockWallIndex: Int8Array;
 
-  // ---- Verdant Dust flower-bloom spawn events (cosmetic, read by renderer) --
+  // ── Dust boost jars ────────────────────────────────────────────────────────
+  /** Number of dust boost jars (active + broken). */
+  dustBoostJarCount: number;
+  /** Center X of each dust boost jar (world units). */
+  dustBoostJarXWorld: Float32Array;
+  /** Center Y of each dust boost jar (world units). */
+  dustBoostJarYWorld: Float32Array;
+  /** 1 if jar is still intact, 0 if broken. */
+  isDustBoostJarActiveFlag: Uint8Array;
+  /** Particle kind granted by each jar. */
+  dustBoostJarKind: Uint8Array;
+  /** Particle count granted by each jar. */
+  dustBoostJarDustCount: Uint8Array;
+
+  // ── Firefly jars ───────────────────────────────────────────────────────────
+  /** Number of firefly jars (active + broken). */
+  fireflyJarCount: number;
+  /** Center X of each firefly jar (world units). */
+  fireflyJarXWorld: Float32Array;
+  /** Center Y of each firefly jar (world units). */
+  fireflyJarYWorld: Float32Array;
+  /** 1 if jar is still intact, 0 if broken. */
+  isFireflyJarActiveFlag: Uint8Array;
+
+  // ── Fireflies ──────────────────────────────────────────────────────────────
+  /** Number of active fireflies. */
+  fireflyCount: number;
+  /** X position of each firefly (world units). */
+  fireflyXWorld: Float32Array;
+  /** Y position of each firefly (world units). */
+  fireflyYWorld: Float32Array;
+  /** X velocity of each firefly (world units/s). */
+  fireflyVelXWorld: Float32Array;
+  /** Y velocity of each firefly (world units/s). */
+  fireflyVelYWorld: Float32Array;
+
+  /** 1 while the player cluster is inside a water zone this tick. */
+  isPlayerInWaterFlag: 0 | 1;
+
+  // ── Dust piles ────────────────────────────────────────────────────────────
+  /** Number of dust piles loaded in the current room. */
+  dustPileCount: number;
+  /** Center X of each dust pile (world units). */
+  dustPileXWorld: Float32Array;
+  /** Center Y of each dust pile (world units). */
+  dustPileYWorld: Float32Array;
+  /** Particle count per dust pile. */
+  dustPileDustCount: Uint8Array;
+  /** 1 if the dust pile is still active (not yet fully claimed). */
+  isDustPileActiveFlag: Uint8Array;
+
+  // ── Grasshopper critters ───────────────────────────────────────────────────
+  /** Number of alive grasshoppers in the current room. */
+  grasshopperCount: number;
+  /** X position (world units) of each grasshopper. */
+  grasshopperXWorld: Float32Array;
+  /** Y position (world units) of each grasshopper. */
+  grasshopperYWorld: Float32Array;
+  /** X velocity (world units/s). */
+  grasshopperVelXWorld: Float32Array;
+  /** Y velocity (world units/s). */
+  grasshopperVelYWorld: Float32Array;
+  /** Countdown ticks until next hop. */
+  grasshopperHopTimerTicks: Float32Array;
+  /** 1 if this grasshopper slot is alive. */
+  isGrasshopperAliveFlag: Uint8Array;
+
+  // ── Square Stampede trail ring buffers ─────────────────────────────────────
   /**
-   * Count of deterministic flower-bloom events fired this tick (0..
-   * VERDANT_FLOWER_EVENTS_CAPACITY). Set by `updateVerdantFlowerSpawn`
-   * (src/sim/clusters/verdantFlowerSpawn.ts) once per tick and reset to 0 at
-   * the start of every tick; the renderer reads and clears it each frame.
-   * Render-only trigger — never affects collision/health/save data.
+   * X positions of trail ring buffer, flattened as [slot * stride + head].
+   * Length = MAX_SQUARE_STAMPEDE * SQUARE_STAMPEDE_TRAIL_COUNT.
    */
-  verdantFlowerEventCount: number;
-  /** Parallel fixed-capacity arrays of this tick's flower-bloom world positions. */
-  verdantFlowerEventXWorld: Float32Array;
-  verdantFlowerEventYWorld: Float32Array;
-
-  // ---- Weak wall jump cascade visual flags (read by renderer) ---------------
-  /**
-   * 1 for a single tick when a cascade of heavy debris particles should be spawned
-   * from the wall the player just jumped off.  Only set on the 3rd+ consecutive
-   * wall jump (wallJumpCountSinceReset > 2); reset at the start of each
-   * applyClusterMovement call.
-   */
-  weakWallJumpCascadeFlag: 0 | 1;
-  /** World-space X of the wall contact point for the cascade spawn origin. */
-  weakWallJumpCascadeXWorld: number;
-  /** World-space Y of the wall contact point for the cascade spawn origin. */
-  weakWallJumpCascadeYWorld: number;
-  /**
-   * +1 if the wall was to the right of the player (right wall jump), –1 if to
-   * the left (left wall jump).  Used by the renderer to orient the debris burst.
-   */
-  weakWallJumpCascadeWallSideX: number;
-
-  // ── Stage 3: independent Sword/Shield/Bow Weave unlock flags ───────────────
-  hasSwordWeaveUnlockedFlag: 0 | 1;
-  hasShieldWeaveUnlockedFlag: 0 | 1;
-  hasBowWeaveUnlockedFlag: 0 | 1;
-  shieldWeaveIndependentActiveFlag: 0 | 1;
-  secondaryWeaveGesture: SecondaryWeaveGestureState;
-  secondaryWeaveHandledCancellationId: number;
-
-  // ── Canonical Mote Ownership & Ability State ────────────────────────────────
-  /** Authoritative ownership state per canonical mote (0..MAX_CANONICAL_MOTES-1). */
-  canonicalMoteOwnership: Uint8Array;
-  canonicalMoteXWorld: Float32Array;
-  canonicalMoteYWorld: Float32Array;
-  canonicalMoteVelXWorld: Float32Array;
-  canonicalMoteVelYWorld: Float32Array;
-
-  // ── Independent Sword Weave ─────────────────────────────────────────
-  newSwordActiveFlag: number;
-  newSwordGestureId: number;
-  newSwordTicksElapsed: number;
-  newSwordAimAngleRad: number;
-  newSwordCurrentAngleRad: number;
-  newSwordHandAnchorXWorld: number;
-  newSwordHandAnchorYWorld: number;
-  newSwordReachWorld: number;
-  newSwordToShieldTransition01: number;
-  newSwordStartAngleRad: number;
-  newSwordEndAngleRad: number;
-  newSwordMoteCount: number;
-  newSwordMoteParticleIndex: Int32Array;
-  newSwordMoteFromXWorld: Float32Array;
-  newSwordMoteFromYWorld: Float32Array;
-  newSwordMotePrevXWorld: Float32Array;
-  newSwordMotePrevYWorld: Float32Array;
-
-  // ── Independent Bow Weave ───────────────────────────────────────────
-  bowArrowPhase: number;
-  bowArrowGestureId: number;
-  bowArrowShieldStartTick: number;
-  bowArrowCount: number;
-  bowArrowParticleIndex: Int32Array;
-  bowArrowSlotStartTick: Int32Array;
-  bowArrowRankState: Uint8Array;
-  bowArrowArcFromXWorld: Float32Array;
-  bowArrowArcFromYWorld: Float32Array;
-  bowArrowArcCtrlXWorld: Float32Array;
-  bowArrowArcCtrlYWorld: Float32Array;
-  bowArrowDirXWorld: number;
-  bowArrowDirYWorld: number;
-  bowArrowOriginXWorld: number;
-  bowArrowOriginYWorld: number;
-  bowArrowTravelPx: number;
-  bowArrowDustKind: number;
-  bowArrowReleaseLatchedFlag: number;
-  bowArrowLatchedAimXWorld: number;
-  bowArrowLatchedAimYWorld: number;
-
-  /** Currently active/selected dust kind (ParticleKind.Golden = 0 by default). */
-  selectedDustKind: number;
-
-  /**
-   * Smoothed display radius (world units) for the grapple influence circle.
-   * Lerps toward getEffectiveGrappleRangeWorld() each tick so the circle
-   * grows and shrinks visually with a small lag.
-   */
-  grappleDisplayRadiusWorld: number;
-
-  // ── Phase 8: Storm / Inventory source flag ─────────────────────────────────
-  /**
-   * 1 when the player's primary weave is Storm (motes orbit passively).
-   * 0 when Storm is not equipped (motes materialize from inventory space).
-   *
-   * Set once at loadout apply time (gameScreen.ts) and again whenever the
-   * loadout changes.  Not recomputed every tick.
-   *
-   * Propagated to WorldSnapshot so renderers can choose the appropriate
-   * mote-source visual style without importing sim helpers.
-   */
-  isMoteSourceOrbitFlag: 0 | 1;
-
-  // ── Falling blocks ──────────────────────────────────────────────────────────
-  /**
-   * Runtime list of falling block groups for the current room.
-   * Each group is a set of orthogonally-connected same-variant tiles that fall
-   * together as a single rigid body when triggered.
-   * Managed by fallingBlockSim.ts; populated by loadRoomFallingBlocks().
-   */
-  fallingBlockGroups: import('./fallingBlocks/fallingBlockTypes').FallingBlockGroup[];
-  /** Runtime zip-activated moving rectangles for the current room. */
-  zipMoveBlocks: import('./zipMoveBlocks/zipMoveBlockTypes').ZipMoveBlockRuntime[];
-
-  /**
-   * Player's downward velocity from the END of the previous tick, before this
-   * tick's collision resolution zeros it on landing.
-   * Set at the start of tick() before applyClusterMovement runs.
-   * Used by the tough falling block trigger to detect hard landings.
-   */
-  playerPrevVelocityYWorld: number;
-
-  // ── Web Spider fading web ring buffer ─────────────────────────────────────
-  /** Total capacity of the fading-web ring buffer. */
-  webSpiderFadingWebMaxCount: number;
-  /** Write-head index for the ring buffer (wraps at webSpiderFadingWebMaxCount). */
-  webSpiderFadingWebWriteIndex: number;
-  /** Number of slots that contain live fading webs (≤ webSpiderFadingWebMaxCount). */
-  webSpiderFadingWebActiveCount: number;
-  /** Spider X position when it detached (start of the visible strand). */
-  webSpiderFadingWebFromXWorld: Float32Array;
-  /** Spider Y position when it detached. */
-  webSpiderFadingWebFromYWorld: Float32Array;
-  /** Anchor X (end of the visible strand). */
-  webSpiderFadingWebToXWorld: Float32Array;
-  /** Anchor Y. */
-  webSpiderFadingWebToYWorld: Float32Array;
-  /** Remaining ticks until the web fully fades (counts down to 0). */
-  webSpiderFadingWebRemainingTicks: Float32Array;
-  /** Max ticks for this web (for alpha computation: remaining/max). */
-  webSpiderFadingWebMaxTicks: Float32Array;
-
-  // ── Momentum Combat trail ────────────────────────────────────────────────
-  // TODO: Implement golden grapple trail visual in a dedicated renderer module.
-  //        These buffers are allocated but not yet written or rendered; the
-  //        structure is intentionally kept modular so the renderer can be added
-  //        without changing WorldState.  Writer: tick when isHighVelocityAttacking;
-  //        reader: renderer that draws a fading gold streak.
-  /** Write-head index for the circular trail buffer. */
-  momentumTrailWriteIndex: number;
-  /** Number of valid entries currently in the trail (up to MOMENTUM_TRAIL_MAX_POINTS). */
-  momentumTrailActiveCount: number;
-  /** World-space X positions of recent player positions for the trail. */
-  momentumTrailXWorld: Float32Array;
-  /** World-space Y positions. */
-  momentumTrailYWorld: Float32Array;
-  /** Age in ticks of each trail position (for alpha fade). */
-  momentumTrailAgeTicks: Uint8Array;
-
-  // ── Ice Mote Freeze Aura ─────────────────────────────────────────────────
-  /**
-   * Per-zone frozen mask: 1 if this water zone is temporarily frozen by the
-   * Ice Mote aura.  Frozen zones are excluded from buoyancy physics and liquid
-   * rendering while a solid one-way-platform ice wall covers their area.
-   * Managed by iceMoteAura.ts; reset to all-0 on each room load.
-   */
-  frozenWaterZoneMask: Uint8Array;
-
-  /**
-   * Pixel-scale falling-sand material simulation layer. Owns material
-   * occupancy, active/sleep tracking, and its own fixed-step tick — a
-   * separate simulation layer from the tile/collision/entity architecture.
-   * Rebuilt (new instance + solid mask) whenever a room is loaded; see
-   * `loadRoomPixelMaterials` in screens/gameRoomPixelMaterials.ts.
-   */
-  pixelMaterialSystem: PixelMaterialSystem;
+  squareStampedeTrailXWorld: Float32Array;
+  /** Y positions of trail ring buffer. Same layout as squareStampedeTrailXWorld. */
+  squareStampedeTrailYWorld: Float32Array;
+  /** Write-head index (0..stride-1) per slot. */
+  squareStampedeTrailHead: Uint8Array;
+  /** Number of valid entries filled so far (0..stride) per slot. */
+  squareStampedeTrailCount: Uint8Array;
+  /** Number of entries per slot (= SQUARE_STAMPEDE_TRAIL_COUNT). Read-only after init. */
+  squareStampedeTrailStride: number;
 }
 
 export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
   return {
-    voidDash:                       createVoidDashState(),
-    shieldWeave: createShieldWeaveState(),
-    timeStopField: createTimeStopFieldPlayerState(),
-    poisonExposure: createPoisonExposureState(),
-    combatMode: DEFAULT_COMBAT_MODE,
-    challengeMode: createChallengeModeState(),
-    gates: [],
-    builtForRoomId: '',
     tick: 0,
     dtMs,
     particleCount: 0,
@@ -608,49 +399,9 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     wallIsPlatformFlag: new Uint8Array(MAX_WALLS),
     wallPlatformEdge: new Uint8Array(MAX_WALLS),
     wallThemeIndex: new Uint8Array(MAX_WALLS),
-    wallSurfaceRimStyleIndex: new Uint16Array(MAX_WALLS).fill(SURFACE_RIM_STYLE_INDEX_DEFAULT),
-    wallSurfaceRimStyleTable: [],
-    wallSoundHardnessIndex: new Uint8Array(MAX_WALLS),
     wallIsInvisibleFlag: new Uint8Array(MAX_WALLS),
     wallRampOrientationIndex: new Uint8Array(MAX_WALLS).fill(255),
     wallIsPillarHalfWidthFlag: new Uint8Array(MAX_WALLS),
-    wallIsBouncePadFlag: new Uint8Array(MAX_WALLS),
-    wallBouncePadSpeedFactorIndex: new Uint8Array(MAX_WALLS),
-    wallIsIceFlag: new Uint8Array(MAX_WALLS),
-    wallIsUltraIceFlag: new Uint8Array(MAX_WALLS),
-    wallIsRocketBlockFlag: new Uint8Array(MAX_WALLS),
-    wallIsKineticBlockFlag:           new Uint8Array(MAX_WALLS),
-    wallKineticBlockIndex:            new Int16Array(MAX_WALLS).fill(-1),
-    wallCrumbleBlockIndex:            new Int16Array(MAX_WALLS).fill(-1),
-    shatterEventCount: 0,
-    shatterEventXWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventYWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventWWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventHWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventImpactXWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventImpactYWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventNormalX: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventNormalY: new Float32Array(MAX_SHATTER_EVENTS),
-    shatterEventThemeIndex: new Uint8Array(MAX_SHATTER_EVENTS),
-    shatterEventVariantIndex: new Uint8Array(MAX_SHATTER_EVENTS),
-    shatterEventSpeedWorld: new Float32Array(MAX_SHATTER_EVENTS),
-    bgWallGridWidth: 0,
-    bgWallGridHeight: 0,
-    bgWallGrid: new Uint8Array(0),
-    ropeCount: 0,
-    ropeSegmentCount:       new Uint8Array(MAX_ROPES),
-    ropeAnchorAXWorld:      new Float32Array(MAX_ROPES),
-    ropeAnchorAYWorld:      new Float32Array(MAX_ROPES),
-    ropeAnchorBXWorld:      new Float32Array(MAX_ROPES),
-    ropeAnchorBYWorld:      new Float32Array(MAX_ROPES),
-    ropeIsAnchorBFixedFlag: new Uint8Array(MAX_ROPES),
-    ropeDestructibilityIndex: new Uint8Array(MAX_ROPES),
-    ropeHalfThickWorld:     new Float32Array(MAX_ROPES),
-    ropeSegPosXWorld:       new Float32Array(MAX_ROPES * MAX_ROPE_SEGMENTS),
-    ropeSegPosYWorld:       new Float32Array(MAX_ROPES * MAX_ROPE_SEGMENTS),
-    ropeSegPrevXWorld:      new Float32Array(MAX_ROPES * MAX_ROPE_SEGMENTS),
-    ropeSegPrevYWorld:      new Float32Array(MAX_ROPES * MAX_ROPE_SEGMENTS),
-    ropeSegRestLenWorld:    new Float32Array(MAX_ROPES),
     lastPlayerBlockedTick: -1,
     playerAttackTriggeredFlag: 0,
     playerAttackDirXWorld: 1.0,
@@ -660,8 +411,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     playerBlockDirYWorld: 0.0,
     // Weave combat state
     playerPrimaryWeaveId: 'storm',
-    playerSecondaryWeaveId: 'none',
-    canUsePlayerSecondaryWeaveFlag: 0,
+    playerSecondaryWeaveId: 'shield',
     playerPrimaryWeaveTriggeredFlag: 0,
     playerSecondaryWeaveTriggeredFlag: 0,
     isPlayerPrimaryWeaveActiveFlag: 0,
@@ -672,99 +422,96 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     playerWeaveAimDirYWorld: 0.0,
     playerMoveInputDxWorld: 0.0,
     playerMoveInputDyWorld: 0.0,
+    playerSprintHeldFlag: 0,
     playerCrouchHeldFlag: 0,
     characterId: 'knight',
     playerJumpTriggeredFlag: 0,
     playerJumpHeldFlag: 0,
+    isGrappleActiveFlag: 0,
+    grappleAnchorXWorld: 0.0,
+    grappleAnchorYWorld: 0.0,
+    grappleLengthWorld: 0.0,
+    grapplePullInAmountWorld: 0.0,
+    grappleAttachFxTicks: 0,
+    grappleAttachFxXWorld: 0.0,
+    grappleAttachFxYWorld: 0.0,
+    grappleParticleStartIndex: -1,
+    grappleJumpHeldTickCount: 0,
+    hasGrappleChargeFlag: 1,
+    isGrappleTopSurfaceFlag: 0,
+    isGrappleStuckFlag: 0,
+    grappleStuckStoppedTickCount: 0,
+    isGrappleMissActiveFlag: 0,
+    isGrappleRetractingFlag: 0,
+    grappleMissDirXWorld: 0.0,
+    grappleMissDirYWorld: 0.0,
+    grappleMissTickCount: 0,
     isPlayerSkiddingFlag: 0,
     skidDebrisXWorld: 0.0,
     skidDebrisYWorld: 0.0,
     wallJumpSkidDebrisBurstFlag: 0,
-    playerLandingSkidSpeedFactor: 0.0,
-    playerSkidEntryVelocityXWorld: 0.0,
-    verdantFlowerEventCount: 0,
-    verdantFlowerEventXWorld: new Float32Array(VERDANT_FLOWER_EVENTS_CAPACITY),
-    verdantFlowerEventYWorld: new Float32Array(VERDANT_FLOWER_EVENTS_CAPACITY),
-    weakWallJumpCascadeFlag: 0,
-    weakWallJumpCascadeXWorld: 0.0,
-    weakWallJumpCascadeYWorld: 0.0,
-    weakWallJumpCascadeWallSideX: 0,
-    hasSwordWeaveUnlockedFlag:     0,
-    hasShieldWeaveUnlockedFlag:    0,
-    hasBowWeaveUnlockedFlag:       0,
-    shieldWeaveIndependentActiveFlag: 0,
-    secondaryWeaveGesture:         createSecondaryWeaveGestureState(),
-    secondaryWeaveHandledCancellationId: 0,
-    canonicalMoteOwnership:        new Uint8Array(MAX_CANONICAL_MOTES),
-    canonicalMoteXWorld:           new Float32Array(MAX_CANONICAL_MOTES),
-    canonicalMoteYWorld:           new Float32Array(MAX_CANONICAL_MOTES),
-    canonicalMoteVelXWorld:        new Float32Array(MAX_CANONICAL_MOTES),
-    canonicalMoteVelYWorld:        new Float32Array(MAX_CANONICAL_MOTES),
-    newSwordActiveFlag:            0,
-    newSwordGestureId:             0,
-    newSwordTicksElapsed:          0,
-    newSwordAimAngleRad:           0,
-    newSwordCurrentAngleRad:       0,
-    newSwordHandAnchorXWorld:      0,
-    newSwordHandAnchorYWorld:      0,
-    newSwordReachWorld:            0,
-    newSwordToShieldTransition01:  0,
-    newSwordStartAngleRad:         0,
-    newSwordEndAngleRad:           0,
-    newSwordMoteCount:             0,
-    newSwordMoteParticleIndex:     new Int32Array(MAX_SWORD_SLASH_MOTES).fill(-1),
-    newSwordMoteFromXWorld:        new Float32Array(MAX_SWORD_SLASH_MOTES),
-    newSwordMoteFromYWorld:        new Float32Array(MAX_SWORD_SLASH_MOTES),
-    newSwordMotePrevXWorld:        new Float32Array(MAX_SWORD_SLASH_MOTES),
-    newSwordMotePrevYWorld:        new Float32Array(MAX_SWORD_SLASH_MOTES),
-    bowArrowPhase:                 0,
-    bowArrowGestureId:             0,
-    bowArrowShieldStartTick:       0,
-    bowArrowCount:                 0,
-    bowArrowParticleIndex:         new Int32Array(MAX_BOW_ARROW_MOTES).fill(-1),
-    bowArrowSlotStartTick:         new Int32Array(MAX_BOW_ARROW_MOTES),
-    bowArrowRankState:             new Uint8Array(MAX_BOW_ARROW_MOTES),
-    bowArrowArcFromXWorld:         new Float32Array(MAX_BOW_ARROW_MOTES),
-    bowArrowArcFromYWorld:         new Float32Array(MAX_BOW_ARROW_MOTES),
-    bowArrowArcCtrlXWorld:         new Float32Array(MAX_BOW_ARROW_MOTES),
-    bowArrowArcCtrlYWorld:         new Float32Array(MAX_BOW_ARROW_MOTES),
-    bowArrowDirXWorld:             0,
-    bowArrowDirYWorld:             0,
-    bowArrowOriginXWorld:          0,
-    bowArrowOriginYWorld:          0,
-    bowArrowTravelPx:              0,
-    bowArrowDustKind:              0,
-    bowArrowReleaseLatchedFlag:    0,
-    bowArrowLatchedAimXWorld:      0,
-    bowArrowLatchedAimYWorld:      0,
-    selectedDustKind:              0,
-    grappleDisplayRadiusWorld:     96.0,
-    // Default: Storm Weave is the starting primary, so motes orbit from the start.
-    isMoteSourceOrbitFlag:         1,
-    // ── Falling blocks ────────────────────────────────────────────────────
-    fallingBlockGroups:            [],
-    zipMoveBlocks:                  [],
-    playerPrevVelocityYWorld:      0,
-    // ── Web Spider fading web ring buffer ────────────────────────────────
-    webSpiderFadingWebMaxCount:          MAX_FADING_WEBS,
-    webSpiderFadingWebWriteIndex:        0,
-    webSpiderFadingWebActiveCount:       0,
-    webSpiderFadingWebFromXWorld:        new Float32Array(MAX_FADING_WEBS),
-    webSpiderFadingWebFromYWorld:        new Float32Array(MAX_FADING_WEBS),
-    webSpiderFadingWebToXWorld:          new Float32Array(MAX_FADING_WEBS),
-    webSpiderFadingWebToYWorld:          new Float32Array(MAX_FADING_WEBS),
-    webSpiderFadingWebRemainingTicks:    new Float32Array(MAX_FADING_WEBS),
-    webSpiderFadingWebMaxTicks:          new Float32Array(MAX_FADING_WEBS),
-    ...createGrappleWorldState(),
-    ...createHazardWorldState(),
+    // ── Environmental hazards ─────────────────────────────────────────
+    spikeCount: 0,
+    spikeXWorld: new Float32Array(MAX_SPIKES),
+    spikeYWorld: new Float32Array(MAX_SPIKES),
+    spikeDirection: new Uint8Array(MAX_SPIKES),
+    spikeInvulnTicks: 0,
+    springboardCount: 0,
+    springboardXWorld: new Float32Array(MAX_SPRINGBOARDS),
+    springboardYWorld: new Float32Array(MAX_SPRINGBOARDS),
+    springboardAnimTicks: new Uint8Array(MAX_SPRINGBOARDS),
+    waterZoneCount: 0,
+    waterZoneXWorld: new Float32Array(MAX_WATER_ZONES),
+    waterZoneYWorld: new Float32Array(MAX_WATER_ZONES),
+    waterZoneWWorld: new Float32Array(MAX_WATER_ZONES),
+    waterZoneHWorld: new Float32Array(MAX_WATER_ZONES),
+    lavaZoneCount: 0,
+    lavaZoneXWorld: new Float32Array(MAX_LAVA_ZONES),
+    lavaZoneYWorld: new Float32Array(MAX_LAVA_ZONES),
+    lavaZoneWWorld: new Float32Array(MAX_LAVA_ZONES),
+    lavaZoneHWorld: new Float32Array(MAX_LAVA_ZONES),
+    lavaInvulnTicks: 0,
+    breakableBlockCount: 0,
+    breakableBlockXWorld: new Float32Array(MAX_BREAKABLE_BLOCKS),
+    breakableBlockYWorld: new Float32Array(MAX_BREAKABLE_BLOCKS),
+    isBreakableBlockActiveFlag: new Uint8Array(MAX_BREAKABLE_BLOCKS),
+    breakableBlockWallIndex: new Int8Array(MAX_BREAKABLE_BLOCKS),
+    dustBoostJarCount: 0,
+    dustBoostJarXWorld: new Float32Array(MAX_DUST_BOOST_JARS),
+    dustBoostJarYWorld: new Float32Array(MAX_DUST_BOOST_JARS),
+    isDustBoostJarActiveFlag: new Uint8Array(MAX_DUST_BOOST_JARS),
+    dustBoostJarKind: new Uint8Array(MAX_DUST_BOOST_JARS),
+    dustBoostJarDustCount: new Uint8Array(MAX_DUST_BOOST_JARS),
+    fireflyJarCount: 0,
+    fireflyJarXWorld: new Float32Array(MAX_FIREFLY_JARS),
+    fireflyJarYWorld: new Float32Array(MAX_FIREFLY_JARS),
+    isFireflyJarActiveFlag: new Uint8Array(MAX_FIREFLY_JARS),
+    fireflyCount: 0,
+    fireflyXWorld: new Float32Array(MAX_FIREFLIES),
+    fireflyYWorld: new Float32Array(MAX_FIREFLIES),
+    fireflyVelXWorld: new Float32Array(MAX_FIREFLIES),
+    fireflyVelYWorld: new Float32Array(MAX_FIREFLIES),
+    isPlayerInWaterFlag: 0,
+    // ── Dust piles ───────────────────────────────────────────────────
+    dustPileCount: 0,
+    dustPileXWorld: new Float32Array(MAX_DUST_PILES),
+    dustPileYWorld: new Float32Array(MAX_DUST_PILES),
+    dustPileDustCount: new Uint8Array(MAX_DUST_PILES),
+    isDustPileActiveFlag: new Uint8Array(MAX_DUST_PILES),
+    grasshopperCount: 0,
+    grasshopperXWorld: new Float32Array(MAX_GRASSHOPPERS),
+    grasshopperYWorld: new Float32Array(MAX_GRASSHOPPERS),
+    grasshopperVelXWorld: new Float32Array(MAX_GRASSHOPPERS),
+    grasshopperVelYWorld: new Float32Array(MAX_GRASSHOPPERS),
+    grasshopperHopTimerTicks: new Float32Array(MAX_GRASSHOPPERS),
+    isGrasshopperAliveFlag: new Uint8Array(MAX_GRASSHOPPERS),
+    // ── Square Stampede trail ─────────────────────────────────────────
+    squareStampedeTrailStride: SQUARE_STAMPEDE_TRAIL_COUNT,
+    squareStampedeTrailXWorld: new Float32Array(MAX_SQUARE_STAMPEDE * SQUARE_STAMPEDE_TRAIL_COUNT),
+    squareStampedeTrailYWorld: new Float32Array(MAX_SQUARE_STAMPEDE * SQUARE_STAMPEDE_TRAIL_COUNT),
+    squareStampedeTrailHead: new Uint8Array(MAX_SQUARE_STAMPEDE),
+    squareStampedeTrailCount: new Uint8Array(MAX_SQUARE_STAMPEDE),
     ...createParticleBuffers(),
-    frozenWaterZoneMask: new Uint8Array(MAX_WATER_ZONES),
-    momentumTrailWriteIndex: 0,
-    momentumTrailActiveCount: 0,
-    momentumTrailXWorld: new Float32Array(MOMENTUM_TRAIL_MAX_POINTS),
-    momentumTrailYWorld: new Float32Array(MOMENTUM_TRAIL_MAX_POINTS),
-    momentumTrailAgeTicks: new Uint8Array(MOMENTUM_TRAIL_MAX_POINTS),
-    pixelMaterialSystem: new PixelMaterialSystem(NATIVE_WIDTH_PX, NATIVE_HEIGHT_PX),
   };
 }
 

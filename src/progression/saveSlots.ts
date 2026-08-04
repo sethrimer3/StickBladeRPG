@@ -5,13 +5,7 @@
  * Three save slots are available (indices 0–2).
  */
 
-import { PlayerProgress, createDefaultProgress, createOfficialNewProfileProgress, sanitizePlayerDustProgress, migrateStarterFireDustUnlock } from './playerProgress';
-import { migrateLegacyWeaveUnlocks } from './weaveMigration';
-// Presentation-only: used by the two display formatters at the bottom of this
-// file. Save serialisation and the slot schema stay locale-independent.
-import { getLocale, t } from '../i18n';
-import { getPlatformAdapter } from '../platform';
-import { isAchievementId, type AchievementId } from '../platform/achievementIds';
+import { PlayerProgress, createDefaultProgress } from './playerProgress';
 
 /** Total number of save slots. */
 export const SAVE_SLOT_COUNT = 3;
@@ -27,28 +21,6 @@ export interface SaveSlotData {
   playTimeMs: number;
   /** ISO-8601 timestamp of the last time this slot was played. */
   lastPlayedIso: string;
-  /**
-   * Speedrun timer: elapsed active gameplay time in milliseconds for this run.
-   * Does not include time spent in menus, inventory, map, or waiting after load/respawn.
-   */
-  runTimerMs: number;
-  /**
-   * Timer value at the last save-point interaction.
-   * Restored when the player dies and respawns at that save point.
-   */
-  checkpointRunTimerMs: number;
-  /**
-   * When true, this save was created with Assist Mode enabled.
-   * Assist Mode grants unlimited air grapples (no ground-touch required to recharge).
-   * This flag cannot be disabled once set.
-   */
-  assistMode: boolean;
-  /**
-   * Achievement IDs unlocked in this save. Reconciled bidirectionally with
-   * the platform adapter (Steam or fake) on game load — see
-   * `reconcileSaveSlotAchievements`.
-   */
-  unlockedAchievements: string[];
 }
 
 /** Returns the localStorage key for a given slot index. */
@@ -76,51 +48,6 @@ export function loadSaveSlot(slotIndex: number): SaveSlotData | null {
     // preserved while missing fields receive safe defaults.
     const defaults = createDefaultProgress();
     parsed.progress = { ...defaults, ...parsed.progress };
-    // Explicit fallbacks for array/optional fields added after initial release.
-    if (parsed.progress.dustContainerPieces === undefined) parsed.progress.dustContainerPieces = 0;
-    if (!Array.isArray(parsed.progress.disabledPassiveWeaves)) parsed.progress.disabledPassiveWeaves = [];
-    if (!Array.isArray(parsed.progress.collectedDustSwarmKeys)) parsed.progress.collectedDustSwarmKeys = [];
-    if (!Array.isArray(parsed.progress.collectedDustContainerKeys)) parsed.progress.collectedDustContainerKeys = [];
-    if (!Array.isArray(parsed.progress.collectedSkillTombKeys)) parsed.progress.collectedSkillTombKeys = [];
-    if (!Array.isArray(parsed.progress.permanentlyOpenGateKeys)) parsed.progress.permanentlyOpenGateKeys = [];
-    // Repair saves stuck with the stale pre-Outcast Knight default: the official
-    // campaign always auto-selects Outcast for brand-new profiles (see game.ts),
-    // but a save could be created and persisted with 'knight' before that
-    // in-session correction had a chance to be flushed (e.g. the app closed
-    // before the first checkpoint — see createOfficialNewProfileProgress()).
-    // Restrict this to saves that have never explored a room: any save with
-    // exploredRoomIds is either a legitimate pre-Outcast playthrough or used
-    // deliberate character selection, and must not be silently overwritten.
-    if (parsed.progress.characterId === 'knight' && parsed.progress.exploredRoomIds.length === 0) {
-      parsed.progress.characterId = 'outcast';
-    }
-    sanitizePlayerDustProgress(parsed.progress);
-    // Migrate legacy shield_sword secondary-weave saves to grant the new
-    // independent Sword + Shield unlocks (idempotent; never removes an
-    // ability the save already has — see weaveMigration.ts).
-    migrateLegacyWeaveUnlocks(parsed.progress);
-    // Backfill Fire Dust for existing saves created before it was added to
-    // the campaign's starting dust kit. `applyCampaignStartingOptions` only
-    // (re-)applies `startingDustTypes` to saves that have never explored a
-    // room, so a save that already has the rest of the pre-Fire starter kit
-    // (Golden/Ice/Nature/Void/Light) would otherwise never receive Fire Dust
-    // even after this campaign update — idempotent, never removes anything.
-    migrateStarterFireDustUnlock(parsed.progress);
-    // Migrate timer fields (added for speedrun timer feature).
-    if (typeof parsed.runTimerMs !== 'number' || !isFinite(parsed.runTimerMs) || parsed.runTimerMs < 0) {
-      parsed.runTimerMs = 0;
-    }
-    if (typeof parsed.checkpointRunTimerMs !== 'number' || !isFinite(parsed.checkpointRunTimerMs) || parsed.checkpointRunTimerMs < 0) {
-      parsed.checkpointRunTimerMs = 0;
-    }
-    // Migrate assist mode flag (added for assist mode feature; old saves default off).
-    if (typeof parsed.assistMode !== 'boolean') {
-      parsed.assistMode = false;
-    }
-    // Migrate achievements field (added for Steam Achievements support).
-    if (!Array.isArray(parsed.unlockedAchievements)) {
-      parsed.unlockedAchievements = [];
-    }
     return parsed;
   } catch {
     return null;
@@ -145,68 +72,13 @@ export function deleteSaveSlot(slotIndex: number): void {
   }
 }
 
-/**
- * Creates a brand-new official-campaign save slot with zero play time.
- * Progress starts with Outcast already selected — the official campaign
- * auto-skips character select for new profiles (see game.ts), so the
- * persisted record must be correct by construction rather than relying on
- * a later checkpoint write to fix it up.
- */
-export function createNewSaveSlot(assistMode = false): SaveSlotData {
+/** Creates a brand-new save slot with default progress and zero play time. */
+export function createNewSaveSlot(): SaveSlotData {
   return {
-    progress: createOfficialNewProfileProgress(),
+    progress: createDefaultProgress(),
     playTimeMs: 0,
     lastPlayedIso: new Date().toISOString(),
-    runTimerMs: 0,
-    checkpointRunTimerMs: 0,
-    assistMode,
-    unlockedAchievements: [],
   };
-}
-
-/**
- * Reconciles a save slot's `unlockedAchievements` against the platform
- * adapter (Steam or fake), bidirectionally: achievements present in the
- * save but not on the platform are unlocked there, and achievements
- * unlocked on the platform but missing from the save are added to it.
- * Mutates `data.unlockedAchievements` in place. Call once at game-load time.
- */
-export async function reconcileSaveSlotAchievements(data: SaveSlotData): Promise<void> {
-  const adapter = getPlatformAdapter();
-  const platformStatuses = await adapter.getAllAchievementStatuses();
-  const platformUnlocked = new Set(platformStatuses.filter((s) => s.unlocked).map((s) => s.id));
-  const saveUnlocked = new Set(data.unlockedAchievements.filter(isAchievementId));
-
-  const toUnlockOnPlatform: AchievementId[] = [...saveUnlocked].filter((id) => !platformUnlocked.has(id));
-  await Promise.all(toUnlockOnPlatform.map((id) => adapter.unlockAchievement(id)));
-
-  const merged = new Set<string>([...saveUnlocked, ...platformUnlocked]);
-  data.unlockedAchievements = [...merged];
-}
-
-/**
- * Formats milliseconds into a speedrun timer string.
- * Under an hour: `MM:SS.mmm`  (e.g. "12:34.500")
- * Over an hour:  `H:MM:SS.mmm` (e.g. "1:02:03.456")
- */
-export function formatRunTimer(ms: number): string {
-  const safeMs = Math.max(0, isFinite(ms) ? ms : 0);
-  const totalMs    = Math.floor(safeMs);
-  const millis     = totalMs % 1000;
-  const totalSecs  = Math.floor(totalMs / 1000);
-  const secs       = totalSecs % 60;
-  const totalMins  = Math.floor(totalSecs / 60);
-  const mins       = totalMins % 60;
-  const hours      = Math.floor(totalMins / 60);
-
-  const mm  = String(mins).padStart(2, '0');
-  const ss  = String(secs).padStart(2, '0');
-  const mmm = String(millis).padStart(3, '0');
-
-  if (hours > 0) {
-    return `${hours}:${mm}:${ss}.${mmm}`;
-  }
-  return `${mm}:${ss}.${mmm}`;
 }
 
 /**
@@ -215,15 +87,13 @@ export function formatRunTimer(ms: number): string {
  */
 export function formatPlayTimeMs(ms: number): string {
   const totalMinutes = Math.floor(ms / 60_000);
-  if (totalMinutes < 1) return t('saveSlots.playTimeUnderMinute');
+  if (totalMinutes < 1) return '< 1m';
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours > 0) {
-    return minutes > 0
-      ? t('saveSlots.playTimeHoursMinutes', { hours, minutes })
-      : t('saveSlots.playTimeHours', { hours });
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
-  return t('saveSlots.playTimeMinutes', { minutes });
+  return `${minutes}m`;
 }
 
 /**
@@ -233,12 +103,12 @@ export function formatPlayTimeMs(ms: number): string {
 export function formatLastPlayed(isoString: string): string {
   try {
     const d = new Date(isoString);
-    return d.toLocaleDateString(getLocale(), {
+    return d.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     });
   } catch {
-    return t('common.unknown');
+    return 'Unknown';
   }
 }

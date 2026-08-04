@@ -23,49 +23,31 @@
 
 import type { BlockShapeName } from './blockSpriteCatalog';
 import { TEMPLATE_URLS, getBaseSpriteProbePool } from './blockSpriteCatalog';
-import {
-  applyOrganicEdgeShading,
-  EDGE_SHADING_VERSION,
-  OPEN_AIR_SIDE_N,
-  OPEN_AIR_SIDE_E,
-  OPEN_AIR_SIDE_S,
-  OPEN_AIR_SIDE_W,
-  OPEN_AIR_ALL_SIDES,
-} from './blockEdgeShading';
-import { loadImg, isSpriteReady } from '../imageCache';
-import * as FP from '../../debug/perfFreezeProfiler';
 
-// Re-export open-air side constants so callers (blockSpriteRenderer.ts) do not
-// need to change their import paths.
-export {
-  OPEN_AIR_SIDE_N,
-  OPEN_AIR_SIDE_E,
-  OPEN_AIR_SIDE_S,
-  OPEN_AIR_SIDE_W,
-  OPEN_AIR_ALL_SIDES,
-};
+// ── Image loading ─────────────────────────────────────────────────────────────
+
+/** Module-level cache of loaded HTMLImageElements. */
+const _imgCache = new Map<string, HTMLImageElement>();
+
+/** Loads an image URL (fire-and-forget); returns the same element on repeat calls. */
+function _loadImg(url: string): HTMLImageElement {
+  const hit = _imgCache.get(url);
+  if (hit !== undefined) return hit;
+  const img = new Image();
+  img.src = url;
+  _imgCache.set(url, img);
+  return img;
+}
+
+/** Returns true once an image has fully loaded and has non-zero dimensions. */
+function _isReady(img: HTMLImageElement): boolean {
+  return img.complete && img.naturalWidth > 0;
+}
 
 // ── Sprite generation cache ───────────────────────────────────────────────────
 
-/** Cache of fully generated (shaded) sprites keyed by a unique string. */
+/** Cache of fully generated sprites keyed by a unique string. */
 const _spriteCache = new Map<string, HTMLCanvasElement>();
-
-/**
- * Cache of cheap unshaded sprites for active-gameplay frames when baking is
- * forbidden.  Keyed by the same string as `_spriteCache` (variant bucket
- * included) but stored separately so shaded versions can later replace them.
- * Created with the same base+template compositing but without
- * `applyOrganicEdgeShading`, making them very cheap (no getImageData/putImageData).
- */
-const _unshadedSpriteCache = new Map<string, HTMLCanvasElement>();
-
-/**
- * Number of distinct noise variants per (baseUrl, templateUrl, size, mask, seed).
- * See folderBlockThemes.ts SHADED_VARIANT_BUCKETS for the same technique.
- * Bounds the cache to PROC_VARIANT_BUCKETS entries per unique (url, template,
- * mask) combination instead of one entry per tile coordinate.
- */
-const PROC_VARIANT_BUCKETS = 16;
 
 function _cacheKey(
   baseUrl: string,
@@ -75,12 +57,8 @@ function _cacheKey(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
-  openAirSidesMask: number,
-  variantBucket: number,
-  seed: number,
-  suppressEdgeShading: boolean,
 ): string {
-  return `${baseUrl}|${templateUrl}|${widthPx}|${heightPx}|${flipX ? 1 : 0}${flipY ? 1 : 0}${rotStep}|${openAirSidesMask}|${variantBucket}|${seed}|${suppressEdgeShading ? 'plain' : `v${EDGE_SHADING_VERSION}`}`;
+  return `${baseUrl}|${templateUrl}|${widthPx}|${heightPx}|${flipX ? 1 : 0}${flipY ? 1 : 0}${rotStep}`;
 }
 
 /**
@@ -89,9 +67,6 @@ function _cacheKey(
  *
  * The base texture is drawn upright.  Only the template mask is transformed so
  * the rock detail never rotates/flips while the cut shape does.
- *
- * @param applyShading  When true (default), calls `applyOrganicEdgeShading`.
- *                      Pass false for a cheap unshaded fallback canvas.
  */
 function _generateSprite(
   base: HTMLImageElement,
@@ -101,17 +76,11 @@ function _generateSprite(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
-  openAirSidesMask: number,
-  worldOriginXWorld: number,
-  worldOriginYWorld: number,
-  seed: number,
-  applyShading = true,
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width  = widthPx;
   canvas.height = heightPx;
   const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
 
   // Step 1: draw base texture (always upright, never transformed).
   ctx.drawImage(base, 0, 0, widthPx, heightPx);
@@ -132,12 +101,6 @@ function _generateSprite(
   }
   ctx.globalCompositeOperation = 'source-over';
 
-  // Step 3: optionally apply organic edge shading (shared with folder-based sprites).
-  // Skipped for cheap unshaded fallback canvases used during active gameplay.
-  if (applyShading) {
-    applyOrganicEdgeShading(ctx, widthPx, heightPx, openAirSidesMask, worldOriginXWorld, worldOriginYWorld, seed);
-  }
-
   return canvas;
 }
 
@@ -148,10 +111,6 @@ function _generateSprite(
  * or `null` when either image is not yet loaded.
  *
  * Once both images are loaded the result is generated and permanently cached.
- *
- * @param col  Optional tile column — used to compute a bounded variant bucket
- *             so the sprite cache stays O(variants) rather than O(room_tiles).
- * @param row  Optional tile row — same purpose as `col`.
  */
 export function getProceduralSprite(
   baseUrl: string,
@@ -161,72 +120,17 @@ export function getProceduralSprite(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
-  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
-  worldOriginXWorld: number = 0,
-  worldOriginYWorld: number = 0,
-  seed: number = 0,
-  col?: number,
-  row?: number,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
-  // Compute a bounded variant bucket to prevent per-tile cache explosion.
-  // When col/row are provided (all internal callers), use them directly.
-  // Otherwise approximate from world origin — useful for any external callers
-  // that don't have grid coordinates handy.
-  const colForBucket = col !== undefined ? col : Math.round(worldOriginXWorld / Math.max(widthPx, 1));
-  const rowForBucket = row !== undefined ? row : Math.round(worldOriginYWorld / Math.max(heightPx, 1));
-  const variantBucket = hashTilePosition(colForBucket, rowForBucket, seed) % PROC_VARIANT_BUCKETS;
-  // Representative world origin for this bucket — deterministic and bounded.
-  // Y is always 0 (only X axis carries the bucket variation to match folderBlockThemes.ts).
-  const bucketWorldX  = variantBucket * widthPx;
-  const bucketWorldY  = 0;
-
-  const key = _cacheKey(baseUrl, templateUrl, widthPx, heightPx, flipX, flipY, rotStep, openAirSidesMask, variantBucket, seed, suppressEdgeShading);
+  const key = _cacheKey(baseUrl, templateUrl, widthPx, heightPx, flipX, flipY, rotStep);
   const cached = _spriteCache.get(key);
   if (cached !== undefined) return cached;
 
-  const base     = loadImg(baseUrl);
-  const template = loadImg(templateUrl);
-  if (!isSpriteReady(base) || !isSpriteReady(template)) return null;
+  const base     = _loadImg(baseUrl);
+  const template = _loadImg(templateUrl);
+  if (!_isReady(base) || !_isReady(template)) return null;
 
-  if (suppressEdgeShading) {
-    const result = _generateSprite(
-      base, template, widthPx, heightPx,
-      flipX, flipY, rotStep, openAirSidesMask,
-      bucketWorldX, bucketWorldY, seed,
-      false,
-    );
-    _spriteCache.set(key, result);
-    return result;
-  }
-
-  // During active gameplay, baking new shaded sprites is forbidden to prevent
-  // unexpected getImageData/putImageData stalls.  Return a cheap unshaded
-  // fallback canvas — this is a stable non-null result so the chunk does NOT
-  // set hadFallbacksFlag and will NOT rebuild every frame.
-  if (FP.isBakeForbiddenInGameplay() || FP.isBakeBudgetExhausted()) {
-    if (!FP.isBakeForbiddenInGameplay()) FP.markBudgetExhaustedFallback();
-    const unshadedCached = _unshadedSpriteCache.get(key);
-    if (unshadedCached !== undefined) return unshadedCached;
-    const unshaded = _generateSprite(
-      base, template, widthPx, heightPx,
-      flipX, flipY, rotStep, openAirSidesMask,
-      bucketWorldX, bucketWorldY, seed,
-      /* applyShading */ false,
-    );
-    _unshadedSpriteCache.set(key, unshaded);
-    return unshaded;
-  }
-
-  const _t0 = import.meta.env.DEV ? performance.now() : 0;
-  const result = _generateSprite(
-    base, template, widthPx, heightPx,
-    flipX, flipY, rotStep, openAirSidesMask,
-    bucketWorldX, bucketWorldY, seed,
-    /* applyShading */ true,
-  );
+  const result = _generateSprite(base, template, widthPx, heightPx, flipX, flipY, rotStep);
   _spriteCache.set(key, result);
-  FP.recordSpriteBake(key, import.meta.env.DEV ? performance.now() - _t0 : 0);
   return result;
 }
 
@@ -278,8 +182,8 @@ function _getReadyUrls(probePool: readonly string[]): string[] {
   // Count how many pool images are currently loaded.
   let currentReadyCount = 0;
   for (let i = 0; i < probePool.length; i++) {
-    const img = loadImg(probePool[i]);
-    if (isSpriteReady(img)) currentReadyCount++;
+    const img = _loadImg(probePool[i]);
+    if (_isReady(img)) currentReadyCount++;
   }
 
   const entry = _readyUrlsByPool.get(probePool);
@@ -290,7 +194,7 @@ function _getReadyUrls(probePool: readonly string[]): string[] {
   // Rebuild the ready list.
   const urls: string[] = [];
   for (let i = 0; i < probePool.length; i++) {
-    if (isSpriteReady(loadImg(probePool[i]))) urls.push(probePool[i]);
+    if (_isReady(_loadImg(probePool[i]))) urls.push(probePool[i]);
   }
   _readyUrlsByPool.set(probePool, { urls, readyCount: currentReadyCount });
   return urls;
@@ -321,9 +225,7 @@ function _pickFromPool(probePool: readonly string[], hash: number): string | nul
 // ── Orientation helpers ───────────────────────────────────────────────────────
 
 /**
- * Returns the flip flags for a ramp or stairs orientation index.
- * Both shapes share this convention — their templates are authored in the
- * same base orientation (solid in the lower-right).
+ * Returns the flip flags for a ramp orientation index.
  *   0 = / rises right  → no flip (template default)
  *   1 = \ rises left   → flip horizontally
  *   2 = ⌐ ceiling      → flip vertically
@@ -371,15 +273,13 @@ export function getBlockSprite1x1(
   material: string,
   blockSizePx: number,
   seed: number,
-  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, false);
   if (pool.length === 0) return null;
   const hash    = hashTilePosition(col, row, seed);
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 block'], blockSizePx, blockSizePx, false, false, 0, openAirSidesMask, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 block'], blockSizePx, blockSizePx, false, false, 0);
 }
 
 /**
@@ -398,8 +298,6 @@ export function getBlockSprite2x2(
   material: string,
   blockSizePx: number,
   seed: number,
-  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, true);
   if (pool.length === 0) return null;
@@ -407,7 +305,7 @@ export function getBlockSprite2x2(
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
   const dim = blockSizePx * 2;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 block'], dim, dim, false, false, 0, openAirSidesMask, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 block'], dim, dim, false, false, 0);
 }
 
 /**
@@ -427,7 +325,6 @@ export function getPlatformSprite1x1(
   blockSizePx: number,
   platformEdge: number,
   seed: number,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, false);
   if (pool.length === 0) return null;
@@ -435,45 +332,8 @@ export function getPlatformSprite1x1(
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
   const [flipX, flipY, rotStep] = _platformEdgeToTransform(platformEdge);
-  // Platforms are always at the boundary of solid regions; use all-sides-open default.
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 platform'], blockSizePx, blockSizePx, flipX, flipY, rotStep, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 platform'], blockSizePx, blockSizePx, flipX, flipY, rotStep);
 }
-
-/**
- * Returns the procedural platform sprite for a 1×1 cell using an explicit
- * base sprite URL instead of a material probe pool.
- *
- * Used for folder-based themes where the sprite URL is already known (e.g.
- * discovered via `import.meta.glob`), bypassing the probe-pool mechanism.
- *
- * @param baseUrl      Direct URL of the base sprite image.
- * @param col          Tile column.
- * @param row          Tile row.
- * @param blockSizePx  Block size in virtual pixels.
- * @param platformEdge Platform edge index: 0=top, 1=bottom, 2=left, 3=right.
- * @param seed         Hash seed.
- */
-export function getPlatformSpriteFromBaseUrl(
-  baseUrl: string,
-  col: number,
-  row: number,
-  blockSizePx: number,
-  platformEdge: number,
-  seed: number,
-  suppressEdgeShading = false,
-): HTMLCanvasElement | null {
-  const [flipX, flipY, rotStep] = _platformEdgeToTransform(platformEdge);
-  return getProceduralSprite(
-    baseUrl, TEMPLATE_URLS['1x1 platform'],
-    blockSizePx, blockSizePx,
-    flipX, flipY, rotStep,
-    OPEN_AIR_ALL_SIDES,
-    col * blockSizePx, row * blockSizePx,
-    seed,
-    col, row, suppressEdgeShading,
-  );
-}
-
 
 /**
  * Returns the procedural sprite for a 2×2 platform cell (top-left coordinates).
@@ -492,7 +352,6 @@ export function getPlatformSprite2x2(
   blockSizePx: number,
   platformEdge: number,
   seed: number,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, true);
   if (pool.length === 0) return null;
@@ -501,64 +360,11 @@ export function getPlatformSprite2x2(
   if (baseUrl === null) return null;
   const [flipX, flipY, rotStep] = _platformEdgeToTransform(platformEdge);
   const dim = blockSizePx * 2;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 platform'], dim, dim, flipX, flipY, rotStep, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 platform'], dim, dim, flipX, flipY, rotStep);
 }
 
 /**
- * Returns the procedural sprite for a stairs wall.
- *
- * The stair mask is cut from the base texture by the same `destination-in`
- * template compositing every other shape uses, so transparent template pixels
- * never draw and the organic edge shading (which derives open air from the
- * canvas alpha channel) automatically highlights each individual step edge.
- *
- * @param col           Tile column of the stairs top-left corner.
- * @param row           Tile row of the stairs top-left corner.
- * @param widthBlocks   Stairs width in blocks (1 or 2).
- * @param heightBlocks  Stairs height in blocks (1 or 2).
- * @param orientation   Stairs orientation index (0–3), same convention as ramps.
- * @param material      Block material name.
- * @param blockSizePx   Block size in virtual pixels.
- * @param seed          Hash seed.
- */
-export function getStairsSprite(
-  col: number,
-  row: number,
-  widthBlocks: number,
-  heightBlocks: number,
-  orientation: number,
-  material: string,
-  blockSizePx: number,
-  seed: number,
-  suppressEdgeShading = false,
-): HTMLCanvasElement | null {
-  const use2x2Pool = widthBlocks >= 2 || heightBlocks >= 2;
-  const pool = getBaseSpriteProbePool(material, use2x2Pool);
-  if (pool.length === 0) return null;
-
-  const hash    = hashTilePosition(col, row, seed);
-  const baseUrl = _pickFromPool(pool, hash);
-  if (baseUrl === null) return null;
-
-  const widthPx  = widthBlocks  * blockSizePx;
-  const heightPx = heightBlocks * blockSizePx;
-
-  let shapeName: BlockShapeName;
-  if (widthBlocks === 1 && heightBlocks === 1) {
-    shapeName = '1x1 stairs';
-  } else if (widthBlocks === 2 && heightBlocks === 1) {
-    shapeName = '1x2 stairs';
-  } else {
-    shapeName = '2x2 stairs';
-  }
-
-  const [flipX, flipY] = _rampOriToFlips(orientation);
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS[shapeName], widthPx, heightPx, flipX, flipY, 0, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
-}
-
-/**
- * Returns the procedural sprite for a ramp wall.  LEGACY — ramps are retired
- * from editor placement; this keeps pre-existing rooms rendering.
+ * Returns the procedural sprite for a ramp wall.
  *
  * Base-pool selection:
  *   - 2×2 or 1×2 ramps use the 2×2 pool (wider texture detail).
@@ -582,7 +388,6 @@ export function getRampSprite(
   material: string,
   blockSizePx: number,
   seed: number,
-  suppressEdgeShading = false,
 ): HTMLCanvasElement | null {
   const use2x2Pool = widthBlocks >= 2 || heightBlocks >= 2;
   const pool = getBaseSpriteProbePool(material, use2x2Pool);
@@ -605,44 +410,5 @@ export function getRampSprite(
   }
 
   const [flipX, flipY] = _rampOriToFlips(orientation);
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS[shapeName], widthPx, heightPx, flipX, flipY, 0, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed, col, row, suppressEdgeShading);
-}
-
-// ── Derived-sprite prewarm helper ─────────────────────────────────────────────
-
-/**
- * Proactively warms the shaded procedural-sprite cache for one tile variant
- * during a loading or prewarm phase (baking is allowed).
- *
- * Calls `getProceduralSprite` directly so the shaded canvas is stored before
- * the player regains control, preventing first-touch stutter.
- *
- * Respects `isBakeBudgetExhausted()` — if the budget is gone this frame the
- * call is a no-op and returns `false`; the caller should retry next frame.
- *
- * @returns `true` when the variant was already cached or was successfully baked;
- *          `false` when the budget ran out and the bake was skipped.
- */
-export function prewarmProceduralSpriteVariant(
-  baseUrl:          string,
-  templateUrl:      string,
-  widthPx:          number,
-  heightPx:         number,
-  flipX:            boolean,
-  flipY:            boolean,
-  rotStep:          number,
-  openAirSidesMask: number,
-  col:              number,
-  row:              number,
-  seed:             number,
-): boolean {
-  if (FP.isBakeBudgetExhausted()) return false;
-  const result = getProceduralSprite(
-    baseUrl, templateUrl, widthPx, heightPx,
-    flipX, flipY, rotStep, openAirSidesMask,
-    col * widthPx, row * heightPx,
-    seed, col, row,
-  );
-  // A non-null result means the variant is (or was) cached.
-  return result !== null;
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS[shapeName], widthPx, heightPx, flipX, flipY, 0);
 }

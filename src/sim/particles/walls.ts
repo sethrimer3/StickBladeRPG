@@ -32,13 +32,6 @@ const WALL_BOUNCE_MARGIN_WORLD = 5.0;
 /** Fraction of perpendicular velocity retained after a bounce. */
 const WALL_BOUNCE_DAMPING = 0.60;
 
-/**
- * Fraction of perpendicular velocity retained after a bounce for unowned
- * released grapple motes (ParticleKind.Gold, ownerEntityId === -1). Distinct
- * from WALL_BOUNCE_DAMPING so ordinary particles are unaffected.
- */
-const GRAPPLE_RELEASE_BOUNCE_DAMPING = 0.50;
-
 /** Speed (world/s) at which Stone triggers a shatter event on wall impact. */
 const STONE_SHATTER_SPEED_WORLD = 120.0;
 /** Lifetime (ticks) for spawned stone shards — kept short to flag them as transient. */
@@ -65,14 +58,9 @@ export function applyWallForces(world: WorldState): void {
   for (let i = 0; i < particleCount; i++) {
     if (isAliveFlag[i] === 0) continue;
 
-    // Unowned Golden (floor dust) particles skip soft repulsion forces —
+    // Unowned Physical (floor dust) particles skip soft repulsion forces —
     // they rely on settleFloorDust for hard surface snapping instead.
-    if (ownerEntityId[i] === -1 && kindBuffer[i] === ParticleKind.Golden) continue;
-
-    // Unowned Gold particles are released grapple motes: they must travel
-    // freely with no pre-contact wall repulsion, then reflect only on actual
-    // surface contact via applyWallBounce's dedicated damping below.
-    if (ownerEntityId[i] === -1 && kindBuffer[i] === ParticleKind.Gold) continue;
+    if (ownerEntityId[i] === -1 && kindBuffer[i] === ParticleKind.Physical) continue;
 
     const px = positionXWorld[i];
     const py = positionYWorld[i];
@@ -191,14 +179,8 @@ export function applyWallBounce(world: WorldState): void {
       const reflectedVx = vx - 2.0 * vDotN * nx;
       const reflectedVy = vy - 2.0 * vDotN * ny;
 
-      // Released grapple motes (unowned Gold) retain exactly 50% of their
-      // reflected speed instead of the generic 60% used by other particles.
-      const bounceDamping = (ownerEntityId[i] === -1 && kindBuffer[i] === ParticleKind.Gold)
-        ? GRAPPLE_RELEASE_BOUNCE_DAMPING
-        : WALL_BOUNCE_DAMPING;
-
-      velocityXWorld[i] = reflectedVx * bounceDamping;
-      velocityYWorld[i] = reflectedVy * bounceDamping;
+      velocityXWorld[i] = reflectedVx * WALL_BOUNCE_DAMPING;
+      velocityYWorld[i] = reflectedVy * WALL_BOUNCE_DAMPING;
 
       // Push position just outside the bounce margin to prevent re-triggering
       positionXWorld[i] = clampedX + nx * (WALL_BOUNCE_MARGIN_WORLD + 0.5);
@@ -329,7 +311,7 @@ const FLOOR_DUST_REST_OFFSET_WORLD = 1.0;
 const FLOOR_DUST_HORIZONTAL_DAMP = 0.88;
 
 /**
- * Hard floor-settle pass for unowned Golden (gold dust pile) particles —
+ * Hard floor-settle pass for unowned Physical (gold dust pile) particles —
  * step 6.8 of the tick pipeline, after wall bounce.
  *
  * These particles skip the soft wall-repulsion forces (applyWallForces) so
@@ -353,7 +335,7 @@ export function settleFloorDust(world: WorldState): void {
   for (let i = 0; i < particleCount; i++) {
     if (isAliveFlag[i] === 0) continue;
     if (ownerEntityId[i] !== -1) continue;
-    if (kindBuffer[i] !== ParticleKind.Golden) continue;
+    if (kindBuffer[i] !== ParticleKind.Physical) continue;
 
     const px = positionXWorld[i];
     const py = positionYWorld[i];

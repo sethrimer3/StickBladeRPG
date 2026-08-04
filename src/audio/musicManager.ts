@@ -15,8 +15,6 @@
  *   mgr.dispose();
  */
 
-import { resolveMusicAssetUrl, type ConcreteSongId } from './musicCatalog';
-
 /** Special sentinels plus the real song IDs. */
 export type RoomSongId =
   | '_continue'
@@ -35,17 +33,20 @@ export const SONG_DISPLAY_NAMES: Readonly<Record<RoomSongId, string>> = {
 };
 
 /** Ordered list of concrete (non-sentinel) song IDs, for building dropdowns. */
-export const AVAILABLE_SONGS: readonly ConcreteSongId[] = [
+export const AVAILABLE_SONGS: readonly RoomSongId[] = [
   'rainWindAtmosphere',
   'thoughtfulLevel',
   'titleMenu',
 ];
 
-const DEFAULT_GAMEPLAY_SONG_ID = 'thoughtfulLevel';
-
 // ── Internal constants ────────────────────────────────────────────────────────
 
-export { MUSIC_ASSET_PATHS, resolveMusicAssetUrl } from './musicCatalog';
+/** Relative path to each song inside ASSETS/MUSIC/. */
+const SONG_FILE: Readonly<Record<string, string>> = {
+  rainWindAtmosphere: 'MUSIC/rainWindAtmosphere.mp3',
+  thoughtfulLevel:    'MUSIC/thoughtfulLevel.mp3',
+  titleMenu:          'MUSIC/titleMenu.mp3',
+};
 
 /** Duration of the room-to-room crossfade in milliseconds. */
 const CROSSFADE_ROOM_MS = 4000;
@@ -109,26 +110,9 @@ export class MusicManager {
 
   private rafId: number | null = null;
   private isDisposed = false;
-  private readonly warnedFailures = new Set<string>();
-  private readonly retryOnGesture = () => this.retryPlayback();
-  private readonly onVisibilityChange = () => {
-    // rAF is throttled/suspended while the tab is hidden (e.g. the player
-    // switched to another fullscreen app and back), but HTMLAudioElements
-    // keep playing regardless. Without this, an in-progress crossfade would
-    // resume on a single rAF tick with a huge elapsed time, snapping the
-    // outgoing track's volume to 0 far too late — audible as two tracks
-    // playing simultaneously with a large offset. Force-finish any
-    // in-progress crossfade immediately when hidden so no audio element is
-    // left playing unsupervised.
-    if (document.hidden) this.finishTransitionsImmediately();
-  };
 
   constructor(base: string) {
     this.base = base;
-    window.addEventListener('pointerdown', this.retryOnGesture);
-    window.addEventListener('keydown', this.retryOnGesture);
-    window.addEventListener('touchstart', this.retryOnGesture);
-    document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -142,10 +126,7 @@ export class MusicManager {
     if (this.isDisposed) return;
 
     if (songId === '_continue') {
-      if (this.activeSongId === null) {
-        this.beginCrossfade(DEFAULT_GAMEPLAY_SONG_ID);
-      }
-      // Keep playing whatever is already playing.
+      // Keep playing whatever is already playing — do nothing.
       return;
     }
 
@@ -170,10 +151,6 @@ export class MusicManager {
   dispose(): void {
     if (this.isDisposed) return;
     this.isDisposed = true;
-    window.removeEventListener('pointerdown', this.retryOnGesture);
-    window.removeEventListener('keydown', this.retryOnGesture);
-    window.removeEventListener('touchstart', this.retryOnGesture);
-    document.removeEventListener('visibilitychange', this.onVisibilityChange);
 
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
@@ -216,7 +193,7 @@ export class MusicManager {
       this.primaryAudio = audio;
       this.primaryGain = 0;
       audio.volume = 0;
-      this.playAudio(audio, newSongId);
+      audio.play().catch(() => { /* autoplay may be blocked */ });
     } else {
       this.primaryAudio = null;
       this.primaryGain = 0;
@@ -253,20 +230,17 @@ export class MusicManager {
     const nextAudio = this.createAudio(songId);
     this.loopNextAudio = nextAudio;
     nextAudio.volume = 0;
-    this.playAudio(nextAudio, songId);
+    nextAudio.play().catch(() => {});
 
     this.scheduleUpdate();
   }
 
   /** Allocate and configure a new HTMLAudioElement for the given song. */
   private createAudio(songId: string): HTMLAudioElement {
-    const url = resolveMusicAssetUrl(this.base, songId as ConcreteSongId);
+    const url = this.base + (SONG_FILE[songId] ?? '');
     const audio = new Audio(url);
     audio.loop = false; // Looping is managed manually so we can crossfade.
     audio.volume = 0;
-    audio.addEventListener('error', () => {
-      this.warnOnce(songId, url, 'media load', audio.error ?? 'unknown media error');
-    }, { once: true });
 
     // Monitor progress so we can trigger the loop crossfade before it ends.
     const onTimeUpdate = () => {
@@ -297,28 +271,10 @@ export class MusicManager {
       if (this.isLoopCrossfading) return;
       // Restart immediately without a crossfade as a fallback.
       audio.currentTime = 0;
-      this.playAudio(audio, songId);
+      audio.play().catch(() => {});
     });
 
     return audio;
-  }
-
-  private playAudio(audio: HTMLAudioElement, songId: string): void {
-    const url = resolveMusicAssetUrl(this.base, songId as ConcreteSongId);
-    audio.play().catch((reason: unknown) => this.warnOnce(songId, url, 'playback', reason));
-  }
-
-  private retryPlayback(): void {
-    if (this.isDisposed || this.activeSongId === null) return;
-    if (this.primaryAudio?.paused) this.playAudio(this.primaryAudio, this.activeSongId);
-    if (this.loopNextAudio?.paused) this.playAudio(this.loopNextAudio, this.activeSongId);
-  }
-
-  private warnOnce(songId: string, url: string, kind: string, reason: unknown): void {
-    const key = `${kind}:${songId}:${url}`;
-    if (this.warnedFailures.has(key)) return;
-    this.warnedFailures.add(key);
-    console.warn(`[MusicManager] ${kind} failed for "${songId}" (${url}):`, reason);
   }
 
   /** Pause an audio element and clear its src to free memory. */
@@ -340,38 +296,6 @@ export class MusicManager {
       const elapsedMs = performance.now() - this.loopCrossfadeStartMs;
       const t = Math.min(elapsedMs / CROSSFADE_LOOP_MS, 1);
       this.loopNextAudio.volume = Math.max(0, Math.min(1, t * this.primaryGain * this.targetVolume));
-    }
-  }
-
-  /**
-   * Immediately snap any in-progress room/loop crossfade to completion,
-   * stopping whichever audio element(s) would otherwise be left fading out
-   * or silently fading in. Used when the tab is about to be backgrounded,
-   * since rAF (which normally drives the fade) stalls while hidden.
-   */
-  private finishTransitionsImmediately(): void {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    if (this.isCrossfading) {
-      this.isCrossfading = false;
-      this.primaryGain = 1;
-      if (this.fadingAudio !== null) {
-        this.stopAudio(this.fadingAudio);
-        this.fadingAudio = null;
-      }
-    }
-    if (this.isLoopCrossfading && this.loopNextAudio !== null) {
-      this.isLoopCrossfading = false;
-      this.stopAudio(this.primaryAudio);
-      this.primaryAudio = this.loopNextAudio;
-      this.loopNextAudio = null;
-      this.primaryGain = 1;
-    }
-    this.applyVolumes();
-    if (this.primaryAudio !== null) {
-      this.primaryAudio.volume = Math.max(0, Math.min(1, this.targetVolume));
     }
   }
 

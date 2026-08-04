@@ -1,11 +1,9 @@
 /**
  * Loadout tab for the Skill Tomb menu.
  *
- * Full layout:
- *   - Stats bar (HP + Dust Containers) — top
- *   - Three-column main area: WEAVES | MOTE TYPES | INVENTORY
- *
- * Returns a cleanup function that cancels all requestAnimationFrame loops.
+ * Simplified: shows the player's available dust list and shape preview.
+ * Weave selection dropdowns have been removed — Storm and Shield are
+ * the only weaves.
  */
 
 import { ParticleKind, EQUIPPABLE_KINDS } from '../sim/particles/kinds';
@@ -13,620 +11,105 @@ import {
   PlayerWeaveLoadout,
 } from '../sim/weaves/playerLoadout';
 import { getDustDefinition } from '../sim/weaves/dustDefinition';
-import {
-  WEAVE_LIST,
-  WEAVE_STORM,
-  getWeaveDefinition,
-  WeaveId,
-} from '../sim/weaves/weaveDefinition';
-import { PlayerProgress } from '../progression/playerProgress';
 import { GOLD } from './skillTombShared';
-import { startDustContainerCanvasAnimation, getShardContainerImg } from '../render/hud/dustContainerAnimation';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Shape preview ─────────────────────────────────────────────────────────────
 
-const CARD_BG = '#0d0d1a';
-const BOX_BORDER = '1px solid rgba(212,168,75,0.25)';
-const COL_BORDER = '1px solid rgba(212,168,75,0.2)';
-const PASSIVE_GOLD = 'rgba(212,168,75,0.65)';
-/** Number of dust container pieces required to forge one container. */
-const PIECES_PER_CONTAINER = 4;
-/** Expected frame duration at 60 FPS (milliseconds), used to normalise animation speed. */
-const TARGET_FRAME_MS = 16.67;
-
-// ── Passive weave detection ────────────────────────────────────────────────────
-
-/**
- * Returns true if the weave is considered passive (always active, not manually activated).
- * Storm Weave qualifies by definition (dustSlotCapacity=0, durationTicks=0, cooldownTicks=0).
- * The grapple weave (id='grapple') is also treated as passive for future-proofing.
- */
-function isPassiveWeave(weaveId: WeaveId): boolean {
-  if (weaveId === 'grapple') return true;
-  const def = getWeaveDefinition(weaveId);
-  return def.dustSlotCapacity === 0 && def.durationTicks === 0 && def.cooldownTicks === 0;
-}
-
-// ── Column box helper ─────────────────────────────────────────────────────────
-
-function createColBox(title: string): { box: HTMLElement; body: HTMLElement } {
-  const box = document.createElement('div');
-  box.style.cssText = `
-    border: ${COL_BORDER}; border-radius: 8px; padding: 12px;
-    background: rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 8px;
-    min-width: 0;
-  `;
-  const label = document.createElement('div');
-  label.style.cssText = `
-    font-size: 0.8rem; letter-spacing: 0.1em; color: ${GOLD};
-    font-family: 'Cinzel', serif; font-weight: 400;
-    text-transform: uppercase; text-align: center; margin-bottom: 2px;
-  `;
-  label.textContent = title;
-  box.appendChild(label);
-  const body = document.createElement('div');
-  body.style.cssText = 'display: flex; flex-direction: column; gap: 8px; flex: 1;';
-  box.appendChild(body);
-  return { box, body };
-}
-
-// ── Stats bar ─────────────────────────────────────────────────────────────────
-
-function buildStatsBar(
-  playerHp: number,
-  playerMaxHp: number,
-  dustContainerCount: number,
-  dustContainerPieces: number,
-  cleanups: Array<() => void>,
-): HTMLElement {
-  const bar = document.createElement('div');
-  bar.style.cssText = `
-    display: flex; gap: 12px; margin-bottom: 14px;
-    flex-wrap: wrap;
-  `;
-
-  // ── HP Box ──────────────────────────────────────────────────────────────
-  const hpBox = document.createElement('div');
-  hpBox.style.cssText = `
-    border: ${BOX_BORDER}; border-radius: 8px; padding: 10px 14px;
-    background: ${CARD_BG}; min-width: 140px; flex: 1;
-  `;
-
-  const hpTitle = document.createElement('div');
-  hpTitle.style.cssText = `color: ${GOLD}; font-size: 0.8rem; letter-spacing: 0.1em;
-    font-family: 'Cinzel', serif; font-weight: 400; text-transform: uppercase;
-    margin-bottom: 6px; text-align: center;`;
-  hpTitle.textContent = 'HP';
-  hpBox.appendChild(hpTitle);
-
-  const hpValue = document.createElement('div');
-  hpValue.style.cssText = `color: #eee; font-size: 1rem; font-family: 'Cinzel', serif;
-    font-weight: 400; text-align: center; margin-bottom: 6px;`;
-  hpValue.textContent = `${playerHp} / ${playerMaxHp}`;
-  hpBox.appendChild(hpValue);
-
-  const hpTrack = document.createElement('div');
-  hpTrack.style.cssText = `background: #1a1a2e; border-radius: 4px; height: 8px;
-    overflow: hidden; border: 1px solid rgba(212,168,75,0.2);`;
-  const hpFill = document.createElement('div');
-  const hpPct = playerMaxHp > 0 ? Math.max(0, Math.min(1, playerHp / playerMaxHp)) : 0;
-  hpFill.style.cssText = `height: 100%; background: #5cb85c;
-    width: ${(hpPct * 100).toFixed(1)}%; border-radius: 4px; transition: width 0.2s;`;
-  hpTrack.appendChild(hpFill);
-  hpBox.appendChild(hpTrack);
-
-  bar.appendChild(hpBox);
-
-  // ── Dust Containers Box ─────────────────────────────────────────────────
-  const dcBox = document.createElement('div');
-  dcBox.style.cssText = `
-    border: ${BOX_BORDER}; border-radius: 8px; padding: 10px 14px;
-    background: ${CARD_BG}; flex: 2; min-width: 180px;
-  `;
-
-  const dcTitle = document.createElement('div');
-  dcTitle.style.cssText = `color: ${GOLD}; font-size: 0.8rem; letter-spacing: 0.1em;
-    font-family: 'Cinzel', serif; font-weight: 400; text-transform: uppercase;
-    margin-bottom: 6px; text-align: center;`;
-  dcTitle.textContent = 'Dust Containers';
-  dcBox.appendChild(dcTitle);
-
-  // Container icons row
-  const containerRow = document.createElement('div');
-  containerRow.style.cssText = 'display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px;';
-
-  for (let i = 0; i < dustContainerCount; i++) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 30;
-    canvas.height = 33;
-    canvas.style.cssText = 'width: 20px; height: 22px; image-rendering: pixelated; margin-right: 4px;';
-    canvas.title = `Container ${i + 1} (+4 Mote Slots)`;
-    containerRow.appendChild(canvas);
-    cleanups.push(startDustContainerCanvasAnimation(canvas, true, i));
-  }
-
-  if (dustContainerCount === 0 && dustContainerPieces === 0) {
-    const none = document.createElement('span');
-    none.style.cssText = 'color: #555; font-size: 0.75rem; font-family: \'Cinzel\', serif; font-style: italic;';
-    none.textContent = 'None';
-    containerRow.appendChild(none);
-  }
-
-  dcBox.appendChild(containerRow);
-
-  // Pieces sub-row (0–3 pieces)
-  const piecesRow = document.createElement('div');
-  piecesRow.style.cssText = 'display: flex; gap: 3px; align-items: center;';
-
-  const piecesLabel = document.createElement('span');
-  piecesLabel.style.cssText = 'color: #888; font-size: 0.72rem; font-family: \'Cinzel\', serif; margin-right: 4px;';
-  piecesLabel.textContent = 'Shards:';
-  piecesRow.appendChild(piecesLabel);
-
-  const shardImg = getShardContainerImg(dustContainerPieces).cloneNode() as HTMLImageElement;
-  shardImg.style.cssText = 'width: 20px; height: 22px; image-rendering: pixelated; margin-right: 4px;';
-  shardImg.title = `${dustContainerPieces} / ${PIECES_PER_CONTAINER} Shards collected`;
-  piecesRow.appendChild(shardImg);
-
-  const piecesCount = document.createElement('span');
-  piecesCount.style.cssText = 'color: #888; font-size: 0.7rem; font-family: \'Cinzel\', serif; margin-left: 4px;';
-  piecesCount.textContent = `(${dustContainerPieces}/${PIECES_PER_CONTAINER} — ${PIECES_PER_CONTAINER - dustContainerPieces} until next)`;
-  piecesRow.appendChild(piecesCount);
-
-  dcBox.appendChild(piecesRow);
-
-  bar.appendChild(dcBox);
-  return bar;
-}
-
-// ── Weave card animation ─────────────────────────────────────────────────────
-
-function startStormAnimation(canvas: HTMLCanvasElement): () => void {
-  const ctxOrNull = canvas.getContext('2d');
-  if (ctxOrNull === null) return () => { /* no-op */ };
-  const ctx = ctxOrNull;
-
+function drawShapePreview(canvas: HTMLCanvasElement, kind: ParticleKind, colorHex: string): void {
+  const ctx = canvas.getContext('2d');
+  if (ctx === null) return;
   const w = canvas.width;
   const h = canvas.height;
   const cx = w / 2;
   const cy = h / 2;
-  const COUNT = 8;
+  const r = Math.min(w, h) * 0.35;
 
-  // Pre-define particle data — fixed arrays, no allocation per frame
-  const radii    = new Float32Array(COUNT);
-  const angles   = new Float32Array(COUNT);
-  const speeds   = new Float32Array(COUNT);
-  const sizes    = new Float32Array(COUNT);
-  const noiseOff = new Float32Array(COUNT);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = colorHex;
+  ctx.strokeStyle = colorHex;
+  ctx.lineWidth = 1.5;
 
-  for (let i = 0; i < COUNT; i++) {
-    radii[i]    = 8 + (i % 3) * 6 + Math.sin(i * 1.3) * 3;
-    angles[i]   = (i / COUNT) * Math.PI * 2;
-    speeds[i]   = 0.025 + (i % 4) * 0.008;
-    sizes[i]    = 2 + (i % 2);
-    noiseOff[i] = i * 0.7;
-  }
-
-  let rafId = 0;
-  let tMs = 0;
-  let lastTs = 0;
-
-  function frame(ts: number): void {
-    const dtMs = lastTs === 0 ? 0 : ts - lastTs;
-    lastTs = ts;
-    tMs += dtMs;
-
-    ctx.clearRect(0, 0, w, h);
-
-    for (let i = 0; i < COUNT; i++) {
-      angles[i] += speeds[i] * (dtMs / TARGET_FRAME_MS);
-      const noise = Math.sin(tMs * 0.001 + noiseOff[i]) * 2;
-      const px = cx + Math.cos(angles[i]) * (radii[i] + noise);
-      const py = cy + Math.sin(angles[i]) * (radii[i] + noise);
-      const s = sizes[i];
-      ctx.fillStyle = GOLD;
-      ctx.globalAlpha = 0.75 + Math.sin(tMs * 0.002 + noiseOff[i]) * 0.25;
-      ctx.fillRect(px - s / 2, py - s / 2, s, s);
-    }
-    ctx.globalAlpha = 1;
-
-    rafId = requestAnimationFrame(frame);
-  }
-
-  rafId = requestAnimationFrame(frame);
-  return () => { cancelAnimationFrame(rafId); };
-}
-
-function startShieldAnimation(canvas: HTMLCanvasElement): () => void {
-  const ctxOrNull = canvas.getContext('2d');
-  if (ctxOrNull === null) return () => { /* no-op */ };
-  const ctx = ctxOrNull;
-
-  const w = canvas.width;
-  const h = canvas.height;
-  const cx = w / 2;
-  const cy = h / 2;
-  const COUNT = 9;
-  const ARC_HALF = Math.PI * 0.45; // ~81° each side of center
-  const BASE_RADIUS = Math.min(w, h) * 0.36;
-
-  // Particle angles spread evenly across the crescent arc (right-facing)
-  const baseAngles = new Float32Array(COUNT);
-  const pulseOff   = new Float32Array(COUNT);
-  for (let i = 0; i < COUNT; i++) {
-    baseAngles[i] = -ARC_HALF + (i / (COUNT - 1)) * ARC_HALF * 2;
-    pulseOff[i]   = i * 0.55;
-  }
-
-  let rafId = 0;
-  let tMs = 0;
-  let lastTs = 0;
-
-  function frame(ts: number): void {
-    const dtMs = lastTs === 0 ? 0 : ts - lastTs;
-    lastTs = ts;
-    tMs += dtMs;
-
-    ctx.clearRect(0, 0, w, h);
-
-    for (let i = 0; i < COUNT; i++) {
-      const pulse = Math.sin(tMs * 0.0015 + pulseOff[i]) * 3;
-      const r = BASE_RADIUS + pulse;
-      const ang = baseAngles[i]; // centered facing right (0 = right)
-      const px = cx + Math.cos(ang) * r;
-      const py = cy + Math.sin(ang) * r;
-      const alpha = 0.55 + Math.sin(tMs * 0.002 + pulseOff[i]) * 0.35;
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#80c8ff';
+  switch (kind) {
+    case ParticleKind.Physical:
+      // Square gold dust mote
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      break;
+    default:
       ctx.beginPath();
-      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    rafId = requestAnimationFrame(frame);
   }
-
-  rafId = requestAnimationFrame(frame);
-  return () => { cancelAnimationFrame(rafId); };
-}
-
-function startGenericAnimation(canvas: HTMLCanvasElement): () => void {
-  const ctxOrNull = canvas.getContext('2d');
-  if (ctxOrNull === null) return () => { /* no-op */ };
-  const ctx = ctxOrNull;
-
-  const w = canvas.width;
-  const h = canvas.height;
-  const cx = w / 2;
-  const cy = h / 2;
-  const COUNT = 6;
-  const angles = new Float32Array(COUNT);
-  for (let i = 0; i < COUNT; i++) angles[i] = (i / COUNT) * Math.PI * 2;
-
-  let rafId = 0;
-  let lastTs = 0;
-
-  function frame(ts: number): void {
-    const dtMs = lastTs === 0 ? 0 : ts - lastTs;
-    lastTs = ts;
-    ctx.clearRect(0, 0, w, h);
-    for (let i = 0; i < COUNT; i++) {
-      angles[i] += 0.02 * (dtMs / TARGET_FRAME_MS);
-      const px = cx + Math.cos(angles[i]) * 14;
-      const py = cy + Math.sin(angles[i]) * 14;
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = GOLD;
-      ctx.beginPath();
-      ctx.arc(px, py, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    rafId = requestAnimationFrame(frame);
-  }
-
-  rafId = requestAnimationFrame(frame);
-  return () => { cancelAnimationFrame(rafId); };
-}
-
-// ── Weave column ─────────────────────────────────────────────────────────────
-
-function buildWeavesColumn(
-  weaveLoadout: PlayerWeaveLoadout,
-  progress: PlayerProgress,
-  cleanups: Array<() => void>,
-): HTMLElement {
-  const { box, body } = createColBox('Weaves');
-
-  for (let wi = 0; wi < WEAVE_LIST.length; wi++) {
-    const weaveId = WEAVE_LIST[wi];
-    const def = getWeaveDefinition(weaveId);
-    const isPassive = isPassiveWeave(weaveId);
-
-    // Is this weave equipped in primary or secondary?
-    const isEquipped =
-      weaveLoadout.primary.weaveId === weaveId ||
-      weaveLoadout.secondary.weaveId === weaveId;
-
-    // ── Card ──────────────────────────────────────────────────────────────
-    const card = document.createElement('div');
-    card.style.cssText = `
-      border: 1px solid rgba(212,168,75,0.2); border-radius: 6px;
-      padding: 8px; background: ${CARD_BG}; display: flex; flex-direction: column;
-      align-items: center; gap: 6px;
-    `;
-
-    // Name
-    const nameEl = document.createElement('div');
-    nameEl.style.cssText = `color: ${GOLD}; font-size: 0.82rem; font-family: 'Cinzel', serif;
-      font-weight: 400; text-align: center;`;
-    nameEl.textContent = def.displayName;
-    card.appendChild(nameEl);
-
-    // Animated preview canvas
-    const previewCanvas = document.createElement('canvas');
-    previewCanvas.width = 72;
-    previewCanvas.height = 72;
-    previewCanvas.style.cssText = 'border-radius: 4px; background: #070710;';
-    card.appendChild(previewCanvas);
-
-    // Start animation
-    if (weaveId === WEAVE_STORM) {
-      cleanups.push(startStormAnimation(previewCanvas));
-    } else if (weaveId === 'shield') {
-      cleanups.push(startShieldAnimation(previewCanvas));
-    } else {
-      cleanups.push(startGenericAnimation(previewCanvas));
-    }
-
-    // Status badge
-    const badge = document.createElement('div');
-
-    function updateBadge(): void {
-      const curDisabled = progress.disabledPassiveWeaves.includes(weaveId);
-      if (!isPassive && isEquipped) {
-        badge.textContent = 'EQUIPPED';
-        badge.style.cssText = `
-          font-size: 0.7rem; font-family: 'Cinzel', serif; font-weight: 400;
-          border: 1px solid ${GOLD}; color: ${GOLD}; border-radius: 4px;
-          padding: 2px 8px; cursor: default;
-        `;
-      } else if (isPassive && !curDisabled) {
-        badge.textContent = 'PASSIVE';
-        badge.style.cssText = `
-          font-size: 0.7rem; font-family: 'Cinzel', serif; font-weight: 400;
-          border: 1px solid ${PASSIVE_GOLD}; color: ${PASSIVE_GOLD}; border-radius: 4px;
-          padding: 2px 8px; cursor: pointer; user-select: none;
-        `;
-      } else if (isPassive && curDisabled) {
-        badge.textContent = 'DISABLED';
-        badge.style.cssText = `
-          font-size: 0.7rem; font-family: 'Cinzel', serif; font-weight: 400;
-          border: 1px solid #555; color: #cc4444; border-radius: 4px;
-          padding: 2px 8px; cursor: pointer; user-select: none;
-        `;
-      } else {
-        badge.textContent = '—';
-        badge.style.cssText = `
-          font-size: 0.7rem; font-family: 'Cinzel', serif; font-weight: 400;
-          color: #555; padding: 2px 8px;
-        `;
-      }
-    }
-
-    updateBadge();
-
-    if (isPassive) {
-      badge.addEventListener('click', () => {
-        const idx = progress.disabledPassiveWeaves.indexOf(weaveId);
-        if (idx === -1) {
-          progress.disabledPassiveWeaves.push(weaveId);
-        } else {
-          progress.disabledPassiveWeaves.splice(idx, 1);
-        }
-        updateBadge();
-      });
-    }
-
-    card.appendChild(badge);
-    body.appendChild(card);
-  }
-
-  return box;
-}
-
-// ── Mote types column ─────────────────────────────────────────────────────────
-
-function buildMoteTypesColumn(progress: PlayerProgress): HTMLElement {
-  const { box, body } = createColBox('Mote Types');
-
-  const unlockedKinds = new Set(progress.unlockedDustKinds);
-  const kinds: readonly ParticleKind[] = progress.isDevModeDustUnlocked
-    ? EQUIPPABLE_KINDS
-    : EQUIPPABLE_KINDS.filter(kind => unlockedKinds.has(kind));
-
-  if (kinds.length === 0) {
-    const msg = document.createElement('p');
-    msg.style.cssText = `color: #555; font-size: 0.75rem; font-style: italic;
-      text-align: center; font-family: 'Cinzel', serif; font-weight: 400; margin: 8px 0;`;
-    msg.textContent = 'No dust types available.';
-    body.appendChild(msg);
-    return box;
-  }
-
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;';
-  body.appendChild(grid);
-
-  for (let k = 0; k < kinds.length; k++) {
-    const kind = kinds[k];
-    const dustDef = getDustDefinition(kind);
-    const dustDisplayName = dustDef.nickname
-      ? `${dustDef.displayName} — “${dustDef.nickname}”`
-      : dustDef.displayName;
-
-    const tile = document.createElement('div');
-    tile.style.cssText = `
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      padding: 6px; border-radius: 6px; background: ${CARD_BG};
-      border: 2px solid ${dustDef.colorHex}44; width: 70px;
-    `;
-
-    if (dustDef.spriteUrl !== undefined && dustDef.spriteUrl.length > 0) {
-      const img = document.createElement('img');
-      img.src = dustDef.spriteUrl;
-      img.style.cssText = 'width: 36px; height: 39.6px; image-rendering: pixelated; flex-shrink: 0; margin-bottom: 2px;';
-      tile.appendChild(img);
-    } else {
-      const colorSquare = document.createElement('div');
-      colorSquare.style.cssText = `
-        width: 36px; height: 36px; border-radius: 4px;
-        background: ${dustDef.colorHex}; flex-shrink: 0;
-      `;
-      tile.appendChild(colorSquare);
-    }
-
-    const nameLbl = document.createElement('div');
-    nameLbl.style.cssText = `color: ${dustDef.colorHex}; font-size: 0.65rem;
-      font-family: 'Cinzel', serif; font-weight: 400; text-align: center; word-break: break-word;`;
-    nameLbl.textContent = dustDisplayName;
-    tile.appendChild(nameLbl);
-
-    const slotBadge = document.createElement('div');
-    slotBadge.style.cssText = `background: #1a1a2e; border: 1px solid #444; border-radius: 3px;
-      padding: 1px 5px; font-size: 0.65rem; color: #ccc; font-family: 'Cinzel', serif;`;
-    slotBadge.textContent = `${dustDef.slotCost} slot${dustDef.slotCost !== 1 ? 's' : ''}`;
-    tile.appendChild(slotBadge);
-
-    grid.appendChild(tile);
-  }
-
-  return box;
-}
-
-// ── Inventory column ────────────────────────────────────────────────────────
-
-function buildInventoryColumn(progress: PlayerProgress, cleanups: Array<() => void>): HTMLElement {
-  const { box, body } = createColBox('Inventory');
-
-  const grid = document.createElement('div');
-  grid.style.cssText = 'display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%;';
-  body.appendChild(grid);
-
-  const containerCount = progress.dustContainerCount ?? 0;
-  const shardCount = progress.dustContainerPieces ?? 0;
-
-  if (containerCount === 0 && shardCount === 0) {
-    const emptyMsg = document.createElement('div');
-    emptyMsg.style.cssText = `color: #555; font-size: 0.75rem; font-style: italic;
-      text-align: center; font-family: 'Cinzel', serif; font-weight: 400; margin: 16px 0;`;
-    emptyMsg.textContent = 'No dust containers collected yet.';
-    grid.appendChild(emptyMsg);
-    return box;
-  }
-
-  // Shard Container item card
-  const shardCard = document.createElement('div');
-  shardCard.style.cssText = `
-    display: flex; align-items: center; gap: 12px; width: 100%; max-width: 260px;
-    padding: 10px 14px; border-radius: 6px; background: ${CARD_BG};
-    border: ${BOX_BORDER}; box-sizing: border-box;
-  `;
-  const shardImg = getShardContainerImg(shardCount).cloneNode() as HTMLImageElement;
-  shardImg.style.cssText = 'width: 30px; height: 33px; image-rendering: pixelated; flex-shrink: 0;';
-  shardCard.appendChild(shardImg);
-
-  const shardInfo = document.createElement('div');
-  shardInfo.style.cssText = 'flex: 1;';
-  const shardTitle = document.createElement('div');
-  shardTitle.style.cssText = `color: ${GOLD}; font-size: 0.82rem; font-family: 'Cinzel', serif; font-weight: bold; margin-bottom: 2px;`;
-  shardTitle.textContent = 'Shard Container';
-  const shardSubtitle = document.createElement('div');
-  shardSubtitle.style.cssText = 'color: #aaa; font-size: 0.72rem; font-family: ' + "'Cinzel', serif;";
-  shardSubtitle.textContent = `${shardCount} / ${PIECES_PER_CONTAINER} Shards`;
-  shardInfo.appendChild(shardTitle);
-  shardInfo.appendChild(shardSubtitle);
-  shardCard.appendChild(shardInfo);
-  grid.appendChild(shardCard);
-
-  // Owned Dust Container cards with animated crossfading canvas
-  for (let i = 0; i < containerCount; i++) {
-    const containerCard = document.createElement('div');
-    containerCard.style.cssText = `
-      display: flex; align-items: center; gap: 12px; width: 100%; max-width: 260px;
-      padding: 10px 14px; border-radius: 6px; background: ${CARD_BG};
-      border: 1px solid rgba(212,168,75,0.4); box-sizing: border-box;
-    `;
-    const canvas = document.createElement('canvas');
-    canvas.width = 30;
-    canvas.height = 33;
-    canvas.style.cssText = 'width: 30px; height: 33px; image-rendering: pixelated; flex-shrink: 0;';
-    containerCard.appendChild(canvas);
-    cleanups.push(startDustContainerCanvasAnimation(canvas, true, i + 100));
-
-    const info = document.createElement('div');
-    info.style.cssText = 'flex: 1;';
-    const title = document.createElement('div');
-    title.style.cssText = `color: #ffd700; font-size: 0.82rem; font-family: 'Cinzel', serif; font-weight: bold; margin-bottom: 2px;`;
-    title.textContent = `Dust Container ${containerCount > 1 ? `#${i + 1}` : ''}`;
-    const subtitle = document.createElement('div');
-    subtitle.style.cssText = 'color: #7fbf7f; font-size: 0.72rem; font-family: ' + "'Cinzel', serif;";
-    subtitle.textContent = '+4 Mote Slots';
-    info.appendChild(title);
-    info.appendChild(subtitle);
-    containerCard.appendChild(info);
-    grid.appendChild(containerCard);
-  }
-
-  return box;
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function buildLoadoutTab(
   contentArea: HTMLElement,
-  weaveLoadout: PlayerWeaveLoadout,
+  _initialWeaveLoadout: PlayerWeaveLoadout,
   _onLoadoutChanged: (updatedWeaveLoadout: PlayerWeaveLoadout) => void,
-  progress: PlayerProgress,
-  playerHp: number,
-  playerMaxHp: number,
-): () => void {
-  const cleanups: Array<() => void> = [];
+): void {
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `text-align:center; margin: 0 auto 16px; width:100%; max-width:720px;`;
+  header.innerHTML = `
+    <span style="color:${GOLD}; font-size:0.95rem; font-family:'Cinzel',serif; font-weight:400;">
+      Dust Collection
+    </span>
+    <p style="color:#888; font-size:0.75rem; margin:6px 0 0; font-family:'Cinzel',serif; font-weight:400;">
+      Your available dust types.
+    </p>
+  `;
+  contentArea.appendChild(header);
 
-  // ── Stats bar ─────────────────────────────────────────────────────────────
-  const statsBar = buildStatsBar(
-    playerHp,
-    playerMaxHp,
-    progress.dustContainerCount,
-    progress.dustContainerPieces,
-    cleanups,
-  );
-  contentArea.appendChild(statsBar);
-
-  // ── Three-column grid ─────────────────────────────────────────────────────
+  // ── Dust grid ───────────────────────────────────────────────────────────
   const grid = document.createElement('div');
   grid.style.cssText = `
-    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px; width: 100%; max-width: 720px; margin: 0 auto;
   `;
-
-  // Responsive: narrow screens stack columns
-  const styleTag = document.createElement('style');
-  styleTag.textContent = `
-    @media (max-width: 600px) {
-      .loadout-grid { grid-template-columns: 1fr !important; }
-    }
-  `;
-  contentArea.appendChild(styleTag);
-  grid.classList.add('loadout-grid');
-
-  grid.appendChild(buildWeavesColumn(weaveLoadout, progress, cleanups));
-  grid.appendChild(buildMoteTypesColumn(progress));
-  grid.appendChild(buildInventoryColumn(progress, cleanups));
-
   contentArea.appendChild(grid);
 
-  return () => {
-    for (let i = 0; i < cleanups.length; i++) cleanups[i]();
-  };
-}
+  for (let k = 0; k < EQUIPPABLE_KINDS.length; k++) {
+    const kind = EQUIPPABLE_KINDS[k];
+    const dustDef = getDustDefinition(kind);
 
+    const card = document.createElement('div');
+    card.style.cssText = `
+      border: 2px solid ${dustDef.colorHex}44; border-radius: 8px;
+      padding: 10px; background: #0d0d1a; user-select: none;
+      display: flex; flex-direction: column; gap: 6px;
+    `;
+
+    const previewCanvas = document.createElement('canvas');
+    previewCanvas.width = 40;
+    previewCanvas.height = 40;
+    previewCanvas.style.cssText = 'align-self:center;';
+    card.appendChild(previewCanvas);
+
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
+    nameRow.innerHTML = `
+      <span style="color:${dustDef.colorHex}; font-size:0.85rem; font-family:'Cinzel',serif; font-weight:400;">${dustDef.displayName}</span>
+      <span style="background:#1a1a2e; border:1px solid #444; border-radius:4px;
+        padding:1px 6px; font-size:0.75rem; color:#ccc; font-family:'Cinzel',serif; font-weight:400;">${dustDef.slotCost} slot${dustDef.slotCost !== 1 ? 's' : ''}</span>
+    `;
+    card.appendChild(nameRow);
+
+    const desc = document.createElement('p');
+    desc.style.cssText = 'color:#888; font-size:0.72rem; margin:0; line-height:1.3; font-family:\'Cinzel\',serif; font-weight:400;';
+    desc.textContent = dustDef.description;
+    card.appendChild(desc);
+
+    drawShapePreview(previewCanvas, kind, dustDef.colorHex);
+
+    grid.appendChild(card);
+  }
+
+  if (EQUIPPABLE_KINDS.length === 0) {
+    const emptyMsg = document.createElement('p');
+    emptyMsg.style.cssText = 'color:#555; font-size:0.75rem; font-style:italic; text-align:center; font-family:\'Cinzel\',serif; font-weight:400;';
+    emptyMsg.textContent = 'No dust types available.';
+    grid.appendChild(emptyMsg);
+  }
+}

@@ -22,24 +22,8 @@
 export type WeaveId = string;
 
 /** Built-in weave IDs. */
-export const WEAVE_STORM        = 'storm';
-export const WEAVE_SHIELD       = 'shield';
-export const WEAVE_ARROW        = 'arrow';
-export const WEAVE_SHIELD_SWORD = 'shield_sword';
-export const WEAVE_NONE         = 'none';
-/**
- * Independent Sword unlock (Stage 1 of the Sword/Shield/Bow Weave rework).
- * Not yet an equippable/rendered weave in its own right — presently it only
- * exists as an unlock flag granted alongside the legacy `shield_sword` combo
- * (see `src/progression/weaveMigration.ts`), plus a placeholder
- * `WEAVE_REGISTRY` entry so campaign configs / save sanitization can
- * validate and retain it as a known id. It has a real registry entry (so
- * `WEAVE_REGISTRY.has()` checks used by save/campaign sanitization treat it
- * as known and don't strip it) but is deliberately left out of `WEAVE_LIST`
- * so it cannot be selected via the existing loadout/editor UI, and no
- * combat/render code reads it yet — that wiring belongs to a later stage.
- */
-export const WEAVE_SWORD        = 'sword';
+export const WEAVE_STORM  = 'storm';
+export const WEAVE_SHIELD = 'shield';
 
 // ---- Weave Activation Role -------------------------------------------------
 
@@ -112,89 +96,24 @@ const SHIELD_DEF: WeaveDefinition = {
   spreadRad: Math.PI * 0.5,   // 90° crescent arc
 };
 
-const ARROW_DEF: WeaveDefinition = {
-  id: WEAVE_ARROW,
-  displayName: 'Bow Weave',
-  description: 'Hold the secondary action after the shield forms to load your motes into a straight arrow (up to five), then release to fire them at a constant speed. Longer holding loads more motes, not a faster or stronger shot.',
-  role: WeaveRole.SecondaryOnly,
-  dustSlotCapacity: 0,
-  durationTicks: 0,
-  cooldownTicks: 0,
-  deploySpeedWorld: 0,
-  spreadRad: 0,
-};
-
-/**
- * Shield Sword Weave — sword-form upgrade conceptually built from Storm and
- * Shield motes.  Forms a golden-crossguard sword that auto-swings at nearby
- * enemies; while right mouse is held the motes collapse into the existing
- * Shield Weave crescent; on release the sword reforms into its ready stance.
- */
-const SHIELD_SWORD_DEF: WeaveDefinition = {
-  id: WEAVE_SHIELD_SWORD,
-  displayName: 'Shield Sword Weave',
-  description: 'Forms a golden-crossguard sword from Storm/Shield motes. Auto-swings at nearby enemies; hold right mouse to raise the crescent shield instead.',
-  role: WeaveRole.SecondaryOnly,
-  dustSlotCapacity: 0,
-  durationTicks: 0,
-  cooldownTicks: 0,
-  deploySpeedWorld: 0,
-  spreadRad: Math.PI * 0.75,
-};
-
-/**
- * Placeholder definition for the independent Sword unlock. No timing/pattern
- * data is meaningful yet — this exists only so `WEAVE_REGISTRY.has(WEAVE_SWORD)`
- * is true for save/campaign sanitization. Not in `WEAVE_LIST`, so it is not
- * selectable via the loadout/editor UI. Later stages will replace this with
- * a real standalone Sword Weave definition.
- */
-const SWORD_DEF: WeaveDefinition = {
-  id: WEAVE_SWORD,
-  displayName: 'Sword Weave',
-  description: 'Press the secondary action to sweep your dust through enemies in an aimed crescent.',
-  role: WeaveRole.SecondaryOnly,
-  dustSlotCapacity: 0,
-  durationTicks: 0,
-  cooldownTicks: 0,
-  deploySpeedWorld: 0,
-  spreadRad: 0,
-};
-
-const NONE_DEF: WeaveDefinition = {
-  id: WEAVE_NONE,
-  displayName: 'None',
-  description: 'No active weave equipped.',
-  role: WeaveRole.Either,
-  dustSlotCapacity: 0,
-  durationTicks: 0,
-  cooldownTicks: 0,
-  deploySpeedWorld: 0,
-  spreadRad: 0,
-};
-
 // ---- Weave Registry --------------------------------------------------------
 
 /** All available weave definitions, keyed by WeaveId. */
 export const WEAVE_REGISTRY: ReadonlyMap<WeaveId, WeaveDefinition> = new Map([
-  [WEAVE_STORM,        STORM_DEF],
-  [WEAVE_SHIELD,       SHIELD_DEF],
-  [WEAVE_ARROW,        ARROW_DEF],
-  [WEAVE_SHIELD_SWORD, SHIELD_SWORD_DEF],
-  [WEAVE_SWORD,        SWORD_DEF],
-  [WEAVE_NONE,         NONE_DEF],
+  [WEAVE_STORM,  STORM_DEF],
+  [WEAVE_SHIELD, SHIELD_DEF],
 ]);
 
-/** Ordered list of weave IDs for UI display (only actively supported techniques). */
+/** Ordered list of weave IDs for UI display. */
 export const WEAVE_LIST: readonly WeaveId[] = [
+  WEAVE_STORM,
   WEAVE_SHIELD,
 ];
 
 /**
  * Returns the WeaveDefinition for a given weave ID.
- * Falls back to None if the ID is not found or invalid.
+ * Falls back to Storm if the ID is not found.
  */
 export function getWeaveDefinition(id: WeaveId): WeaveDefinition {
-  return WEAVE_REGISTRY.get(id) ?? NONE_DEF;
+  return WEAVE_REGISTRY.get(id) ?? STORM_DEF;
 }
-

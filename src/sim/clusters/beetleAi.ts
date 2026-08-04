@@ -18,11 +18,8 @@ import { applyPlayerDamageWithKnockback } from '../playerDamage';
 
 // ── Beetle tuning constants ────────────────────────────────────────────────
 
-/** Half-width (world units) of the beetle's 2x1-block AABB. */
-export const BEETLE_HALF_WIDTH_WORLD = 6;
-
-/** Half-height (world units) of the beetle's 2x1-block AABB. */
-export const BEETLE_HALF_HEIGHT_WORLD = 3;
+/** Half-size (world units) of the beetle's AABB. */
+export const BEETLE_HALF_SIZE_WORLD = 3;
 
 /** Crawl speed along a surface (world units/s). */
 const BEETLE_CRAWL_SPEED_WORLD = 55;

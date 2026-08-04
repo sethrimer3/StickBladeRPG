@@ -1,516 +1,911 @@
 /**
- * Editor tools — Select, Rotate, Flip, Multi-select, and rope-anchor hit-test logic.
- *
- * Place tool logic lives in editorPlaceTool.ts.
- * Delete tool logic lives in editorDeleteTool.ts.
- * Hit-test geometry helpers live in editorHitTest.ts.
+ * Editor tools — Select, Place, Delete logic.
+ * Operates on EditorRoomData and modifies it in place.
  */
 
 import {
-  EditorState, EditorRoomData, SelectedElement, SelectedElementType, EditorTransition,
+  EditorState, EditorTool, EditorRoomData, EditorWall,
+  EditorTransition, SelectedElement, allocateUid,
+  PaletteItem, DecorationKind,
 } from './editorState';
-import type { TransitionDirection } from '../levels/roomDef';
-import { canSelectElementType, canMutateElement, LAYER_IDS } from './editorLayers';
-import { ELEMENT_ADAPTERS, ALL_ELEMENT_TYPES, type MarqueeRect } from './editorElementRegistry';
-import { editorPerfCounters } from './editorPerfCounters';
-export { deleteAtCursor, deleteAtCursorBrushed } from './editorDeleteTool';
+
+// ── Hit testing helpers ──────────────────────────────────────────────────────
+
+function hitTestWall(w: EditorWall, bx: number, by: number): boolean {
+  return bx >= w.xBlock && bx < w.xBlock + w.wBlock && by >= w.yBlock && by < w.yBlock + w.hBlock;
+}
+
+function hitTestPoint(xBlock: number, yBlock: number, bx: number, by: number): boolean {
+  return Math.abs(bx - xBlock) < 1.5 && Math.abs(by - yBlock) < 1.5;
+}
+
+function hitTestTransition(t: EditorTransition, bx: number, by: number, roomData: EditorRoomData): boolean {
+  const DEPTH = 6;
+  if (t.direction === 'left' || t.direction === 'right') {
+    const zoneX = t.depthBlock !== undefined
+      ? t.depthBlock
+      : (t.direction === 'left' ? 0 : roomData.widthBlocks - DEPTH);
+    return bx >= zoneX && bx < zoneX + DEPTH
+      && by >= t.positionBlock && by < t.positionBlock + t.openingSizeBlocks;
+  } else {
+    const zoneY = t.depthBlock !== undefined
+      ? t.depthBlock
+      : (t.direction === 'up' ? 0 : roomData.heightBlocks - DEPTH);
+    return by >= zoneY && by < zoneY + DEPTH
+      && bx >= t.positionBlock && bx < t.positionBlock + t.openingSizeBlocks;
+  }
+}
+
+/** Returns true if two wall rectangles (in block coordinates) overlap. */
+function wallsOverlap(a: EditorWall, bx: number, by: number, bw: number, bh: number): boolean {
+  return a.xBlock < bx + bw &&
+         a.xBlock + a.wBlock > bx &&
+         a.yBlock < by + bh &&
+         a.yBlock + a.hBlock > by;
+}
+
+
+function isInsideRoom(room: EditorRoomData, xBlock: number, yBlock: number): boolean {
+  return xBlock >= 0 && yBlock >= 0 && xBlock < room.widthBlocks && yBlock < room.heightBlocks;
+}
+
+function rectFitsInsideRoom(room: EditorRoomData, xBlock: number, yBlock: number, wBlock: number, hBlock: number): boolean {
+  return xBlock >= 0 && yBlock >= 0 &&
+    xBlock + wBlock <= room.widthBlocks &&
+    yBlock + hBlock <= room.heightBlocks;
+}
 
 // ── Select tool ──────────────────────────────────────────────────────────────
 
 /**
- * One selectable element found under the cursor, before any layer-eligibility
- * filtering. `priority` is the element's rank in the deterministic hit-test
- * order below — LOWER numbers win when multiple candidates overlap the same
- * cell (this mirrors the "first match wins" ordering the old single-hit
- * scanner used, made explicit instead of implicit-via-loop-order). Ties never
- * occur since priority is assigned by enumeration order.
+ * Attempts to select an element at the given block coordinates.
+ * Returns the selected element or null.
  */
-export interface EditorHitCandidate {
-  element: SelectedElement;
-  priority: number;
-  /** Set only for `guideDustPath` hits: the control-point index that matched. */
-  guideDustPathPointIndex?: number;
+export function selectAtCursor(state: EditorState): SelectedElement | null {
+  const room = state.roomData;
+  if (room === null) return null;
+
+  const bx = state.cursorBlockX;
+  const by = state.cursorBlockY;
+
+  // Check transitions first (they occupy boundary edges)
+  for (const t of room.transitions) {
+    if (hitTestTransition(t, bx, by, room)) {
+      return { type: 'transition', uid: t.uid };
+    }
+  }
+
+  // Check enemies
+  for (const e of room.enemies) {
+    if (hitTestPoint(e.xBlock, e.yBlock, bx, by)) {
+      return { type: 'enemy', uid: e.uid };
+    }
+  }
+
+  // Check save tombs
+  for (const s of room.saveTombs) {
+    if (hitTestPoint(s.xBlock, s.yBlock, bx, by)) {
+      return { type: 'saveTomb', uid: s.uid };
+    }
+  }
+
+  // Check skill tombs
+  for (const s of room.skillTombs) {
+    if (hitTestPoint(s.xBlock, s.yBlock, bx, by)) {
+      return { type: 'skillTomb', uid: s.uid };
+    }
+  }
+
+  // Check dust piles
+  for (const p of room.dustPiles) {
+    if (hitTestPoint(p.xBlock, p.yBlock, bx, by)) {
+      return { type: 'dustPile', uid: p.uid };
+    }
+  }
+
+  // Check light sources (point selection at block centre).
+  for (const ls of (room.lightSources ?? [])) {
+    if (hitTestPoint(ls.xBlock, ls.yBlock, bx, by)) {
+      return { type: 'lightSource', uid: ls.uid };
+    }
+  }
+
+  // Check decorations
+  for (const d of (room.decorations ?? [])) {
+    if (hitTestPoint(d.xBlock, d.yBlock, bx, by)) {
+      return { type: 'decoration', uid: d.uid };
+    }
+  }
+
+  // Check player spawn
+  if (hitTestPoint(room.playerSpawnBlock[0], room.playerSpawnBlock[1], bx, by)) {
+    return { type: 'playerSpawn', uid: 0 };
+  }
+
+  // Check interior walls
+  for (const w of room.interiorWalls) {
+    if (hitTestWall(w, bx, by)) {
+      return { type: 'wall', uid: w.uid };
+    }
+  }
+
+  // Check ambient-light blockers last — they're single cells and shouldn't
+  // block selection of things authored above them.
+  const bxFloor = Math.floor(bx);
+  const byFloor = Math.floor(by);
+  for (const b of (room.ambientLightBlockers ?? [])) {
+    if (b.xBlock === bxFloor && b.yBlock === byFloor) {
+      return { type: 'ambientLightBlocker', uid: b.uid };
+    }
+  }
+
+  return null;
+}
+
+// ── Surface scan helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns true if any solid interior wall (non-platform, non-ramp) occupies
+ * the grid cell at (col, row).
+ */
+function isSolidWallAt(room: EditorRoomData, col: number, row: number): boolean {
+  for (const w of room.interiorWalls) {
+    if (w.isPlatformFlag === 1) continue;
+    if (w.rampOrientation !== undefined) continue;
+    if (col >= w.xBlock && col < w.xBlock + w.wBlock &&
+        row >= w.yBlock && row < w.yBlock + w.hBlock) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
- * Gathers every selectable element under the cursor's block coordinates,
- * ignoring layer visibility/lock/select-only state, ordered by an explicit
- * priority (see `EditorHitCandidate`). Used by `selectAtCursor` (click/hover)
- * and by the delete tool, so both features agree on exactly the same set of
- * candidates and tie-break order — one hit-test to keep in sync, not two.
- */
-/**
- * Walks every selectable element under the cursor in the same deterministic
- * priority order `getHitCandidatesAnyLayer` documents, invoking `visit` for
- * each one. `visit` returns `true` to stop the walk immediately (used by
- * `findTopEligibleHitCandidate` for an early-return, allocation-free single-
- * candidate lookup) or `false` to keep scanning (used by
- * `getHitCandidatesAnyLayer` to build the exhaustive list). Shared here so
- * the two callers can never drift out of sync on ordering.
- */
-/**
- * Explicit click-priority order — LOWER index wins when candidates overlap.
- * Preserves the exact ordering the old hand-written per-type scan used.
- * Sourced from `ELEMENT_ADAPTERS` (see editorElementRegistry.ts) except for
- * `guideDustPath`, whose click hit-test needs the matched control-point index
- * (not just a boolean), so it stays specially handled inline below.
+ * Starting at (col, startRow) and searching DOWNWARD (increasing row),
+ * returns the row of the first solid interior wall block, or null if none found.
  *
- * NOTE: `kineticBlock`, `rope`, and `pixelMaterial` are deliberately absent
- * from click-priority ordering — they were never point-click-selectable
- * before this migration (ropes are grabbed via `hitTestRopeAnchor`, kinetic
- * blocks and pixel materials have no click-select path), and this migration
- * preserves that existing behavior exactly. All three DO participate in
- * marquee selection (`getAllElementsInRect`, below), which iterates every
- * registered type.
+ * Used for placing floor decorations (mushrooms, glowGrass) that sit on the
+ * TOP surface of the first solid ground block below the cursor.
  */
-export const CLICK_PRIORITY_ORDER: readonly SelectedElementType[] = [
-  'transition', 'enemy', 'saveTomb', 'skillTomb', 'challengeField', 'zipMoveBlock',
-  'challengeGate', 'gate', 'challengeTotem', 'dustContainer', 'dustContainerPiece',
-  'dustBoostJar', 'dustSwarm', 'lambdaAnchor', 'fireflyJar', 'springboard', 'breakableBlock',
-  'dustPile', 'grasshopperArea', 'fireflyArea', 'lightSource', 'sunbeam', 'sceneLight',
-  'waterZone', 'lavaZone', 'timeStopField', 'poisonField', 'crumbleBlock', 'fallingBlock', 'backgroundBlock',
-  'grappleCarryBlock', 'phantasmalTile', 'dialogueTrigger', 'guideDustPath', 'bouncePad',
-  'spike', 'laser', 'decoration', 'campaignSpawn', 'playerSpawn', 'customBlock', 'wall', 'ambientLightBlocker',
-];
+export function findFloorBlockRow(room: EditorRoomData, col: number, startRow: number): number | null {
+  for (let row = startRow; row < room.heightBlocks; row++) {
+    if (isSolidWallAt(room, col, row)) return row;
+  }
+  return null;
+}
 
-function walkHitCandidatesAnyLayer(
-  state: EditorState,
-  visit: (element: SelectedElement, guideDustPathPointIndex?: number) => boolean,
-): void {
+/**
+ * Starting at (col, startRow) and searching UPWARD (decreasing row),
+ * returns the row of the first solid interior wall block, or null if none found.
+ *
+ * Used for placing vines that hang from the BOTTOM surface of the first solid
+ * ceiling block above the cursor.
+ */
+export function findCeilingBlockRow(room: EditorRoomData, col: number, startRow: number): number | null {
+  for (let row = startRow; row >= 0; row--) {
+    if (isSolidWallAt(room, col, row)) return row;
+  }
+  return null;
+}
+
+// ── Place tool ───────────────────────────────────────────────────────────────
+
+/**
+ * Places the currently selected palette item at the cursor location.
+ */
+export function placeAtCursor(state: EditorState): void {
+  const room = state.roomData;
+  const item = state.selectedPaletteItem;
+  if (room === null || item === null) return;
+
+  const bx = state.cursorBlockX;
+  const by = state.cursorBlockY;
+
+  if (!isInsideRoom(room, bx, by)) return;
+
+  // ── Lighting layer ─────────────────────────────────────────────────────
+  // Paint/place handlers for the ambientLightBlockers and local lightSources
+  // authoring workflows. Ambient blockers are single-cell and idempotent:
+  // clicking the same cell twice leaves it painted once.
+  if (item.category === 'lighting') {
+    const xFloor = Math.floor(bx);
+    const yFloor = Math.floor(by);
+    if (item.isAmbientLightBlockerItem === 1) {
+      const already = (room.ambientLightBlockers ?? []).some(
+        b => b.xBlock === xFloor && b.yBlock === yFloor,
+      );
+      if (already) return;
+      if (!room.ambientLightBlockers) room.ambientLightBlockers = [];
+      room.ambientLightBlockers.push({
+        uid: allocateUid(state),
+        xBlock: xFloor,
+        yBlock: yFloor,
+      });
+      return;
+    }
+    if (item.isLightSourceItem === 1) {
+      if (!room.lightSources) room.lightSources = [];
+      // Sensible editor defaults: warm white, full brightness, ~6-block radius.
+      room.lightSources.push({
+        uid: allocateUid(state),
+        xBlock: xFloor,
+        yBlock: yFloor,
+        radiusBlocks: 6,
+        colorR: 255,
+        colorG: 230,
+        colorB: 180,
+        brightnessPct: 100,
+      });
+      return;
+    }
+    return;
+  }
+
+  if (item.category === 'blocks') {
+    const wBlock = getPlacementWidth(item, state.placementRotationSteps);
+    const hBlock = getPlacementHeight(item, state.placementRotationSteps);
+    const isPlatformFlag: 0 | 1 = item.isPlatformItem === 1 ? 1 : 0;
+
+    // Compute ramp orientation from rotation steps and flip
+    let rampOrientation: 0 | 1 | 2 | 3 | undefined;
+    if (item.isRampItem === 1) {
+      const base = state.placementRotationSteps % 4;
+      // flipH toggles within pairs: 0↔1, 2↔3
+      rampOrientation = (state.placementFlipH ? (base ^ 1) : base) as 0 | 1 | 2 | 3;
+    }
+
+    // Compute platform edge from rotation steps
+    // R=0→top(0), R=1→right(3), R=2→bottom(1), R=3→left(2)
+    const platformEdgeMap: readonly (0 | 1 | 2 | 3)[] = [0, 3, 1, 2];
+    const platformEdge: 0 | 1 | 2 | 3 = isPlatformFlag === 1
+      ? platformEdgeMap[state.placementRotationSteps % 4]
+      : 0;
+
+    const isPillarHalfWidthFlag: 0 | 1 = item.isPillarHalfWidthItem === 1 ? 1 : 0;
+
+    if (!rectFitsInsideRoom(room, bx, by, wBlock, hBlock)) return;
+    // Prevent overlapping walls
+    const overlaps = room.interiorWalls.some(w => wallsOverlap(w, bx, by, wBlock, hBlock));
+    if (overlaps) return;
+    room.interiorWalls.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      wBlock,
+      hBlock,
+      isPlatformFlag,
+      platformEdge,
+      blockTheme: room.blockTheme,
+      rampOrientation,
+      isPillarHalfWidthFlag,
+    });
+  } else if (item.id === 'enemy_rolling') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Physical'],
+      particleCount: 18,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 1,
+      rollingEnemySpriteIndex: 1,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_flying_eye') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Wind'],
+      particleCount: 16,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 1,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_rock_elemental') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Earth'],
+      particleCount: 20,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 1,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_slime') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Nature'],
+      particleCount: 8,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 1,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_slime_large') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Nature'],
+      particleCount: 16,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 1,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_wheel') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Physical'],
+      particleCount: 12,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 1,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_beetle') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Physical'],
+      particleCount: 8,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 1,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_water_bubble') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Water'],
+      particleCount: 12,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 1,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_ice_bubble') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Ice'],
+      particleCount: 10,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 1,
+      isIceBubbleFlag: 1,
+      isSquareStampedeFlag: 0,
+    });
+  } else if (item.id === 'enemy_square_stampede') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Void'],
+      particleCount: 5,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 1,
+    });
+  } else if (item.id === 'enemy_golden_mimic') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Physical'],
+      particleCount: 20,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+      isGoldenMimicFlag: 1,
+      isGoldenMimicYFlippedFlag: 0,
+    });
+  } else if (item.id === 'enemy_golden_mimic_xy') {
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Physical'],
+      particleCount: 20,
+      isBossFlag: 0,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+      isGoldenMimicFlag: 1,
+      isGoldenMimicYFlippedFlag: 1,
+    });
+  } else if (item.id === 'grasshopper_area') {
+    room.grasshopperAreas.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      wBlock: 4,
+      hBlock: 4,
+      count: 4,
+    });
+  } else if (item.id === 'player_spawn') {
+    room.playerSpawnBlock = [bx, by];
+  } else if (item.id === 'room_transition') {
+    // Determine direction from the nearest room edge
+    const distLeft   = bx;
+    const distRight  = room.widthBlocks  - 1 - bx;
+    const distTop    = by;
+    const distBottom = room.heightBlocks - 1 - by;
+    const minDist    = Math.min(distLeft, distRight, distTop, distBottom);
+    const direction: 'left' | 'right' | 'up' | 'down' =
+      minDist === distLeft   ? 'left'  :
+      minDist === distRight  ? 'right' :
+      minDist === distTop    ? 'up'    : 'down';
+
+    const OPENING_SIZE = 6;
+    const isHoriz = direction === 'left' || direction === 'right';
+
+    const openingSizeBlocks = isHoriz
+      ? Math.max(1, Math.min(OPENING_SIZE, room.heightBlocks - 2))
+      : Math.max(1, Math.min(OPENING_SIZE, room.widthBlocks - 2));
+
+    const positionBlock = isHoriz
+      ? Math.min(Math.max(1, by - Math.floor(openingSizeBlocks / 2)), room.heightBlocks - 1 - openingSizeBlocks)
+      : Math.min(Math.max(1, bx - Math.floor(openingSizeBlocks / 2)), room.widthBlocks - 1 - openingSizeBlocks);
+
+    // Determine whether this is an interior transition (cursor not at the boundary edge)
+    const ZONE_DEPTH = 6;
+    const isEdge =
+      (direction === 'left'  && bx <= ZONE_DEPTH)      ||
+      (direction === 'right' && bx >= room.widthBlocks - ZONE_DEPTH) ||
+      (direction === 'up'    && by <= ZONE_DEPTH)      ||
+      (direction === 'down'  && by >= room.heightBlocks - ZONE_DEPTH);
+
+    let depthBlock: number | undefined;
+    if (!isEdge) {
+      // Interior: anchor the zone so the cursor is at the entry side
+      depthBlock = isHoriz
+        ? Math.min(Math.max(0, bx), room.widthBlocks - ZONE_DEPTH)
+        : Math.min(Math.max(0, by), room.heightBlocks - ZONE_DEPTH);
+    }
+
+    room.transitions.push({
+      uid: allocateUid(state),
+      direction,
+      positionBlock,
+      openingSizeBlocks,
+      targetRoomId: '',
+      targetSpawnBlock: [3, by + 2],
+      depthBlock,
+    });
+  } else if (item.id === 'save_tomb') {
+    room.saveTombs.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+    });
+  } else if (item.id === 'skill_tomb') {
+    room.skillTombs.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      weaveId: state.pendingSkillTombWeaveId,
+    });
+  } else if (item.id === 'dust_pile' || item.id === 'dust_pile_small' || item.id === 'dust_pile_medium' || item.id === 'dust_pile_large') {
+    let dustCount: number;
+    if (item.id === 'dust_pile_small') {
+      dustCount = 3;  // small pile — tight cluster
+    } else if (item.id === 'dust_pile_large') {
+      dustCount = 8;  // large pile — wide scatter
+    } else {
+      dustCount = 5;  // medium pile (dust_pile / dust_pile_medium)
+    }
+    room.dustPiles.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      dustCount,
+    });
+  } else if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_vine') {
+    const kind: DecorationKind =
+      item.id === 'decoration_mushroom'  ? 'mushroom'  :
+      item.id === 'decoration_glowgrass' ? 'glowGrass' : 'vine';
+
+    let targetRow: number | null;
+    if (kind === 'vine') {
+      // Vine: find the first solid block ABOVE the cursor, hang from its bottom.
+      targetRow = findCeilingBlockRow(room, bx, by);
+    } else {
+      // Floor decorations: find the first solid block AT OR BELOW the cursor.
+      targetRow = findFloorBlockRow(room, bx, by);
+    }
+
+    if (targetRow === null) return; // no valid surface — do not place
+
+    // Avoid duplicate decoration at the same cell and kind.
+    const alreadyPlaced = (room.decorations ?? []).some(
+      d => d.xBlock === bx && d.yBlock === targetRow && d.kind === kind,
+    );
+    if (alreadyPlaced) return;
+
+    if (!room.decorations) room.decorations = [];
+    room.decorations.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: targetRow,
+      kind,
+    });
+  }
+}
+
+// ── Delete tool ──────────────────────────────────────────────────────────────
+
+/**
+ * Deletes the element at the cursor location.
+ */
+export function deleteAtCursor(state: EditorState): void {
   const room = state.roomData;
   if (room === null) return;
 
   const bx = state.cursorBlockX;
   const by = state.cursorBlockY;
-  let stopped = false;
-  const push = (element: SelectedElement, guideDustPathPointIndex?: number) => {
-    if (stopped) return;
-    if (visit(element, guideDustPathPointIndex)) stopped = true;
+
+  // Check transitions first
+  for (let i = 0; i < room.transitions.length; i++) {
+    if (hitTestTransition(room.transitions[i], bx, by, room)) {
+      const removedUid = room.transitions[i].uid;
+      room.transitions.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check enemies
+  for (let i = 0; i < room.enemies.length; i++) {
+    if (hitTestPoint(room.enemies[i].xBlock, room.enemies[i].yBlock, bx, by)) {
+      const removedUid = room.enemies[i].uid;
+      room.enemies.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check save tombs
+  for (let i = 0; i < room.saveTombs.length; i++) {
+    if (hitTestPoint(room.saveTombs[i].xBlock, room.saveTombs[i].yBlock, bx, by)) {
+      const removedUid = room.saveTombs[i].uid;
+      room.saveTombs.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check skill tombs
+  for (let i = 0; i < room.skillTombs.length; i++) {
+    if (hitTestPoint(room.skillTombs[i].xBlock, room.skillTombs[i].yBlock, bx, by)) {
+      const removedUid = room.skillTombs[i].uid;
+      room.skillTombs.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check dust piles
+  for (let i = 0; i < room.dustPiles.length; i++) {
+    if (hitTestPoint(room.dustPiles[i].xBlock, room.dustPiles[i].yBlock, bx, by)) {
+      const removedUid = room.dustPiles[i].uid;
+      room.dustPiles.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check decorations
+  const decos = room.decorations ?? [];
+  for (let i = 0; i < decos.length; i++) {
+    if (hitTestPoint(decos[i].xBlock, decos[i].yBlock, bx, by)) {
+      const removedUid = decos[i].uid;
+      decos.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check walls
+  for (let i = 0; i < room.interiorWalls.length; i++) {
+    if (hitTestWall(room.interiorWalls[i], bx, by)) {
+      const removedUid = room.interiorWalls[i].uid;
+      room.interiorWalls.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check light sources (before blockers so the bigger icon wins).
+  const lights = room.lightSources ?? [];
+  for (let i = 0; i < lights.length; i++) {
+    if (hitTestPoint(lights[i].xBlock, lights[i].yBlock, bx, by)) {
+      const removedUid = lights[i].uid;
+      lights.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+
+  // Check ambient-light blockers (single-cell match).
+  const blockers = room.ambientLightBlockers ?? [];
+  const bxFloor = Math.floor(bx);
+  const byFloor = Math.floor(by);
+  for (let i = 0; i < blockers.length; i++) {
+    if (blockers[i].xBlock === bxFloor && blockers[i].yBlock === byFloor) {
+      const removedUid = blockers[i].uid;
+      blockers.splice(i, 1);
+      state.selectedElements = state.selectedElements.filter(e => e.uid !== removedUid);
+      return;
+    }
+  }
+}
+
+// ── Rotation helpers ─────────────────────────────────────────────────────────
+
+function getPlacementWidth(item: PaletteItem, rotSteps: number): number {
+  const w = item.defaultWidthBlocks ?? 1;
+  const h = item.defaultHeightBlocks ?? 1;
+  return (rotSteps % 2 === 0) ? w : h;
+}
+
+function getPlacementHeight(item: PaletteItem, rotSteps: number): number {
+  const w = item.defaultWidthBlocks ?? 1;
+  const h = item.defaultHeightBlocks ?? 1;
+  return (rotSteps % 2 === 0) ? h : w;
+}
+
+/**
+ * Returns the placement preview dimensions for the current palette item.
+ */
+export function getPlacementPreview(state: EditorState): { wBlock: number; hBlock: number } | null {
+  if (state.activeTool !== EditorTool.Place || state.selectedPaletteItem === null) return null;
+  const item = state.selectedPaletteItem;
+  if (item.category !== 'blocks') {
+    return { wBlock: 1, hBlock: 1 };
+  }
+  return {
+    wBlock: getPlacementWidth(item, state.placementRotationSteps),
+    hBlock: getPlacementHeight(item, state.placementRotationSteps),
   };
-
-  for (const type of CLICK_PRIORITY_ORDER) {
-    if (stopped) return;
-
-    if (type === 'guideDustPath') {
-      // Hit-test control points directly (1.5 block pick radius) so the
-      // matched point index can be threaded through — a boolean-only
-      // adapter hitTest can't carry that.
-      for (const p of (room.guideDustPaths ?? [])) {
-        for (let i = 0; i < p.points.length; i++) {
-          const pt = p.points[i];
-          const dx = bx - pt.xBlock;
-          const dy = by - pt.yBlock;
-          if (dx * dx + dy * dy <= 1.5 * 1.5) {
-            push({ type: 'guideDustPath', uid: p.uid }, i);
-            break;
-          }
-        }
-        if (stopped) break;
-      }
-      continue;
-    }
-
-    const adapter = ELEMENT_ADAPTERS[type];
-    for (const el of adapter.enumerate(state, room)) {
-      if (adapter.hitTest(el, bx, by, room)) push({ type, uid: adapter.uid(el) });
-      if (stopped) break;
-    }
-  }
-}
-
-/**
- * Gathers every selectable element under the cursor's block coordinates,
- * ignoring layer visibility/lock/select-only state, ordered by an explicit
- * priority (see `EditorHitCandidate`). Used by `selectAtCursor` (click/hover)
- * and by the delete tool, so both features agree on exactly the same set of
- * candidates and tie-break order — one hit-test to keep in sync, not two.
- *
- * This exhaustively enumerates every candidate and allocates a
- * `EditorHitCandidate` for each — appropriate when genuine overlap
- * enumeration is needed (e.g. rect-select). Callers that only want the
- * single best eligible candidate (hover, click-select, single-point delete)
- * should use `findTopEligibleHitCandidate` instead, which returns as soon as
- * it finds an eligible match without allocating an array or scanning the
- * remainder of the candidate list.
- */
-export function getHitCandidatesAnyLayer(state: EditorState): EditorHitCandidate[] {
-  const candidates: EditorHitCandidate[] = [];
-  let priority = 0;
-  walkHitCandidatesAnyLayer(state, (element, guideDustPathPointIndex) => {
-    candidates.push({ element, priority: priority++, guideDustPathPointIndex });
-    return false; // never stop — exhaustive by design
-  });
-  return candidates;
-}
-
-/**
- * Early-return, allocation-light lookup of the single top-priority candidate
- * under the cursor that satisfies `predicate` (e.g. `canSelectElementType` or
- * a delete-specific eligibility check). Walks candidates in the exact same
- * priority order as `getHitCandidatesAnyLayer`/`walkHitCandidatesAnyLayer`,
- * but stops at the first eligible match instead of scanning every
- * collection and building a full array — used by hover, click-select, and
- * single-point deletion, all of which only ever need "what's the first
- * eligible thing here".
- */
-export function findTopEligibleHitCandidate(
-  state: EditorState,
-  predicate: (element: SelectedElement) => boolean,
-): EditorHitCandidate | null {
-  let found: EditorHitCandidate | null = null;
-  let priority = 0;
-  walkHitCandidatesAnyLayer(state, (element, guideDustPathPointIndex) => {
-    const p = priority++;
-    if (predicate(element)) {
-      found = { element, priority: p, guideDustPathPointIndex };
-      return true; // stop — first eligible match wins
-    }
-    return false;
-  });
-  return found;
-}
-
-/**
- * Attempts to select an element at the given block coordinates, ignoring
- * layer visibility/lock/select-only state. Returns the top-priority (first
- * enumerated) candidate — kept only as a thin convenience wrapper around
- * `getHitCandidatesAnyLayer` for callers that just want "what's on top".
- */
-export function selectAtCursorAnyLayer(state: EditorState): SelectedElement | null {
-  const top = findTopEligibleHitCandidate(state, () => true);
-  if (top === null) return null;
-  if (top.element.type === 'guideDustPath' && top.guideDustPathPointIndex !== undefined) {
-    state.guideDustPathSelectedPointIndex = top.guideDustPathPointIndex;
-  }
-  return top.element;
-}
-
-/**
- * Attempts to select an element at the cursor's block coordinates, respecting
- * layer visibility/lock/select-only state — the version used by the Select
- * tool's click handling and hover preview (both call this exact function, so
- * hover and click always agree on the resolved candidate).
- *
- * Unlike the old behaviour, an ineligible top-of-stack element no longer
- * rejects the whole hit: eligible candidates further down the stack are still
- * considered.
- */
-export function selectAtCursor(state: EditorState): SelectedElement | null {
-  const top = findTopEligibleHitCandidate(state, el => canSelectElementType(state, el.type));
-  if (top === null) return null;
-  if (top.element.type === 'guideDustPath' && top.guideDustPathPointIndex !== undefined) {
-    state.guideDustPathSelectedPointIndex = top.guideDustPathPointIndex;
-  }
-  return top.element;
-}
-
-let _hoverCache: {
-  room: EditorRoomData | null;
-  cursorBlockX: number;
-  cursorBlockY: number;
-  mutationSerial: number;
-  layerSig: string;
-  result: SelectedElement | null;
-  guideDustPathPointIndex?: number;
-} | null = null;
-
-export function resetHoverResolutionCache(): void {
-  _hoverCache = null;
-}
-
-function _layerSelectabilitySignature(state: EditorState): string {
-  let s = '';
-  for (const id of LAYER_IDS) {
-    const l = state.layers[id];
-    if (l) {
-      const bits = (l.visible ? 8 : 0) | (l.locked ? 4 : 0) | (l.solo ? 2 : 0) | (l.selectOnly ? 1 : 0);
-      s += bits.toString(16);
-    } else {
-      s += '0';
-    }
-  }
-  return s;
-}
-
-/**
- * Resolves hover element at cursor with change-gating to avoid repeating the
- * full multi-collection hit test every idle frame when coordinates and state have
- * not mutated.
- */
-export function resolveHoverAtCursor(state: EditorState, mutationSerial = -1): SelectedElement | null {
-  const room = state.roomData;
-  const layerSig = _layerSelectabilitySignature(state);
-
-  if (
-    _hoverCache !== null &&
-    _hoverCache.room === room &&
-    _hoverCache.cursorBlockX === state.cursorBlockX &&
-    _hoverCache.cursorBlockY === state.cursorBlockY &&
-    _hoverCache.mutationSerial === mutationSerial &&
-    mutationSerial >= 0 &&
-    _hoverCache.layerSig === layerSig
-  ) {
-    if (_hoverCache.guideDustPathPointIndex !== undefined) {
-      state.guideDustPathSelectedPointIndex = _hoverCache.guideDustPathPointIndex;
-    }
-    return _hoverCache.result;
-  }
-
-  editorPerfCounters.hoverScans++;
-  const result = selectAtCursor(state);
-  _hoverCache = {
-    room,
-    cursorBlockX: state.cursorBlockX,
-    cursorBlockY: state.cursorBlockY,
-    mutationSerial,
-    layerSig,
-    result,
-    guideDustPathPointIndex: result?.type === 'guideDustPath' ? (state.guideDustPathSelectedPointIndex ?? undefined) : undefined,
-  };
-  return result;
 }
 
 // ── Rotate selected element ──────────────────────────────────────────────────
 
 /**
- * Rotates the currently selected element by 90° clockwise.
- * - Walls: swap width and height.
- * - Transitions: cycle direction right → down → left → up → right and
- *   reposition to the nearest matching room edge.
+ * Rotates the currently selected wall by 90° (swaps width and height).
  */
-export function rotateSelectedElement(state: EditorState): boolean {
+export function rotateSelectedElement(state: EditorState): void {
   const sel = state.selectedElements[0] ?? null;
-  if (sel === null || state.roomData === null) return false;
-  // Defend this mutation directly — don't rely solely on the layer-toggle
-  // callback having cancelled/pruned the selection after the fact.
-  if (!canMutateElement(state, sel)) return false;
+  if (sel === null || state.roomData === null) return;
   if (sel.type === 'wall') {
     const wall = state.roomData.interiorWalls.find(w => w.uid === sel.uid);
-    if (!wall) return false;
-    let changed = false;
-    // Stairs/ramp/smooth-ramp shapes carry an explicit orientation (0-3) —
-    // cycle it first so e.g. a square 1x1 stairs block (where wBlock === hBlock
-    // and the dimension swap below is a no-op) still visibly rotates.
-    if (wall.stairsOrientation !== undefined) {
-      wall.stairsOrientation = ((wall.stairsOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    } else if (wall.rampOrientation !== undefined) {
-      wall.rampOrientation = ((wall.rampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    } else if (wall.smoothRampOrientation !== undefined) {
-      wall.smoothRampOrientation = ((wall.smoothRampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    }
-    // A square wall's dimensions are unchanged by a width/height swap — this
-    // is a genuine no-op, not just "rotation isn't visually distinguishable".
-    if (wall.wBlock !== wall.hBlock) {
+    if (wall) {
       const tmp = wall.wBlock;
       wall.wBlock = wall.hBlock;
       wall.hBlock = tmp;
-      changed = true;
     }
-    return changed;
-  } else if (sel.type === 'crumbleBlock') {
-    const block = (state.roomData.crumbleBlocks ?? []).find(b => b.uid === sel.uid);
-    if (!block) return false;
-    let changed = false;
-    // Mirrors the 'wall' branch above so a crumble block (including crumble
-    // stairs) rotates through the exact same orientations as its non-crumble
-    // counterpart.
-    if (block.spikeDirection !== undefined) {
-      // Cycles in the same up→right→down→left order as the spike's
-      // 'direction' <select> options in editorInspector.ts.
-      const SPIKE_DIRS = ['up', 'right', 'down', 'left'] as const;
-      const idx = SPIKE_DIRS.indexOf(block.spikeDirection);
-      block.spikeDirection = SPIKE_DIRS[(idx + 1) % 4];
-      changed = true;
-    } else if (block.stairsOrientation !== undefined) {
-      block.stairsOrientation = ((block.stairsOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    } else if (block.rampOrientation !== undefined) {
-      block.rampOrientation = ((block.rampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    } else if (block.smoothRampOrientation !== undefined) {
-      block.smoothRampOrientation = ((block.smoothRampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
-      changed = true;
-    }
-    if (block.spikeDirection === undefined && block.wBlock !== block.hBlock) {
-      const tmp = block.wBlock;
-      block.wBlock = block.hBlock;
-      block.hBlock = tmp;
-      changed = true;
-    }
-    return changed;
-  } else if (sel.type === 'transition') {
-    const t = state.roomData.transitions.find(tr => tr.uid === sel.uid);
-    if (!t) return false;
-    const DIRS: TransitionDirection[] = ['right', 'down', 'left', 'up'];
-    const idx = DIRS.indexOf(t.direction);
-    const newDir = DIRS[(idx + 1) % 4];
-    _repositionTransitionForNewDirection(t, newDir, state.roomData);
-    return true;
-  } else if (sel.type === 'enemy') {
-    const enemy = state.roomData.enemies.find(e => e.uid === sel.uid);
-    if (enemy?.isMomentumTurretFlag === 1) {
-      enemy.momentumTurretFacingIndex = (((enemy.momentumTurretFacingIndex ?? 0) + 1) % 4) as 0 | 1 | 2 | 3;
-      return true;
-    } else if (enemy?.isSlimeSnailFlag === 1) {
-      enemy.slimeSnailSurfaceSideIndex = (((enemy.slimeSnailSurfaceSideIndex ?? 0) + 1) % 4) as 0 | 1 | 2 | 3;
-      return true;
-    }
-    return false;
   }
-  // Unsupported element type: no-op.
-  return false;
-}
-
-/**
- * Flips the selected room transition's facing direction horizontally
- * (swaps left ↔ right) or vertically (swaps up ↔ down) depending on the
- * transition's current direction.
- *
- * - Facing left or right: swaps the direction to the opposite horizontal side
- *   and repositions against the opposite wall.
- * - Facing up or down: swaps the direction to the opposite vertical side
- *   and repositions against the opposite wall.
- *
- * No-op for walls and other element types.
- */
-export function flipSelectedTransition(state: EditorState): boolean {
-  const sel = state.selectedElements[0] ?? null;
-  if (sel === null || sel.type !== 'transition' || state.roomData === null) return false;
-  // Defend this mutation directly — don't rely solely on the layer-toggle
-  // callback having cancelled/pruned the selection after the fact.
-  if (!canMutateElement(state, sel)) return false;
-  const t = state.roomData.transitions.find(tr => tr.uid === sel.uid);
-  if (!t) return false;
-  let newDir: TransitionDirection;
-  switch (t.direction) {
-    case 'left':  newDir = 'right'; break;
-    case 'right': newDir = 'left';  break;
-    case 'up':    newDir = 'down';  break;
-    case 'down':  newDir = 'up';    break;
-  }
-  _repositionTransitionForNewDirection(t, newDir, state.roomData);
-  return true;
-}
-
-// ── Transition direction helpers ─────────────────────────────────────────────
-
-/** Cycles a transition's direction to `newDir` and snaps it to the nearest edge. */
-function _repositionTransitionForNewDirection(
-  t: EditorTransition,
-  newDir: TransitionDirection,
-  room: EditorRoomData,
-): void {
-  const gw = t.gradientWidthBlocks ?? 3;
-  const isOldHoriz = t.direction === 'left' || t.direction === 'right';
-  const isNewHoriz = newDir === 'left' || newDir === 'right';
-
-  // Preserve the opening centre along the current wall axis so the transition
-  // stays roughly aligned after a 90° rotation.
-  const openingCenter = isOldHoriz
-    ? t.yBlock + t.openingSizeBlocks / 2
-    : t.xBlock + t.openingSizeBlocks / 2;
-
-  t.direction = newDir;
-
-  // Clamp opening size to fit in the new direction.
-  const maxOpening = isNewHoriz
-    ? Math.max(1, room.heightBlocks - 2)
-    : Math.max(1, room.widthBlocks - 2);
-  t.openingSizeBlocks = Math.min(t.openingSizeBlocks, maxOpening);
-
-  const halfOpening = t.openingSizeBlocks / 2;
-
-  switch (newDir) {
-    case 'right':
-      t.xBlock = gw > 0 ? room.widthBlocks - gw : room.widthBlocks;
-      t.yBlock = Math.round(
-        Math.max(1, Math.min(openingCenter - halfOpening, room.heightBlocks - t.openingSizeBlocks - 1)),
-      );
-      break;
-    case 'left':
-      t.xBlock = 0;
-      t.yBlock = Math.round(
-        Math.max(1, Math.min(openingCenter - halfOpening, room.heightBlocks - t.openingSizeBlocks - 1)),
-      );
-      break;
-    case 'down':
-      t.xBlock = Math.round(
-        Math.max(1, Math.min(openingCenter - halfOpening, room.widthBlocks - t.openingSizeBlocks - 1)),
-      );
-      t.yBlock = gw > 0 ? room.heightBlocks - gw : room.heightBlocks;
-      break;
-    case 'up':
-      t.xBlock = Math.round(
-        Math.max(1, Math.min(openingCenter - halfOpening, room.widthBlocks - t.openingSizeBlocks - 1)),
-      );
-      t.yBlock = 0;
-      break;
-  }
-
-  // Keep legacy positionBlock in sync.
-  t.positionBlock = isNewHoriz ? t.yBlock : t.xBlock;
 }
 
 // ── Multi-selection helpers ──────────────────────────────────────────────────
 
 /**
- * Returns all elements whose block-space bounding box overlaps the given
- * rect. Driven entirely by `ELEMENT_ADAPTERS` (see editorElementRegistry.ts)
- * — every registered `SelectedElementType` is checked, which is what closes
- * the marquee-selection parity gap the old hand-written per-type list had
- * (it was missing challengeField/challengeGate/gate/challengeTotem/
- * zipMoveBlock/dialogueTrigger/guideDustPath/customBlock/sceneLight/rope/
- * kineticBlock/campaignSpawn entirely).
+ * Returns all elements whose block-space bounding box overlaps the given rect.
  */
 export function getAllElementsInRect(
-  state: EditorState,
   room: EditorRoomData,
   x1: number, y1: number,
   x2: number, y2: number,
 ): SelectedElement[] {
-  const rect: MarqueeRect = {
-    minX: Math.min(x1, x2),
-    maxX: Math.max(x1, x2),
-    minY: Math.min(y1, y2),
-    maxY: Math.max(y1, y2),
-  };
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
   const results: SelectedElement[] = [];
-  for (const type of ALL_ELEMENT_TYPES) {
-    const adapter = ELEMENT_ADAPTERS[type];
-    for (const el of adapter.enumerate(state, room)) {
-      if (adapter.marqueeTest(el, rect, room)) {
-        results.push({ type, uid: adapter.uid(el) });
-      }
+
+  for (const w of room.interiorWalls) {
+    if (w.xBlock + w.wBlock > minX && w.xBlock < maxX + 1 &&
+        w.yBlock + w.hBlock > minY && w.yBlock < maxY + 1) {
+      results.push({ type: 'wall', uid: w.uid });
     }
   }
-  return results.filter(el => canSelectElementType(state, el.type));
+  for (const e of room.enemies) {
+    if (e.xBlock >= minX && e.xBlock <= maxX && e.yBlock >= minY && e.yBlock <= maxY) {
+      results.push({ type: 'enemy', uid: e.uid });
+    }
+  }
+  for (const s of room.saveTombs) {
+    if (s.xBlock >= minX && s.xBlock <= maxX && s.yBlock >= minY && s.yBlock <= maxY) {
+      results.push({ type: 'saveTomb', uid: s.uid });
+    }
+  }
+  for (const s of room.skillTombs) {
+    if (s.xBlock >= minX && s.xBlock <= maxX && s.yBlock >= minY && s.yBlock <= maxY) {
+      results.push({ type: 'skillTomb', uid: s.uid });
+    }
+  }
+  for (const p of room.dustPiles) {
+    if (p.xBlock >= minX && p.xBlock <= maxX && p.yBlock >= minY && p.yBlock <= maxY) {
+      results.push({ type: 'dustPile', uid: p.uid });
+    }
+  }
+  for (const d of (room.decorations ?? [])) {
+    if (d.xBlock >= minX && d.xBlock <= maxX && d.yBlock >= minY && d.yBlock <= maxY) {
+      results.push({ type: 'decoration', uid: d.uid });
+    }
+  }
+  for (const ls of (room.lightSources ?? [])) {
+    if (ls.xBlock >= minX && ls.xBlock <= maxX && ls.yBlock >= minY && ls.yBlock <= maxY) {
+      results.push({ type: 'lightSource', uid: ls.uid });
+    }
+  }
+  for (const b of (room.ambientLightBlockers ?? [])) {
+    if (b.xBlock >= minX && b.xBlock <= maxX && b.yBlock >= minY && b.yBlock <= maxY) {
+      results.push({ type: 'ambientLightBlocker', uid: b.uid });
+    }
+  }
+  if (room.playerSpawnBlock[0] >= minX && room.playerSpawnBlock[0] <= maxX &&
+      room.playerSpawnBlock[1] >= minY && room.playerSpawnBlock[1] <= maxY) {
+    results.push({ type: 'playerSpawn', uid: 0 });
+  }
+  for (const t of room.transitions) {
+    if (hitTestTransitionRect(t, minX, minY, maxX, maxY, room)) {
+      results.push({ type: 'transition', uid: t.uid });
+    }
+  }
+  return results;
 }
 
-/**
- * Returns the uid and anchor side of the first rope in room.ropes whose
- * anchor points are within `toleranceBlocks` of (bx, by), or null if none.
- */
-export function hitTestRopeAnchor(
+function hitTestTransitionRect(
+  t: EditorTransition, minX: number, minY: number, maxX: number, maxY: number,
   room: EditorRoomData,
-  bx: number,
-  by: number,
-  toleranceBlocks = 0.8,
-): { uid: number; anchorSide: 'A' | 'B' } | null {
-  const ropes = room.ropes ?? [];
-  for (const rope of ropes) {
-    const dax = rope.anchorAXBlock - bx;
-    const day = rope.anchorAYBlock - by;
-    if (Math.sqrt(dax * dax + day * day) <= toleranceBlocks) {
-      return { uid: rope.uid, anchorSide: 'A' };
-    }
-    const dbx = rope.anchorBXBlock - bx;
-    const dby = rope.anchorBYBlock - by;
-    if (Math.sqrt(dbx * dbx + dby * dby) <= toleranceBlocks) {
-      return { uid: rope.uid, anchorSide: 'B' };
-    }
+): boolean {
+  const DEPTH = 6;
+  let tx: number, ty: number, tw: number, th: number;
+  if (t.direction === 'left' || t.direction === 'right') {
+    const zoneX = t.depthBlock !== undefined
+      ? t.depthBlock
+      : (t.direction === 'left' ? 0 : room.widthBlocks - DEPTH);
+    tx = zoneX; ty = t.positionBlock; tw = DEPTH; th = t.openingSizeBlocks;
+  } else {
+    const zoneY = t.depthBlock !== undefined
+      ? t.depthBlock
+      : (t.direction === 'up' ? 0 : room.heightBlocks - DEPTH);
+    tx = t.positionBlock; ty = zoneY; tw = t.openingSizeBlocks; th = DEPTH;
   }
-  return null;
+  return tx + tw > minX && tx < maxX + 1 && ty + th > minY && ty < maxY + 1;
 }

@@ -2,47 +2,40 @@
  * Combat forces — attack launch and block shield positioning.
  *
  * This module is the public-facing orchestrator.  The implementation is split
- * into playerCombat.ts for maintainability.
+ * across playerCombat.ts and enemyCombat.ts for maintainability.
  */
 
 import { WorldState } from '../world';
 import { triggerAttackLaunch, tickAttackMode, applyBlockForces } from './playerCombat';
+import { triggerEnemyAttackLaunch, applyEnemyBlockForces } from './enemyCombat';
+
 /**
  * Main entry point called from tick.ts.
  * Handles attack trigger, attack mode tick-down, and block shield forces
- * for the player.
- *
- * ARCHITECTURE NOTE — Legacy player attack/block paths:
- *   `triggerAttackLaunch` fires only when `playerAttackTriggeredFlag === 1`.
- *   `applyBlockForces` fires only when `isPlayerBlockingFlag === 1`.
- *   As of BUILD 359, neither flag is set by any input handler — all
- *   player-facing combat now routes through `applyPlayerWeaveCombat` (weaves)
- *   and `applyInterParticleForces` (core contact + enemy-to-player damage).
- *   These two functions remain in the pipeline because:
- *     • `tickAttackMode` is still needed to drive enemy attack-mode particles
- *       (mode=1, set by enemy AI in enemyAi.ts).
- *     • The flag-gated player paths are no-ops every tick and impose
- *       negligible cost.
- *   See docs/decisions/combatDustPolishDecisions.md for the full audit.
- *
- * Combat mode source of truth: world.combatMode (synced each tick from the
- * persistence singleton in combatMode.ts).
+ * for both the player and all enemy clusters.
  */
 export function applyCombatForces(world: WorldState): void {
-  // ---- Player attack trigger (one-shot) — legacy combat only -------------
-  if (world.combatMode === 'legacy') {
-    if (world.playerAttackTriggeredFlag === 1) {
-      triggerAttackLaunch(world);
-      world.playerAttackTriggeredFlag = 0;
-    }
-    // ---- Block shield forces (player) — legacy combat only ----------------
-    applyBlockForces(world);
-  } else {
-    // In momentum mode the attack flag is still consumed so it never leaks.
+  // ---- Player attack trigger (one-shot) -----------------------------------
+  if (world.playerAttackTriggeredFlag === 1) {
+    triggerAttackLaunch(world);
     world.playerAttackTriggeredFlag = 0;
   }
 
+  // ---- Enemy attack triggers (set each tick by enemyAi.ts) ---------------
+  for (let ci = 0; ci < world.clusters.length; ci++) {
+    const cluster = world.clusters[ci];
+    if (cluster.isPlayerFlag === 1 || cluster.isAliveFlag === 0) continue;
+    if (cluster.enemyAttackTriggeredFlag === 1) {
+      triggerEnemyAttackLaunch(world, cluster.entityId,
+        cluster.enemyAttackDirXWorld, cluster.enemyAttackDirYWorld);
+      cluster.enemyAttackTriggeredFlag = 0;
+    }
+  }
+
   // ---- Per-tick attack mode forces (fire loops, spirals, etc.) -----------
-  // tickAttackMode drives enemy attack-mode particles and runs in both modes.
   tickAttackMode(world);
+
+  // ---- Block shield forces (player + blocking enemies) -------------------
+  applyBlockForces(world);
+  applyEnemyBlockForces(world);
 }

@@ -3,7 +3,6 @@ import { getKeyboardBindings, keyMatches } from './keybindings';
 
 const JOYSTICK_DEAD_ZONE_PX = 12;
 export const JOYSTICK_MAX_RADIUS_PX = 60;
-const GAMEPAD_AXIS_DEAD_ZONE = 0.2;
 
 /** Hold < 200ms = quick attack; hold ≥ 200ms transitions to block mode. */
 const ATTACK_HOLD_THRESHOLD_MS = 200;
@@ -16,18 +15,12 @@ export interface InputState {
   isEscapePressed: boolean;
   /** Set to true for one collectCommands call to trigger a jump. */
   isJumpTriggeredFlag: boolean;
-  /** Set to true for one collectCommands call when down (S/ArrowDown) is first pressed. */
-  isDownTriggeredFlag: boolean;
   /** True while any jump key (W / Space / ArrowUp) is physically held down. */
   isJumpHeldFlag: boolean;
-  /** True while the standard gamepad jump button is physically held. */
-  isGamepadJumpHeldFlag: boolean;
-  /** Analog horizontal movement supplied by the active gamepad. */
-  gamepadMoveX: number;
-  /** True while the gamepad movement stick or D-pad is held downward. */
-  isGamepadDownHeldFlag: boolean;
   /** Tracks whether the joystick is already past the up-flick threshold (edge-detect). */
   isJoystickUpActiveFlag: boolean;
+  /** True while the Shift key is physically held down (sprint). */
+  isSprintHeldFlag: boolean;
   mouseXPx: number;
   mouseYPx: number;
   // Touch joystick state (populated by touch listeners; read by renderer for visual feedback)
@@ -71,48 +64,10 @@ export interface InputState {
   /** Screen-space aim position where the grapple fires. */
   grappleAimXPx: number;
   grappleAimYPx: number;
-  /**
-   * Set to 1 for one frame when the right mouse button is first pressed.
-   * Consumed by collectCommands to emit a GrappleZip command.  If no grapple
-   * is currently attached, the command processor falls through to the secondary
-   * Weave instead.
-   */
-  isGrappleZipRequestedFlag: 0 | 1;
   /** Set to true for one collectCommands call to trigger an interact (F key). */
   isInteractTriggeredFlag: boolean;
-  /**
-   * True while the Interact key is physically held down (between keydown and
-   * keyup). Ignores browser key-repeat — only the initial press sets this.
-   */
-  isInteractDownFlag: boolean;
-  /**
-   * performance.now() timestamp of the most recent Interact keydown edge.
-   * Valid only while isInteractDownFlag is true. Read by the dust wheel
-   * gesture logic to measure hold duration; never used by deterministic sim code.
-   */
-  interactDownTimeMs: number;
-  /**
-   * Set to true for one gesture-update call on the Interact keydown edge
-   * (ignores key-repeat). Consumed and cleared by dustWheelInput.ts, not by
-   * collectCommands — normal-tap semantics are decided downstream once hold
-   * duration / double-tap timing are known.
-   */
-  isInteractPressEdgeFlag: boolean;
-  /**
-   * Set to true for one gesture-update call on the Interact keyup edge.
-   * Consumed and cleared by dustWheelInput.ts.
-   */
-  isInteractReleaseEdgeFlag: boolean;
-  /** Set to true for one collectCommands call to toggle fullscreen. */
+  /** Set to true for one collectCommands call to request fullscreen toggle (P key). */
   isFullscreenToggleTriggeredFlag: boolean;
-  /** Set to true for one collectCommands call to open the world map (M key). */
-  isMapKeyTriggeredFlag: boolean;
-  /**
-   * Set to true for one collectCommands call when the player presses the
-   * dialogue advance key (Enter or E). Edge-triggered — only fires once per keydown,
-   * never on key repeat. Consumed by the dialogue system before normal game input.
-   */
-  isDialogueAdvanceTriggeredFlag: boolean;
 }
 
 export function createInputState(): InputState {
@@ -123,12 +78,9 @@ export function createInputState(): InputState {
     isKeyD: false,
     isEscapePressed: false,
     isJumpTriggeredFlag: false,
-    isDownTriggeredFlag: false,
     isJumpHeldFlag: false,
-    isGamepadJumpHeldFlag: false,
-    gamepadMoveX: 0,
-    isGamepadDownHeldFlag: false,
     isJoystickUpActiveFlag: false,
+    isSprintHeldFlag: false,
     mouseXPx: 0,
     mouseYPx: 0,
     isTouchJoystickActiveFlag: 0,
@@ -156,194 +108,9 @@ export function createInputState(): InputState {
     isGrappleReleaseTriggeredFlag: 0,
     grappleAimXPx: 0,
     grappleAimYPx: 0,
-    isGrappleZipRequestedFlag: 0,
     isInteractTriggeredFlag: false,
-    isInteractDownFlag: false,
-    interactDownTimeMs: 0,
-    isInteractPressEdgeFlag: false,
-    isInteractReleaseEdgeFlag: false,
     isFullscreenToggleTriggeredFlag: false,
-    isMapKeyTriggeredFlag: false,
-    isDialogueAdvanceTriggeredFlag: false,
   };
-}
-
-export interface GamepadInputSnapshot {
-  axes: readonly number[];
-  buttons: readonly { pressed: boolean; value: number }[];
-}
-
-interface GamepadPreviousState {
-  down: boolean;
-  jump: boolean;
-  interact: boolean;
-  primary: boolean;
-  secondary: boolean;
-  pause: boolean;
-}
-
-const gamepadPreviousStates = new WeakMap<InputState, GamepadPreviousState>();
-
-function getGamepadPreviousState(state: InputState): GamepadPreviousState {
-  let previous = gamepadPreviousStates.get(state);
-  if (previous === undefined) {
-    previous = {
-      down: false,
-      jump: false,
-      interact: false,
-      primary: false,
-      secondary: false,
-      pause: false,
-    };
-    gamepadPreviousStates.set(state, previous);
-  }
-  return previous;
-}
-
-function gamepadButtonPressed(gamepad: GamepadInputSnapshot, index: number): boolean {
-  const button = gamepad.buttons[index];
-  return button !== undefined && (button.pressed || button.value > 0.5);
-}
-
-function deadZoneAxis(value: number | undefined): number {
-  if (value === undefined || Math.abs(value) < GAMEPAD_AXIS_DEAD_ZONE) return 0;
-  const sign = value < 0 ? -1 : 1;
-  return sign * (Math.abs(value) - GAMEPAD_AXIS_DEAD_ZONE) / (1 - GAMEPAD_AXIS_DEAD_ZONE);
-}
-
-/**
- * Applies one standard-layout gamepad sample. Kept separate from navigator
- * polling so button-edge and analog behavior can be tested deterministically.
- */
-export function applyGamepadInputSnapshot(
-  state: InputState,
-  gamepad: GamepadInputSnapshot | null,
-  canvasWidthPx: number,
-  canvasHeightPx: number,
-  nowMs: number,
-  aimOriginXPx = canvasWidthPx * 0.5,
-  aimOriginYPx = canvasHeightPx * 0.5,
-): void {
-  const gamepadPreviousState = getGamepadPreviousState(state);
-  if (gamepad === null) {
-    state.gamepadMoveX = 0;
-    state.isGamepadDownHeldFlag = false;
-    state.isGamepadJumpHeldFlag = false;
-    // Only force a grapple release if a gamepad button was actually held when
-    // it disconnected — this branch also runs every frame when no gamepad was
-    // ever connected, so it must not stomp mouse-driven isMouseDownFlag /
-    // isRightMouseDownFlag / isGrappleHeldFlag state on every such frame
-    // (that broke mouse-hold release detection: onMouseUp bails out early
-    // once isMouseDownFlag reads 0, so GrappleRelease never fired).
-    if (gamepadPreviousState.primary) state.isGrappleReleaseTriggeredFlag = 1;
-    gamepadPreviousStates.delete(state);
-    return;
-  }
-
-  const dpadLeft = gamepadButtonPressed(gamepad, 14);
-  const dpadRight = gamepadButtonPressed(gamepad, 15);
-  const dpadDown = gamepadButtonPressed(gamepad, 13);
-  state.gamepadMoveX = dpadLeft ? -1 : dpadRight ? 1 : deadZoneAxis(gamepad.axes[0]);
-  const down = dpadDown || (gamepad.axes[1] ?? 0) > GAMEPAD_AXIS_DEAD_ZONE;
-  if (down && !gamepadPreviousState.down) state.isDownTriggeredFlag = true;
-  state.isGamepadDownHeldFlag = down;
-
-  const aimX = deadZoneAxis(gamepad.axes[2]);
-  const aimY = deadZoneAxis(gamepad.axes[3]);
-  if (aimX !== 0 || aimY !== 0) {
-    // Treat the stick as a direction, not as a slowly moving virtual cursor.
-    // The far-away target may intentionally sit outside the canvas: downstream
-    // screen-to-world conversion then preserves the exact stick angle even
-    // when the player is not centered on screen.
-    const magnitude = Math.hypot(aimX, aimY);
-    const aimDistancePx = Math.max(canvasWidthPx, canvasHeightPx);
-    state.mouseXPx = aimOriginXPx + aimX / magnitude * aimDistancePx;
-    state.mouseYPx = aimOriginYPx + aimY / magnitude * aimDistancePx;
-  }
-
-  const jump = gamepadButtonPressed(gamepad, 0);
-  const interact = gamepadButtonPressed(gamepad, 1);
-  const secondary = gamepadButtonPressed(gamepad, 6);
-  const primary = gamepadButtonPressed(gamepad, 7);
-  const pause = gamepadButtonPressed(gamepad, 9);
-
-  if (jump && !gamepadPreviousState.jump) state.isJumpTriggeredFlag = true;
-  state.isGamepadJumpHeldFlag = jump;
-
-  if (interact && !gamepadPreviousState.interact) {
-    state.isInteractDownFlag = true;
-    state.interactDownTimeMs = nowMs;
-    state.isInteractPressEdgeFlag = true;
-  } else if (!interact && gamepadPreviousState.interact) {
-    state.isInteractDownFlag = false;
-    state.isInteractReleaseEdgeFlag = true;
-  }
-
-  if (primary && !gamepadPreviousState.primary) {
-    state.isMouseDownFlag = 1;
-    state.mouseDownTimeMs = nowMs;
-    state.isGrappleHeldFlag = 1;
-    state.isGrappleFireTriggeredFlag = 1;
-    state.grappleAimXPx = state.mouseXPx;
-    state.grappleAimYPx = state.mouseYPx;
-  } else if (!primary && gamepadPreviousState.primary) {
-    state.isMouseDownFlag = 0;
-    state.isGrappleHeldFlag = 0;
-    state.isGrappleReleaseTriggeredFlag = 1;
-    if (state.isBlockingFlag === 0 && nowMs - state.mouseDownTimeMs < ATTACK_HOLD_THRESHOLD_MS) {
-      state.isAttackFiredFlag = 1;
-      state.attackDirXPx = state.mouseXPx;
-      state.attackDirYPx = state.mouseYPx;
-    }
-  }
-
-  if (secondary && !gamepadPreviousState.secondary) state.isGrappleZipRequestedFlag = 1;
-  state.isRightMouseDownFlag = secondary ? 1 : 0;
-
-  if (pause && !gamepadPreviousState.pause) {
-    let handledByOpenMenu = false;
-    if (typeof window !== 'undefined') {
-      const event = new CustomEvent('dustweaver-gamepad-pause', { cancelable: true });
-      window.dispatchEvent(event);
-      handledByOpenMenu = event.defaultPrevented;
-    }
-    if (!handledByOpenMenu) state.isEscapePressed = true;
-  }
-
-  gamepadPreviousState.down = down;
-  gamepadPreviousState.jump = jump;
-  gamepadPreviousState.interact = interact;
-  gamepadPreviousState.primary = primary;
-  gamepadPreviousState.secondary = secondary;
-  gamepadPreviousState.pause = pause;
-}
-
-/** Polls the first connected standard gamepad and applies it to gameplay input. */
-export function pollGamepadInput(
-  state: InputState,
-  canvasWidthPx: number,
-  canvasHeightPx: number,
-  nowMs: number,
-  aimOriginXPx?: number,
-  aimOriginYPx?: number,
-): void {
-  const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
-  let active: Gamepad | null = null;
-  for (let i = 0; i < pads.length; i++) {
-    if (pads[i]?.connected) {
-      active = pads[i];
-      break;
-    }
-  }
-  applyGamepadInputSnapshot(
-    state,
-    active,
-    canvasWidthPx,
-    canvasHeightPx,
-    nowMs,
-    aimOriginXPx,
-    aimOriginYPx,
-  );
 }
 
 function applyJoystickToKeys(state: InputState): void {
@@ -363,28 +130,6 @@ function applyJoystickToKeys(state: InputState): void {
 function clearJoystickKeys(state: InputState): void {
   state.isKeyA = false;
   state.isKeyD = false;
-}
-
-/**
- * Clears every edge-triggered "fires once" input flag without touching held
- * state (isKeyW/isMouseDownFlag/etc.) or continuous pointer state. Used by
- * gameplay-blocking gates (e.g. the post-load entry fade) so a buffered
- * jump/interact/grapple press made while gameplay was blocked cannot fire the
- * instant input resumes — the physical key/button must be pressed again.
- */
-export function clearAllTriggeredInputFlags(state: InputState): void {
-  state.isJumpTriggeredFlag = false;
-  state.isDownTriggeredFlag = false;
-  state.isAttackFiredFlag = 0;
-  state.isGrappleFireTriggeredFlag = 0;
-  state.isGrappleReleaseTriggeredFlag = 0;
-  state.isGrappleZipRequestedFlag = 0;
-  state.isInteractTriggeredFlag = false;
-  state.isInteractPressEdgeFlag = false;
-  state.isInteractReleaseEdgeFlag = false;
-  state.isFullscreenToggleTriggeredFlag = false;
-  state.isMapKeyTriggeredFlag = false;
-  state.isDialogueAdvanceTriggeredFlag = false;
 }
 
 export function attachInputListeners(canvas: HTMLCanvasElement, state: InputState): () => void {
@@ -415,34 +160,22 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     const b = getKeyboardBindings();
     if (keyMatches(e.key, b.moveLeft) || e.key === 'ArrowLeft') state.isKeyA = true;
     if (keyMatches(e.key, b.moveRight) || e.key === 'ArrowRight') state.isKeyD = true;
-    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') {
-      state.isKeyS = true;
-      if (!e.repeat) { state.isDownTriggeredFlag = true; }
-    }
+    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') state.isKeyS = true;
     if (e.key === 'Escape') state.isEscapePressed = true;
     if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!e.repeat) { state.isJumpTriggeredFlag = true; }
       state.isJumpHeldFlag = true;
     }
+    if (keyMatches(e.key, b.sprint)) {
+      e.preventDefault();
+      state.isSprintHeldFlag = true;
+    }
     if (keyMatches(e.key, b.interact) && !e.repeat) {
-      // Normal-tap vs. hold-to-open-wheel vs. double-tap is resolved downstream
-      // by dustWheelInput.ts, which needs the raw press edge + hold duration.
-      // Guarding on !e.repeat ensures holding the key never re-fires this edge.
-      state.isInteractDownFlag = true;
-      state.interactDownTimeMs = performance.now();
-      state.isInteractPressEdgeFlag = true;
+      state.isInteractTriggeredFlag = true;
     }
     if (keyMatches(e.key, b.toggleFullscreen) && !e.repeat) {
       state.isFullscreenToggleTriggeredFlag = true;
-    }
-    if ((e.key === 'm' || e.key === 'M') && !e.repeat) {
-      state.isMapKeyTriggeredFlag = true;
-    }
-    // Dialogue advance: Enter or E key, edge-triggered (no repeat).
-    // Using Enter/E allows advancing dialogue without conflicting with jump (Space/W).
-    if ((e.key === 'Enter' || e.key === 'e' || e.key === 'E') && !e.repeat) {
-      state.isDialogueAdvanceTriggeredFlag = true;
     }
   }
   function onKeyUp(e: KeyboardEvent): void {
@@ -454,11 +187,13 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       state.isJumpHeldFlag = false;
     }
-    if (keyMatches(e.key, b.interact)) {
-      if (state.isInteractDownFlag) {
-        state.isInteractReleaseEdgeFlag = true;
-      }
-      state.isInteractDownFlag = false;
+    if (keyMatches(e.key, b.sprint)) {
+      state.isSprintHeldFlag = false;
+    }
+    // If the sprint binding is a modifier key (e.g. Shift), keep sprint active
+    // when the other physical key of the same type is still held.
+    if (b.sprint.toLowerCase() === 'shift' && e.shiftKey) {
+      state.isSprintHeldFlag = true;
     }
   }
   function onMouseMove(e: MouseEvent): void {
@@ -479,10 +214,6 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       state.grappleAimYPx = mouse.yPx;
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 1;
-      // Signal a potential zip request on the right mouse press.
-      // collectCommands emits GrappleZip; the command processor decides whether
-      // to use it as a zip (grapple active) or ignore it (weave takes over).
-      state.isGrappleZipRequestedFlag = 1;
     }
   }
   function onMouseUp(e: MouseEvent): void {
@@ -507,11 +238,6 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     }
   }
 
-  function onMouseLeave(): void {
-    state.isRightMouseDownFlag = 0;
-    state.isGrappleZipRequestedFlag = 0;
-  }
-
   function onTouchStart(e: TouchEvent): void {
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
@@ -526,18 +252,13 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
         state.touchJoystickCurrentXPx = touch.xPx;
         state.touchJoystickCurrentYPx = touch.yPx;
       } else if (state.secondTouchId === -1) {
-        // Second finger — grapple gesture
+        // Second finger — attack/block gesture
         state.secondTouchId = t.identifier;
         state.secondTouchStartXPx = touch.xPx;
         state.secondTouchStartYPx = touch.yPx;
         state.secondTouchStartTimeMs = performance.now();
         state.secondTouchCurrentXPx = touch.xPx;
         state.secondTouchCurrentYPx = touch.yPx;
-        // Fire grapple immediately at the touch position.
-        state.isGrappleHeldFlag = 1;
-        state.isGrappleFireTriggeredFlag = 1;
-        state.grappleAimXPx = touch.xPx;
-        state.grappleAimYPx = touch.yPx;
       } else {
         // Additional touches update the aim/mouse position
         state.mouseXPx = touch.xPx;
@@ -552,16 +273,21 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       const t = e.changedTouches[i];
       const touch = clientToCanvasPx(t.clientX, t.clientY);
       if (t.identifier === joystickTouchId) {
-        // Base stays fixed — only the current (thumb) position follows the finger.
+        const dx = touch.xPx - state.touchJoystickBaseXPx;
+        const dy = touch.yPx - state.touchJoystickBaseYPx;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > JOYSTICK_MAX_RADIUS_PX) {
+          // Slide the base so the visual thumb never escapes the outer ring
+          const scale = (dist - JOYSTICK_MAX_RADIUS_PX) / dist;
+          state.touchJoystickBaseXPx += dx * scale;
+          state.touchJoystickBaseYPx += dy * scale;
+        }
         state.touchJoystickCurrentXPx = touch.xPx;
         state.touchJoystickCurrentYPx = touch.yPx;
         applyJoystickToKeys(state);
       } else if (t.identifier === state.secondTouchId) {
         state.secondTouchCurrentXPx = touch.xPx;
         state.secondTouchCurrentYPx = touch.yPx;
-        // Continuously update grapple aim as the second finger moves.
-        state.grappleAimXPx = touch.xPx;
-        state.grappleAimYPx = touch.yPx;
       } else {
         state.mouseXPx = touch.xPx;
         state.mouseYPx = touch.yPx;
@@ -575,23 +301,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     state.isKeyD = false;
     state.isKeyS = false;
     state.isJumpHeldFlag = false;
-    state.isGamepadDownHeldFlag = false;
-    // Fire a grapple release so the rope is cancelled when the window loses
-    // focus (alt-tab, task switch, etc.).  Without this the grapple stays
-    // active in the sim and the player is frozen mid-swing on return.
-    if (state.isGrappleHeldFlag === 1) {
-      state.isGrappleReleaseTriggeredFlag = 1;
-    }
+    state.isSprintHeldFlag = false;
     state.isGrappleHeldFlag = 0;
-    state.isBlockingFlag = 0;
     state.isRightMouseDownFlag = 0;
     state.isMouseDownFlag = 0;
-    // Interact: the keyup may never fire across a focus loss (alt-tab) — reset
-    // the held/edge state directly rather than emitting a release edge, since
-    // the dust wheel is force-closed separately on blur (gameScreen.ts).
-    state.isInteractDownFlag = false;
-    state.isInteractPressEdgeFlag = false;
-    state.isInteractReleaseEdgeFlag = false;
   }
 
   function onTouchEnd(e: TouchEvent): void {
@@ -604,9 +317,14 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
         clearJoystickKeys(state);
       } else if (t.identifier === state.secondTouchId) {
         state.secondTouchId = -1;
-        // Release grapple when the second finger lifts.
-        state.isGrappleHeldFlag = 0;
-        state.isGrappleReleaseTriggeredFlag = 1;
+        if (state.isBlockingFlag === 1) {
+          // Let collectCommands emit BlockEnd (isBlockingFlag stays 1 until then)
+        } else {
+          // Quick swipe — fire attack toward touch release position (gameScreen converts to direction)
+          state.isAttackFiredFlag = 1;
+          state.attackDirXPx = state.secondTouchCurrentXPx;
+          state.attackDirYPx = state.secondTouchCurrentYPx;
+        }
       }
     }
   }
@@ -616,12 +334,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
   window.addEventListener('blur', onWindowBlur);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
-  // Attached to window (not canvas) so the button-up is still caught when the
-  // cursor has left the canvas before releasing — otherwise the grapple (and
-  // block/attack) input state gets stuck "held" forever (mouseup never fires
-  // on an element the cursor isn't over).
-  window.addEventListener('mouseup', onMouseUp);
-  canvas.addEventListener('mouseleave', onMouseLeave);
+  canvas.addEventListener('mouseup', onMouseUp);
   canvas.addEventListener('touchstart', onTouchStart, { passive: false });
   canvas.addEventListener('touchmove', onTouchMove, { passive: false });
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
@@ -636,8 +349,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     window.removeEventListener('blur', onWindowBlur);
     canvas.removeEventListener('mousemove', onMouseMove);
     canvas.removeEventListener('mousedown', onMouseDown);
-    window.removeEventListener('mouseup', onMouseUp);
-    canvas.removeEventListener('mouseleave', onMouseLeave);
+    canvas.removeEventListener('mouseup', onMouseUp);
     canvas.removeEventListener('touchstart', onTouchStart);
     canvas.removeEventListener('touchmove', onTouchMove);
     canvas.removeEventListener('touchend', onTouchEnd);
@@ -649,13 +361,14 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
 // Allocates in input layer — acceptable outside sim hot-path
 // Right-click sustained Weave hold state (persists across frames within collectCommands)
 let _rightMouseWasDown = false;
+let _rightMouseDownTimeMs = 0;
+let _isRightWeaveSustainedFlag = false;
 
 export function collectCommands(input: InputState): GameCommand[] {
   const commands: GameCommand[] = [];
   let dx = 0;
   if (input.isKeyA) dx -= 1;
   if (input.isKeyD) dx += 1;
-  if (input.gamepadMoveX !== 0) dx = input.gamepadMoveX;
   if (dx !== 0) {
     commands.push({ kind: CommandKind.MovePlayer, dx, dy: 0 });
   }
@@ -702,22 +415,52 @@ export function collectCommands(input: InputState): GameCommand[] {
     commands.push({ kind: CommandKind.WeaveEndPrimary });
   }
 
-  // ---- Grapple zip (right mouse press, consumed before Shield Weave) -------
-  // emitted early so the command processor can intercept right-click for zip
-  // before it is interpreted as Shield Weave input.
-  if (input.isGrappleZipRequestedFlag === 1) {
-    input.isGrappleZipRequestedFlag = 0;
-    commands.push({ kind: CommandKind.GrappleZip });
+  // ---- Secondary Weave (right click) --------------------------------------
+  if (input.isRightMouseDownFlag === 1 && !_rightMouseWasDown) {
+    // Right mouse just went down — for burst weaves, we fire on release.
+    // For sustained weaves, we begin holding immediately after threshold.
+    _rightMouseDownTimeMs = performance.now();
   }
-
-  // ---- Shield Weave (right click) -----------------------------------------
   if (input.isRightMouseDownFlag === 0 && _rightMouseWasDown) {
-    commands.push({ kind: CommandKind.ShieldWeaveEnd });
+    // Right mouse released
+    const holdMs = performance.now() - _rightMouseDownTimeMs;
+    if (_isRightWeaveSustainedFlag) {
+      _isRightWeaveSustainedFlag = false;
+      commands.push({ kind: CommandKind.WeaveEndSecondary });
+    } else if (holdMs < ATTACK_HOLD_THRESHOLD_MS) {
+      // Quick right click → burst activation of secondary Weave
+      commands.push({ kind: CommandKind.WeaveActivateSecondary, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
+    }
   }
-  if (input.isRightMouseDownFlag === 1) {
-    commands.push({ kind: CommandKind.ShieldWeaveHold, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
+  if (input.isRightMouseDownFlag === 1 && !_isRightWeaveSustainedFlag) {
+    const holdMs = performance.now() - _rightMouseDownTimeMs;
+    if (holdMs >= ATTACK_HOLD_THRESHOLD_MS) {
+      _isRightWeaveSustainedFlag = true;
+      commands.push({ kind: CommandKind.WeaveHoldSecondary, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
+    }
+  }
+  if (_isRightWeaveSustainedFlag && input.isRightMouseDownFlag === 1) {
+    commands.push({ kind: CommandKind.WeaveHoldSecondary, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
   }
   _rightMouseWasDown = input.isRightMouseDownFlag === 1;
+
+  // ---- Second touch attack/block (mobile) — maps to primary Weave --------
+  if (input.secondTouchId !== -1) {
+    const holdMs = performance.now() - input.secondTouchStartTimeMs;
+    if (holdMs >= ATTACK_HOLD_THRESHOLD_MS && input.isBlockingFlag === 0) {
+      input.isBlockingFlag = 1;
+      commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.secondTouchCurrentXPx, aimYPx: input.secondTouchCurrentYPx });
+    }
+    if (input.isBlockingFlag === 1) {
+      commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.secondTouchCurrentXPx, aimYPx: input.secondTouchCurrentYPx });
+    }
+  }
+
+  // Emit WeaveEndPrimary when second touch ended while holding
+  if (input.secondTouchId === -1 && input.isBlockingFlag === 1 && input.isMouseDownFlag === 0) {
+    input.isBlockingFlag = 0;
+    commands.push({ kind: CommandKind.WeaveEndPrimary });
+  }
 
   // ---- Grapple hook commands ----------------------------------------------
   if (input.isGrappleFireTriggeredFlag === 1) {
@@ -738,21 +481,6 @@ export function collectCommands(input: InputState): GameCommand[] {
   if (input.isFullscreenToggleTriggeredFlag) {
     input.isFullscreenToggleTriggeredFlag = false;
     commands.push({ kind: CommandKind.ToggleFullscreen });
-  }
-
-  if (input.isMapKeyTriggeredFlag) {
-    input.isMapKeyTriggeredFlag = false;
-    commands.push({ kind: CommandKind.OpenMap });
-  }
-
-  // ---- Dialogue advance command ------------------------------------------
-  // Emitted when Enter or E key is pressed (edge-triggered, no key-repeat).
-  // Also emitted when the left mouse fires (isAttackFiredFlag set on mouseup).
-  // The dialogue system in gameScreen.ts will consume AdvanceDialogue commands
-  // before they reach normal game processing when dialogue is active.
-  if (input.isDialogueAdvanceTriggeredFlag) {
-    input.isDialogueAdvanceTriggeredFlag = false;
-    commands.push({ kind: CommandKind.AdvanceDialogue });
   }
 
   return commands;

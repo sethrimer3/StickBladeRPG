@@ -14,19 +14,6 @@ export const CAMERA_DEFAULT_ZOOM = 1.0;
 /** Lerp speed per second (0 = no follow, 1 = instant snap). */
 const CAMERA_FOLLOW_SPEED = 8.0;
 
-/**
- * Below this distance (world units) from the target, snap the camera
- * exactly onto it instead of continuing the asymptotic lerp.
- *
- * The lerp `center += (target - center) * t` never reaches `target`
- * exactly — it only approaches it. When the player is standing still,
- * that leftover sub-pixel delta keeps nudging the camera offset back
- * and forth across a `Math.round()` boundary in the renderer, making
- * the player sprite flicker between two adjacent screen pixels. Snapping
- * once the delta is negligible removes that residual drift.
- */
-const CAMERA_SNAP_EPSILON_WORLD = 0.01;
-
 export interface CameraState {
   /** Camera center X in world units. */
   centerXWorld: number;
@@ -80,8 +67,6 @@ export function updateCamera(
   const t = Math.min(1.0, CAMERA_FOLLOW_SPEED * dtSec);
   camera.centerXWorld += (targetXWorld - camera.centerXWorld) * t;
   camera.centerYWorld += (targetYWorld - camera.centerYWorld) * t;
-  if (Math.abs(targetXWorld - camera.centerXWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerXWorld = targetXWorld;
-  if (Math.abs(targetYWorld - camera.centerYWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerYWorld = targetYWorld;
   clampCameraToRoom(camera, roomWidthWorld, roomHeightWorld, viewportWidthPx, viewportHeightPx);
 }
 
@@ -114,75 +99,6 @@ function clampCameraToRoom(
     if (camera.centerYWorld < halfViewH) camera.centerYWorld = halfViewH;
     if (camera.centerYWorld > roomHeightWorld - halfViewH) camera.centerYWorld = roomHeightWorld - halfViewH;
   }
-}
-
-/**
- * Smoothly move the camera toward the target using custom world-space clamp
- * bounds.  Unlike updateCamera, the bounds are specified explicitly rather
- * than derived from a single room's width/height.  This enables two-room
- * crossing mode where the camera must roam the union of both room extents.
- *
- * Clamping behaves identically to clampCameraToRoom: when the bounds span is
- * narrower than the viewport, the camera centers on the bounds.
- */
-export function updateCameraWithBounds(
-  camera: CameraState,
-  targetXWorld: number,
-  targetYWorld: number,
-  minXWorld: number,
-  minYWorld: number,
-  maxXWorld: number,
-  maxYWorld: number,
-  viewportWidthPx: number,
-  viewportHeightPx: number,
-  dtSec: number,
-): void {
-  const t = Math.min(1.0, CAMERA_FOLLOW_SPEED * dtSec);
-  camera.centerXWorld += (targetXWorld - camera.centerXWorld) * t;
-  camera.centerYWorld += (targetYWorld - camera.centerYWorld) * t;
-  if (Math.abs(targetXWorld - camera.centerXWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerXWorld = targetXWorld;
-  if (Math.abs(targetYWorld - camera.centerYWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerYWorld = targetYWorld;
-
-  const halfViewW = viewportWidthPx  / (2 * camera.zoom);
-  const halfViewH = viewportHeightPx / (2 * camera.zoom);
-  const boundsW   = maxXWorld - minXWorld;
-  const boundsH   = maxYWorld - minYWorld;
-
-  if (boundsW <= halfViewW * 2) {
-    camera.centerXWorld = minXWorld + boundsW * 0.5;
-  } else {
-    if (camera.centerXWorld < minXWorld + halfViewW) camera.centerXWorld = minXWorld + halfViewW;
-    if (camera.centerXWorld > maxXWorld - halfViewW) camera.centerXWorld = maxXWorld - halfViewW;
-  }
-
-  if (boundsH <= halfViewH * 2) {
-    camera.centerYWorld = minYWorld + boundsH * 0.5;
-  } else {
-    if (camera.centerYWorld < minYWorld + halfViewH) camera.centerYWorld = minYWorld + halfViewH;
-    if (camera.centerYWorld > maxYWorld - halfViewH) camera.centerYWorld = maxYWorld - halfViewH;
-  }
-}
-
-/**
- * Smoothly move the camera toward the target without clamping to any bounds.
- *
- * Used in "Always Center Camera" mode: the player stays centred on screen and
- * areas outside the room show as black void.  Caller is responsible for not
- * passing a clip rect that would cut off out-of-room content.
- *
- * @param dtSec - frame delta time in seconds.
- */
-export function updateCameraUnclamped(
-  camera: CameraState,
-  targetXWorld: number,
-  targetYWorld: number,
-  dtSec: number,
-): void {
-  const t = Math.min(1.0, CAMERA_FOLLOW_SPEED * dtSec);
-  camera.centerXWorld += (targetXWorld - camera.centerXWorld) * t;
-  camera.centerYWorld += (targetYWorld - camera.centerYWorld) * t;
-  if (Math.abs(targetXWorld - camera.centerXWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerXWorld = targetXWorld;
-  if (Math.abs(targetYWorld - camera.centerYWorld) < CAMERA_SNAP_EPSILON_WORLD) camera.centerYWorld = targetYWorld;
 }
 
 /**

@@ -3,31 +3,23 @@ import { ParticleKind } from '../sim/particles/kinds';
 import { getElementProfile } from '../sim/particles/elementProfiles';
 import { RngState, nextFloat, nextFloatRange } from '../sim/rng';
 import { PlayerWeaveLoadout, WEAVE_SLOT_PRIMARY, WEAVE_SLOT_SECONDARY } from '../sim/weaves/playerLoadout';
-import { MOTES_PER_DUST_CONTAINER, PLAYER_BASE_MOTE_CAPACITY } from '../sim/playerMoteLife';
 
 /** Total particles spawned for the player cluster — distributed across loadout kinds. */
 export const PARTICLE_COUNT_PER_CLUSTER = 20;
 /** Number of background Fluid particles filling the entire arena. */
 export const BACKGROUND_FLUID_COUNT = 300;
 
+/** Boss clusters receive this multiplier on their base HP for extra durability. */
+export const BOSS_HP_MULTIPLIER = 2;
+
 /** Initial player health (HP). */
-export const PLAYER_INITIAL_HEALTH = PLAYER_BASE_MOTE_CAPACITY;
+export const PLAYER_INITIAL_HEALTH = 10;
 /** Number of particles per dust container for armor calculation. */
-export const DUST_PARTICLES_PER_CONTAINER = MOTES_PER_DUST_CONTAINER;
+export const DUST_PARTICLES_PER_CONTAINER = 4;
 
 /**
  * Spawns `count` particles of `kind` orbiting the given cluster position.
  * Sets all new particle buffer fields including anchor, lifetime, and noise seed.
- *
- * Enemy/environmental/grapple/projectile/pickup-burst owners only. Canonical
- * player life (Dust Mote health) is represented by
- * `src/sim/stormweave/lifeMotes.ts`, driven directly from `healthPoints` —
- * spawning these legacy mode-0 orbit particles with the player cluster as
- * owner would create a second, tiny pixel-locked follower cloud duplicating
- * that system. Dust Boost Jar / Dust Swarm collection grant overhealth
- * directly onto `healthPoints` (see `grantOverhealthMotes` in
- * `sim/playerMoteLife.ts`) instead of calling this function with the player
- * as owner.
  */
 export function spawnClusterParticles(
   world: WorldState,
@@ -38,17 +30,6 @@ export function spawnClusterParticles(
   count: number,
   rng: RngState,
 ): void {
-  if (import.meta.env?.DEV && clusterEntityId >= 0) {
-    const owner = world.clusters.find(c => c.entityId === clusterEntityId);
-    if (owner?.isPlayerFlag === 1) {
-      console.warn(
-        '[gameSpawn] spawnClusterParticles called with the player cluster as owner — ' +
-        'this creates legacy mode-0 follower particles that duplicate the canonical ' +
-        'Stormweave life-mote cloud. Player health grants must use grantOverhealthMotes/' +
-        'grantPlayerMotes instead of spawning player-owned particles.',
-      );
-    }
-  }
   const profile = getElementProfile(kind);
 
   for (let i = 0; i < count; i++) {
@@ -232,7 +213,7 @@ export function spawnDustPileParticles(
   count: number,
   rng: RngState,
 ): void {
-  const profile = getElementProfile(ParticleKind.Golden);
+  const profile = getElementProfile(ParticleKind.Physical);
   for (let i = 0; i < count; i++) {
     if (world.particleCount >= MAX_PARTICLES) break;
     const idx = world.particleCount++;
@@ -245,7 +226,7 @@ export function spawnDustPileParticles(
     world.massKg[idx] = profile.massKg;
     world.chargeUnits[idx] = 0;
     world.isAliveFlag[idx] = 1;
-    world.kindBuffer[idx] = ParticleKind.Golden;
+    world.kindBuffer[idx] = ParticleKind.Physical;
     world.ownerEntityId[idx] = -1;
     world.anchorAngleRad[idx] = 0;
     world.anchorRadiusWorld[idx] = 0;
@@ -261,21 +242,3 @@ export function spawnDustPileParticles(
     world.weaveSlotId[idx] = 0;
   }
 }
-
-/**
- * Spawns all dust pile particles for the current world state.
- * Called once per room load after `loadRoomHazards` has populated the dust pile arrays.
- */
-export function spawnAllDustPiles(world: WorldState): void {
-  for (let i = 0; i < world.dustPileCount; i++) {
-    spawnDustPileParticles(
-      world,
-      world.dustPileXWorld[i],
-      world.dustPileYWorld[i],
-      world.dustPileDustCount[i],
-      world.rng,
-    );
-  }
-}
-
-// Enemy cluster initialisation lives in ./gameEnemySpawn.ts

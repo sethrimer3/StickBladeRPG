@@ -23,7 +23,7 @@
  *
  * The solid-encoding algorithm is a deterministic 3-pass greedy tile cover:
  *   1. Rasterize all non-special solid walls into a boolean tile grid, per
- *      theme.  Theme keys are compact BlockThemeId strings (the room-default uses the
+ *      theme.  Theme keys are exact strings (the room-default uses the
  *      sentinel key `__default__` so we never repeat the default name on
  *      every tile).
  *   2. Greedy rectangle extraction — for each seed cell, grow the maximal
@@ -38,79 +38,174 @@
  * stable.
  */
 
-import type { BlockTheme } from './roomDef';
-import { blockThemeRefToTheme, blockThemeToId } from './roomDef';
+import type { BlockTheme, BackgroundId, LightingEffect, TransitionDirection } from './roomDef';
 import type {
   RoomJsonDef,
   RoomJsonWall,
   RoomJsonEnemy,
   RoomJsonTransition,
+  RoomJsonSkillTomb,
+  RoomJsonDustSkillTomb,
+  RoomJsonSpike,
+  RoomJsonSpringboard,
   RoomJsonZone,
+  RoomJsonBreakableBlock,
+  RoomJsonDustBoostJar,
+  RoomJsonFireflyJar,
+  RoomJsonDustPile,
+  RoomJsonGrasshopperArea,
+  RoomJsonDecoration,
 } from '../editor/roomJson';
-import { createTileGrid, paintRect, extractLayerFromGrid, extract1x1LayerFromGrid } from './tileGridCompressor';
-import { hydrateSolidsByTheme, hydrateV2Room } from './roomSchemaHydrator';
 
-// Re-export all saved types and tileGridCompressor primitive types so that
-// existing `import { ... } from './roomSchemaV2'` callers continue to work.
-export {
-  ROOM_SCHEMA_VERSION,
-  DEFAULT_THEME_KEY,
-} from './roomSavedTypes';
-export type {
-  SavedRect,
-  SavedRun,
-  SavedPoint,
-  SavedSolidLayer,
-  Saved1x1Layer,
-  SavedSolids,
-  SavedSpecialWall,
-  SavedEnemyType,
-  SavedEnemy,
-  SavedTransition,
-  SavedCrumble,
-  SavedBounce,
-  SavedKineticBlock,
-  SavedRoomRope,
-  SavedBgBlock,
-  SavedBgLayer,
-  SavedGuideDustPoint,
-  SavedGuideDustPath,
-  SavedRoomV2,
-} from './roomSavedTypes';
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA VERSIONING
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Re-export hydrate-side functions from their own module so existing callers
-// (campaignSchema.ts, roomJsonLoader.ts, etc.) continue to work unchanged.
-export {
-  enemyTypeToFlags,
-  hydrateSolidsByTheme,
-  hydrateSolidsByThemeForEditor,
-  isSavedRoomV2,
-  hydrateV2Room,
-  hydrateRoomJson,
-} from './roomSchemaHydrator';
+/** Current saved-file schema version. */
+export const ROOM_SCHEMA_VERSION = 2 as const;
 
-import {
-  ROOM_SCHEMA_VERSION,
-  DEFAULT_THEME_KEY,
-} from './roomSavedTypes';
-import type {
-  SavedSolids,
-  Saved1x1Layer,
-  SavedSpecialWall,
-  SavedEnemyType,
-  SavedEnemy,
-  SavedTransition,
-  SavedCrumble,
-  SavedBounce,
-  SavedKineticBlock,
-  SavedRoomRope,
-  SavedBgLayer,
-  SavedGuideDustPath,
-  SavedGuideDustPoint,
-  SavedRoomV2,
-  SavedPoint,
-  SavedSolidLayer,
-} from './roomSavedTypes';
+/** Sentinel theme key used for tiles that use the room-level default theme. */
+export const DEFAULT_THEME_KEY = '__default__';
+
+/** Minimum area for a greedy rectangle to be emitted as a rect (vs. runs). */
+const RECT_MIN_AREA = 4;
+/** Minimum side length for a greedy rectangle. */
+const RECT_MIN_SIDE = 2;
+/** Minimum length for a horizontal run primitive. */
+const RUN_MIN_LENGTH = 2;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAVED v2 TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A compact axis-aligned rectangle: [x, y, w, h] in block units. */
+export type SavedRect = readonly [number, number, number, number];
+/** A compact horizontal run: [y, xStart, xEndExclusive] in block units. */
+export type SavedRun = readonly [number, number, number];
+/** A compact point (single tile): [x, y] in block units. */
+export type SavedPoint = readonly [number, number];
+
+/** Encoded solids for a single block theme. All three forms may be empty. */
+export interface SavedSolidLayer {
+  rects?: SavedRect[];
+  runs?: SavedRun[];
+  points?: SavedPoint[];
+}
+
+/** Encoded solids, grouped by block theme. */
+export interface SavedSolids {
+  byTheme: Record<string, SavedSolidLayer>;
+}
+
+/**
+ * "Special" walls that cannot participate in the uniform tile-grid cover —
+ * one-way platforms, ramps, half-width pillars.  Kept in a short-key list
+ * next to `solids`.
+ */
+export interface SavedSpecialWall {
+  /** [x, y, w, h] */
+  r: SavedRect;
+  /** Block theme override, if any. */
+  theme?: BlockTheme;
+  /** 1 if one-way platform. */
+  plat?: 1;
+  /** Platform edge: 0=top,1=bottom,2=left,3=right. */
+  edge?: 0 | 1 | 2 | 3;
+  /** Ramp orientation 0-3. */
+  ramp?: 0 | 1 | 2 | 3;
+  /** 1 if half-width pillar. */
+  half?: 1;
+}
+
+/**
+ * Enemy "type" tag — replaces mutually-exclusive boolean flags from the
+ * legacy format.  Kept as a string so adding new enemies is purely additive.
+ */
+export type SavedEnemyType =
+  | 'basic'
+  | 'flyingEye'
+  | 'rolling'
+  | 'rockElemental'
+  | 'radiantTether'
+  | 'grappleHunter'
+  | 'slime'
+  | 'largeSlime'
+  | 'wheel'
+  | 'beetle';
+
+export interface SavedEnemy {
+  type: SavedEnemyType;
+  /** [xBlock, yBlock] */
+  pos: [number, number];
+  kinds?: string[];
+  particleCount?: number;
+  boss?: true;
+  /** Sprite index — only meaningful for `rolling`. */
+  spriteIndex?: number;
+}
+
+export interface SavedTransition {
+  dir: TransitionDirection;
+  to: string;
+  pos: number;
+  size: number;
+  /** [xBlock, yBlock] */
+  spawn: [number, number];
+  fade?: string;
+  depth?: number;
+}
+
+export interface SavedRoomV2 {
+  v: 2;
+  id: string;
+  name: string;
+  world: number;
+  /** [mapX, mapY] */
+  map?: [number, number];
+  theme?: BlockTheme;
+  bg?: BackgroundId;
+  light?: LightingEffect;
+  song?: string;
+  /** [widthBlocks, heightBlocks] */
+  size: [number, number];
+  /** [xBlock, yBlock] */
+  spawn: [number, number];
+  solids: SavedSolids;
+  specialWalls?: SavedSpecialWall[];
+  enemies?: SavedEnemy[];
+  transitions?: SavedTransition[];
+  /** Save tombs as [x, y]. Kept as "saveTombs" for clarity. */
+  saveTombs?: SavedPoint[];
+  /** Skill tombs as [x, y, weaveId]. */
+  skillTombs?: [number, number, string][];
+  skillBooks?: SavedPoint[];
+  dustContainers?: SavedPoint[];
+  spikes?: [number, number, 'up' | 'down' | 'left' | 'right'][];
+  springboards?: SavedPoint[];
+  waterZones?: SavedRect[];
+  lavaZones?: SavedRect[];
+  breakableBlocks?: SavedPoint[];
+  dustBoostJars?: [number, number, string, number][];
+  fireflyJars?: SavedPoint[];
+  /** [x, y, count] */
+  dustPiles?: [number, number, number][];
+  /** [x, y, w, h, count] */
+  grasshopperAreas?: [number, number, number, number, number][];
+  /** [x, y, kind] */
+  decorations?: [number, number, string][];
+  /**
+   * Authored ambient/skylight direction (see `AmbientLightDirection`).
+   * Stored verbatim as the string literal.
+   */
+  ambientDir?: string;
+  /** Sparse list of ambient-light blocker tile coordinates: [x, y]. */
+  ambientBlockers?: [number, number][];
+  /**
+   * Sparse list of local light sources:
+   * [xBlock, yBlock, radiusBlocks, r, g, b, brightnessPct].
+   */
+  lights?: [number, number, number, number, number, number, number][];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENEMY TYPE MAPPING
@@ -118,52 +213,40 @@ import type {
 
 /** Determine the SavedEnemyType for a legacy RoomJsonEnemy. */
 export function enemyFlagsToType(e: RoomJsonEnemy): SavedEnemyType {
-  if (e.isShadowEnemy) return 'shadow';
-  if (e.isNeedleUrchin) return 'needleUrchin';
-  if (e.isSlimeSnail) return 'slimeSnail';
-  if (e.isMomentumTurret) return 'momentumTurret';
   if (e.isFlyingEye)      return 'flyingEye';
   if (e.isRollingEnemy)   return 'rolling';
   if (e.isRockElemental)  return 'rockElemental';
   if (e.isRadiantTether)  return 'radiantTether';
-  if (e.isRadiantWeb)     return 'radiantWeb';
-  if (e.isCrimsonWizard)  return 'crimsonWizard';
-  if (e.isHerald)         return 'herald';
-  if (e.isIceWizard)      return 'iceWizard';
   if (e.isGrappleHunter)  return 'grappleHunter';
   if (e.isSlime)          return 'slime';
   if (e.isLargeSlime)     return 'largeSlime';
   if (e.isWheelEnemy)     return 'wheel';
   if (e.isBeetle)         return 'beetle';
-  if (e.isBubbleEnemy && e.isIceBubble) return 'iceBubble';
-  if (e.isBubbleEnemy) return 'bubble';
-  if (e.isSquareStampede) return 'squareStampede';
-  if (e.isGoldenMimic) return 'goldenMimic';
-  if (e.isBeeSwarm) return 'beeSwarm';
-  if (e.isWebSpider)      return 'webSpider';
-  if (e.isDustConstellation && e.isDustConstellationLarge) return 'dustConstellationLarge';
-  if (e.isDustConstellation) return 'dustConstellation';
-  if (e.isOrbitalDustCore && e.isOrbitalDustCoreLarge) return 'orbitalDustCoreLarge';
-  if (e.isOrbitalDustCore) return 'orbitalDustCore';
-  if (e.isDustBlockMimic && e.isDustBlockMimicLarge) return 'dustBlockMimicLarge';
-  if (e.isDustBlockMimic) return 'dustBlockMimic';
-  if (e.isDustWeaverArchitect && e.isDustWeaverArchitectLarge) return 'dustWeaverArchitectLarge';
-  if (e.isDustWeaverArchitect) return 'dustWeaverArchitect';
-  if (e.isVoidSingularity && e.isVoidSingularityPair) return 'voidSingularityPair';
-  if (e.isVoidSingularity) return 'voidSingularity';
-  if (e.isDustLeech) return 'dustLeech';
-  if (e.isGridSnakeEnemy) return 'gridSnake';
-  if (e.isGridBlockEnemy) {
-    const sz = e.gridBlockSizeIndex ?? 0;
-    const sp = e.gridBlockSpeedIndex ?? 0;
-    if (sz === 0 && sp === 0) return 'gridBlock1x1Slow';
-    if (sz === 0 && sp === 1) return 'gridBlock1x1Medium';
-    if (sz === 0 && sp === 2) return 'gridBlock1x1Fast';
-    if (sz === 1 && sp === 0) return 'gridBlock2x2Slow';
-    if (sz === 1 && sp === 1) return 'gridBlock2x2Medium';
-    return 'gridBlock2x2Fast';
-  }
   return 'basic';
+}
+
+/** Expand a SavedEnemyType into the legacy boolean-flag shape (as RoomJsonEnemy). */
+export function enemyTypeToFlags(
+  type: SavedEnemyType,
+  base: { xBlock: number; yBlock: number; kinds: string[]; particleCount: number; isBoss: boolean; spriteIndex?: number },
+): RoomJsonEnemy {
+  return {
+    xBlock: base.xBlock,
+    yBlock: base.yBlock,
+    kinds: base.kinds,
+    particleCount: base.particleCount,
+    isBoss: base.isBoss,
+    isFlyingEye:     type === 'flyingEye',
+    isRollingEnemy:  type === 'rolling',
+    rollingEnemySpriteIndex: type === 'rolling' ? (base.spriteIndex ?? 1) : undefined,
+    isRockElemental: type === 'rockElemental',
+    isRadiantTether: type === 'radiantTether',
+    isGrappleHunter: type === 'grappleHunter',
+    isSlime:         type === 'slime',
+    isLargeSlime:    type === 'largeSlime',
+    isWheelEnemy:    type === 'wheel',
+    isBeetle:        type === 'beetle',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,17 +255,152 @@ export function enemyFlagsToType(e: RoomJsonEnemy): SavedEnemyType {
 
 /**
  * A wall participates in the uniform tile-grid solid encoding iff it has
- * none of the "special" flags (platform, stairs, legacy ramp, half-width
- * pillar) — i.e. iff its solid area really is its full bounding rectangle.
+ * none of the "special" flags (platform, ramp, half-width pillar).
  */
 export function isUniformSolidWall(w: RoomJsonWall): boolean {
-  if (w.r !== undefined)                   return false;
-  if (w.isPlatform === true)             return false;
-  if (w.rampOrientation !== undefined)   return false;
-  if (w.stairsOrientation !== undefined) return false;
-  if (w.smoothRampOrientation !== undefined) return false;
-  if (w.isPillarHalfWidth === true)      return false;
+  if (w.isPlatform === true)          return false;
+  if (w.rampOrientation !== undefined) return false;
+  if (w.isPillarHalfWidth === true)   return false;
   return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TILE GRID + EXTRACTION HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 2D boolean tile occupancy map backed by a single Uint8Array. */
+interface TileGrid {
+  widthBlocks: number;
+  heightBlocks: number;
+  cells: Uint8Array;
+}
+
+function createTileGrid(widthBlocks: number, heightBlocks: number): TileGrid {
+  return {
+    widthBlocks,
+    heightBlocks,
+    cells: new Uint8Array(widthBlocks * heightBlocks),
+  };
+}
+
+function gridIndex(grid: TileGrid, x: number, y: number): number {
+  return y * grid.widthBlocks + x;
+}
+
+/**
+ * Fills a rectangular region in the grid, clamping to grid bounds so
+ * out-of-bounds tiles are silently discarded (the boundary wall regenerator
+ * may emit rectangles that extend past `widthBlocks` for tunnel overhangs).
+ */
+function paintRect(grid: TileGrid, x: number, y: number, w: number, h: number): void {
+  const x0 = Math.max(0, x);
+  const y0 = Math.max(0, y);
+  const x1 = Math.min(grid.widthBlocks, x + w);
+  const y1 = Math.min(grid.heightBlocks, y + h);
+  for (let yy = y0; yy < y1; yy++) {
+    for (let xx = x0; xx < x1; xx++) {
+      grid.cells[gridIndex(grid, xx, yy)] = 1;
+    }
+  }
+}
+
+/**
+ * Greedy maximal rectangle starting at (x0, y0).  Grows right as far as
+ * possible while every cell is filled, then grows down as far as possible
+ * while every cell in the row is filled.
+ */
+function maximalRectAt(grid: TileGrid, x0: number, y0: number): { w: number; h: number } {
+  // Grow width.
+  let w = 0;
+  while (x0 + w < grid.widthBlocks && grid.cells[gridIndex(grid, x0 + w, y0)] === 1) {
+    w += 1;
+  }
+  if (w === 0) return { w: 0, h: 0 };
+
+  // Grow height — each new row must be fully filled across [x0, x0+w).
+  let h = 1;
+  while (y0 + h < grid.heightBlocks) {
+    let allFilled = true;
+    const rowStart = gridIndex(grid, x0, y0 + h);
+    for (let i = 0; i < w; i++) {
+      if (grid.cells[rowStart + i] !== 1) { allFilled = false; break; }
+    }
+    if (!allFilled) break;
+    h += 1;
+  }
+  return { w, h };
+}
+
+function clearRect(grid: TileGrid, x: number, y: number, w: number, h: number): void {
+  for (let yy = y; yy < y + h; yy++) {
+    const rowStart = gridIndex(grid, x, yy);
+    for (let i = 0; i < w; i++) {
+      grid.cells[rowStart + i] = 0;
+    }
+  }
+}
+
+/**
+ * Three-pass deterministic tile cover:
+ *   1. Rectangles (min 2×2, min area 4).
+ *   2. Horizontal runs (length ≥ 2).
+ *   3. Points (length 1 leftovers).
+ */
+function extractLayerFromGrid(grid: TileGrid): SavedSolidLayer {
+  const rects: SavedRect[] = [];
+  const runs: SavedRun[] = [];
+  const points: SavedPoint[] = [];
+
+  // Pass 1 — rectangles.  Scan row-major; first seed found is the top-left
+  // corner of the next rectangle.
+  for (let y = 0; y < grid.heightBlocks; y++) {
+    for (let x = 0; x < grid.widthBlocks; x++) {
+      if (grid.cells[gridIndex(grid, x, y)] !== 1) continue;
+      const { w, h } = maximalRectAt(grid, x, y);
+      if (w >= RECT_MIN_SIDE && h >= RECT_MIN_SIDE && w * h >= RECT_MIN_AREA) {
+        rects.push([x, y, w, h]);
+        clearRect(grid, x, y, w, h);
+      }
+      // Otherwise leave the cell alone for run/point extraction.
+    }
+  }
+
+  // Pass 2 — horizontal runs (length ≥ RUN_MIN_LENGTH).
+  for (let y = 0; y < grid.heightBlocks; y++) {
+    let x = 0;
+    while (x < grid.widthBlocks) {
+      if (grid.cells[gridIndex(grid, x, y)] !== 1) { x += 1; continue; }
+      let end = x + 1;
+      while (end < grid.widthBlocks && grid.cells[gridIndex(grid, end, y)] === 1) end += 1;
+      const len = end - x;
+      if (len >= RUN_MIN_LENGTH) {
+        runs.push([y, x, end]);
+        for (let i = x; i < end; i++) grid.cells[gridIndex(grid, i, y)] = 0;
+      }
+      x = end;
+    }
+  }
+
+  // Pass 3 — remaining single cells.
+  for (let y = 0; y < grid.heightBlocks; y++) {
+    for (let x = 0; x < grid.widthBlocks; x++) {
+      if (grid.cells[gridIndex(grid, x, y)] === 1) {
+        points.push([x, y]);
+        grid.cells[gridIndex(grid, x, y)] = 0;
+      }
+    }
+  }
+
+  // Deterministic sort: rects by (y, x, w, h); runs by (y, xStart); points by (y, x).
+  rects.sort((a, b) => a[1] - b[1] || a[0] - b[0] || a[2] - b[2] || a[3] - b[3]);
+  runs.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  points.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+
+  const layer: SavedSolidLayer = {};
+  if (rects.length > 0) layer.rects = rects;
+  if (runs.length > 0) layer.runs = runs;
+  if (points.length > 0) layer.points = points;
+  return layer;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,140 +409,13 @@ export function isUniformSolidWall(w: RoomJsonWall): boolean {
 
 /** Pick the theme-grouping key for a wall (sentinel for room-default theme). */
 function themeKeyForWall(wallTheme: BlockTheme | undefined, defaultTheme: BlockTheme): string {
-  return wallTheme && wallTheme !== defaultTheme ? blockThemeToId(wallTheme) : DEFAULT_THEME_KEY;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DEHYDRATE  zones (water / lava)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compresses a list of RoomJsonZone rectangles into a single compact
- * SavedSolidLayer using the greedy rect/run/point algorithm.
- *
- * All zones are rasterized into a boolean tile grid and then re-extracted as
- * the minimal covering set of rects, runs, and points.  This merges adjacent
- * or overlapping 1×1 zones into larger shapes automatically.
- *
- * Water and lava MUST be passed to separate calls — never mix zone types.
- */
-function dehydrateZoneLayer(
-  zones: readonly RoomJsonZone[],
-  widthBlocks: number,
-  heightBlocks: number,
-): SavedSolidLayer | undefined {
-  if (zones.length === 0) return undefined;
-  const grid = createTileGrid(widthBlocks, heightBlocks);
-  for (const z of zones) paintRect(grid, z.xBlock, z.yBlock, z.wBlock, z.hBlock);
-  const layer = extractLayerFromGrid(grid);
-  if (!layer.rects && !layer.runs && !layer.points) return undefined;
-  return layer;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DEHYDRATE  ambient blockers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compresses a set of single-cell blocker coordinates into a compact
- * Saved1x1Layer (horizontal runs + points).
- *
- * Clear and dark blockers MUST be passed to separate calls — they are stored
- * in separate fields (`ambientBlockersClear` and `ambientBlockersDark`) so
- * that hydration can restore the `isDark` flag per cell without ambiguity.
- */
-function dehydrateBlockerLayer(
-  cells: ReadonlyArray<{ xBlock: number; yBlock: number }>,
-  widthBlocks: number,
-  heightBlocks: number,
-): Saved1x1Layer | undefined {
-  if (cells.length === 0) return undefined;
-  const grid = createTileGrid(widthBlocks, heightBlocks);
-  for (const b of cells) paintRect(grid, b.xBlock, b.yBlock, 1, 1);
-  const layer = extract1x1LayerFromGrid(grid);
-  if (!layer.runs && !layer.points) return undefined;
-  return layer;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DEHYDRATE  background blocks
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Compresses a list of background blocks into SavedBgLayer groups.
- *
- * Background blocks are grouped by (themeKey, lb) so that only blocks with
- * identical visual and lighting properties are merged together. Within each
- * group, blocks are further partitioned by authored footprint:
- *   • bulk blocks (`wBlock > 1 || hBlock > 1`) go through the full greedy
- *     rect/run/point compressor (`layer`) — merging across these is fine
- *     because their footprint is already a deliberate multi-cell rectangle.
- *   • 1×1-authored blocks go through the runs+points-only compressor (`v1`)
- *     so their per-cell authoring identity survives the round trip (see
- *     `hydrateBgLayersForEditor`), mirroring `solids.v1ByTheme` for walls.
- *
- * Never merge:
- *   • blocks with different block themes
- *   • light-blocking blocks with non-light-blocking blocks
- *   • bulk blocks with 1×1-authored blocks (they use different primitives)
- */
-function dehydrateBgLayers(
-  bgBlocks: readonly { xBlock: number; yBlock: number; wBlock: number; hBlock: number; blockTheme?: BlockTheme | undefined; isLightBlocking?: boolean | undefined }[],
-  widthBlocks: number,
-  heightBlocks: number,
-  defaultTheme: BlockTheme,
-): SavedBgLayer[] | undefined {
-  if (bgBlocks.length === 0) return undefined;
-
-  // Group by (themeKey, lb).
-  type BgBlockGroupKey = string;
-  const groups = new Map<BgBlockGroupKey, typeof bgBlocks[number][]>();
-  for (const b of bgBlocks) {
-    const themeKey = b.blockTheme && b.blockTheme !== defaultTheme ? blockThemeToId(b.blockTheme) : DEFAULT_THEME_KEY;
-    const lb = b.isLightBlocking ? 1 : 0;
-    const key: BgBlockGroupKey = `${themeKey}\0${lb}`;
-    const list = groups.get(key) ?? [];
-    list.push(b);
-    if (!groups.has(key)) groups.set(key, list);
-  }
-
-  const layers: SavedBgLayer[] = [];
-  // Deterministic order: sort group keys.
-  for (const [key, members] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const [themeKey, lbStr] = key.split('\0');
-    const bulkMembers = members.filter(b => b.wBlock > 1 || b.hBlock > 1);
-    const v1Members = members.filter(b => b.wBlock === 1 && b.hBlock === 1);
-
-    const entry: SavedBgLayer = { themeKey };
-    if (bulkMembers.length > 0) {
-      const grid = createTileGrid(widthBlocks, heightBlocks);
-      for (const b of bulkMembers) paintRect(grid, b.xBlock, b.yBlock, b.wBlock, b.hBlock);
-      const layer = extractLayerFromGrid(grid);
-      if (layer.rects || layer.runs || layer.points) entry.layer = layer;
-    }
-    if (v1Members.length > 0) {
-      const grid = createTileGrid(widthBlocks, heightBlocks);
-      for (const b of v1Members) paintRect(grid, b.xBlock, b.yBlock, 1, 1);
-      const layer = extract1x1LayerFromGrid(grid);
-      if (layer.runs || layer.points) entry.v1 = layer;
-    }
-    if (!entry.layer && !entry.v1) continue;
-    if (lbStr === '1') entry.lb = 1;
-    layers.push(entry);
-  }
-
-  return layers.length > 0 ? layers : undefined;
+  return wallTheme && wallTheme !== defaultTheme ? wallTheme : DEFAULT_THEME_KEY;
 }
 
 /**
  * Compresses a list of uniform solid walls into byTheme/rects/runs/points.
- * Walls with special flags (platform/stairs/ramp/pillar half) MUST be filtered out
+ * Walls with special flags (platform/ramp/pillar half) MUST be filtered out
  * before calling this — they travel in `specialWalls` and bypass the grid.
- *
- * `v1Walls` are walls with hBlock === 1 that must keep their 1×1 visual grain.
- * They are stored in `v1ByTheme` using runs + points only (no 2D rects), so
- * that after hydration they still have hBlock = 1 and are never promoted to
- * 2×2-sprite rendering by `_buildSolid2x2Map`.
  */
 export function dehydrateSolidsByTheme(
   uniformWalls: readonly RoomJsonWall[],
@@ -332,23 +423,17 @@ export function dehydrateSolidsByTheme(
   heightBlocks: number,
   defaultTheme: BlockTheme,
 ): SavedSolids {
-  // Partition into 1×1-visual walls (hBlock === 1) vs bulk walls.
-  const v1Walls: RoomJsonWall[] = [];
-  const bulkWalls: RoomJsonWall[] = [];
-  for (const w of uniformWalls) {
-    if (w.hBlock === 1) v1Walls.push(w);
-    else bulkWalls.push(w);
-  }
-
-  // ── bulk (byTheme): full rect/run/point compressor ──────────────────────
+  // 1. Partition walls by theme key (default theme → sentinel key).
   const byThemeWalls = new Map<string, RoomJsonWall[]>();
-  for (const w of bulkWalls) {
+  for (const w of uniformWalls) {
     const themeKey = themeKeyForWall(w.blockTheme, defaultTheme);
     const list = byThemeWalls.get(themeKey) ?? [];
     list.push(w);
     if (!byThemeWalls.has(themeKey)) byThemeWalls.set(themeKey, list);
   }
 
+  // 2. Rasterize and extract per-theme.  Themes are emitted in alphabetical
+  //    order for stable diffs (default sentinel sorts first due to '_' < 'a').
   const byTheme: Record<string, SavedSolidLayer> = {};
   const themeKeys = [...byThemeWalls.keys()].sort();
   for (const themeKey of themeKeys) {
@@ -358,76 +443,88 @@ export function dehydrateSolidsByTheme(
     const layer = extractLayerFromGrid(grid);
     if (layer.rects || layer.runs || layer.points) byTheme[themeKey] = layer;
   }
+  return { byTheme };
+}
 
-  // ── v1 (v1ByTheme): runs + points only, grouped by theme ────────────────
-  const v1ThemeWalls = new Map<string, RoomJsonWall[]>();
-  for (const w of v1Walls) {
-    const themeKey = themeKeyForWall(w.blockTheme, defaultTheme);
-    const list = v1ThemeWalls.get(themeKey) ?? [];
-    list.push(w);
-    if (!v1ThemeWalls.has(themeKey)) v1ThemeWalls.set(themeKey, list);
+/**
+ * Expands compact solids back into a flat RoomJsonWall[].  Each rect / run
+ * / point becomes a single wall rectangle with the theme recovered from the
+ * enclosing theme key (the `__default__` sentinel is mapped back to
+ * `undefined` so walls use the room-level default theme).
+ */
+export function hydrateSolidsByTheme(
+  solids: SavedSolids | undefined,
+): RoomJsonWall[] {
+  const out: RoomJsonWall[] = [];
+  if (!solids || !solids.byTheme) return out;
+
+  for (const themeKey of Object.keys(solids.byTheme).sort()) {
+    const layer = solids.byTheme[themeKey];
+    const theme: BlockTheme | undefined = themeKey === DEFAULT_THEME_KEY
+      ? undefined
+      : (themeKey as BlockTheme);
+
+    if (layer.rects) {
+      for (const [x, y, w, h] of layer.rects) {
+        const wall: RoomJsonWall = { xBlock: x, yBlock: y, wBlock: w, hBlock: h };
+        if (theme) wall.blockTheme = theme;
+        out.push(wall);
+      }
+    }
+    if (layer.runs) {
+      for (const [y, xStart, xEnd] of layer.runs) {
+        const wall: RoomJsonWall = { xBlock: xStart, yBlock: y, wBlock: xEnd - xStart, hBlock: 1 };
+        if (theme) wall.blockTheme = theme;
+        out.push(wall);
+      }
+    }
+    if (layer.points) {
+      for (const [x, y] of layer.points) {
+        const wall: RoomJsonWall = { xBlock: x, yBlock: y, wBlock: 1, hBlock: 1 };
+        if (theme) wall.blockTheme = theme;
+        out.push(wall);
+      }
+    }
   }
-
-  const v1ByTheme: Record<string, Saved1x1Layer> = {};
-  const v1ThemeKeys = [...v1ThemeWalls.keys()].sort();
-  for (const themeKey of v1ThemeKeys) {
-    const walls = v1ThemeWalls.get(themeKey)!;
-    const grid = createTileGrid(widthBlocks, heightBlocks);
-    for (const w of walls) paintRect(grid, w.xBlock, w.yBlock, w.wBlock, w.hBlock);
-    const layer = extract1x1LayerFromGrid(grid);
-    if (layer.runs || layer.points) v1ByTheme[themeKey] = layer;
-  }
-
-  const solids: SavedSolids = { byTheme };
-  if (Object.keys(v1ByTheme).length > 0) solids.v1ByTheme = v1ByTheme;
-  return solids;
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DEHYDRATE / HYDRATE  full room
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Auto-detect whether `data` is a v2 saved room. */
+export function isSavedRoomV2(data: unknown): data is SavedRoomV2 {
+  return typeof data === 'object' && data !== null
+      && (data as { v?: unknown }).v === ROOM_SCHEMA_VERSION;
+}
+
 /**
  * Dehydrate a verbose RoomJsonDef into the compact SavedRoomV2 shape.
  * The editor saves in this format; the runtime never has to see it.
- *
- * v3 change: walls with hBlock === 1 are stored in `solids.v1ByTheme` using
- * horizontal runs + points (no 2D rects), which preserves their 1×1 visual
- * grain after round-trip.  `exactWalls` is no longer written for ordinary
- * solid walls; existing v2 files that do have `exactWalls` still load fine.
  */
 export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
-  const defaultTheme: BlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme ?? 'blackRock';
+  const defaultTheme: BlockTheme = json.blockTheme ?? 'blackRock';
 
-  // Partition walls: special (platform/stairs/ramp/pillar) go into specialWalls;
-  // all uniform solid walls go through dehydrateSolidsByTheme which further
-  // splits into byTheme (hBlock>1 bulk) and v1ByTheme (hBlock=1 single-row).
-  const uniformWallsBulk: RoomJsonWall[] = [];
+  // Partition walls: uniform vs. special.
+  const uniformWalls: RoomJsonWall[] = [];
   const specialWallsRaw: RoomJsonWall[] = [];
   for (const w of json.interiorWalls) {
-    const wallTheme = blockThemeRefToTheme(w.blockThemeId);
-    if (wallTheme && w.blockTheme === undefined) w.blockTheme = wallTheme;
-    if (!isUniformSolidWall(w)) {
-      specialWallsRaw.push(w);
-    } else {
-      uniformWallsBulk.push(w);
-    }
+    if (isUniformSolidWall(w)) uniformWalls.push(w);
+    else specialWallsRaw.push(w);
   }
 
-  const solids = dehydrateSolidsByTheme(uniformWallsBulk, json.widthBlocks, json.heightBlocks, defaultTheme);
+  const solids = dehydrateSolidsByTheme(uniformWalls, json.widthBlocks, json.heightBlocks, defaultTheme);
 
   const specialWalls: SavedSpecialWall[] = specialWallsRaw.map(w => {
     const sw: SavedSpecialWall = { r: [w.xBlock, w.yBlock, w.wBlock, w.hBlock] };
-    if (w.blockTheme && w.blockTheme !== defaultTheme) sw.theme = blockThemeToId(w.blockTheme);
+    if (w.blockTheme && w.blockTheme !== defaultTheme) sw.theme = w.blockTheme;
     if (w.isPlatform) {
       sw.plat = 1;
       if (w.platformEdge !== undefined && w.platformEdge !== 0) sw.edge = w.platformEdge;
     }
     if (w.rampOrientation !== undefined) sw.ramp = w.rampOrientation;
-    if (w.stairsOrientation !== undefined) sw.stairs = w.stairsOrientation;
-    if (w.smoothRampOrientation !== undefined) sw.smoothRamp = w.smoothRampOrientation;
     if (w.isPillarHalfWidth) sw.half = 1;
-    if (w.r !== undefined) sw.rim = w.r;
     return sw;
   });
 
@@ -445,13 +542,11 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   };
 
   if (json.mapX !== undefined || json.mapY !== undefined) out.map = [json.mapX ?? 0, json.mapY ?? 0];
-  out.theme = blockThemeToId(defaultTheme);
+  if (json.blockTheme)     out.theme = json.blockTheme;
   if (json.backgroundId)   out.bg = json.backgroundId;
-  if (json.backgroundBlur === true) out.bgBlur = true;
   if (json.lightingEffect) out.light = json.lightingEffect;
   if (json.songId && json.songId !== '_continue') out.song = json.songId;
   if (specialWalls.length > 0) out.specialWalls = specialWalls;
-  if (json.rimStyles?.length) out.rimStyles = json.rimStyles.map(style => [...style]);
 
   if (json.enemies.length > 0) {
     out.enemies = json.enemies.map(e => dehydrateEnemy(e));
@@ -465,16 +560,6 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   if (json.dustSkillTombs && json.dustSkillTombs.length > 0) {
     out.skillTombs = json.dustSkillTombs.map(s => [s.xBlock, s.yBlock, s.weaveId]);
   }
-  if (json.challengeFields?.length) {
-    out.challengeFields = json.challengeFields.map(element => [element.uid, element.xBlock, element.yBlock, element.wBlock, element.hBlock]);
-  }
-  if (json.challengeGates?.length) {
-    out.challengeGates = json.challengeGates.map(element => [element.uid, element.xBlock, element.yBlock, element.wBlock, element.hBlock]);
-  }
-  if (json.challengeTotems?.length) {
-    out.challengeTotems = json.challengeTotems.map(element => [element.uid, element.xBlock, element.yBlock]);
-  }
-  if (json.gates?.length) out.gates = json.gates.map(gate => ({ ...gate }));
   if (json.skillBooks && json.skillBooks.length > 0) {
     out.skillBooks = json.skillBooks.map(s => [s.xBlock, s.yBlock] as SavedPoint);
   }
@@ -482,69 +567,28 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
     out.dustContainers = json.dustContainers.map(s => [s.xBlock, s.yBlock] as SavedPoint);
   }
   if (json.spikes && json.spikes.length > 0) {
-    out.spikes = json.spikes.map(s => {
-      if (s.blockTheme !== undefined) {
-        return [s.xBlock, s.yBlock, s.direction, s.size === '2x2' ? '2x2' : '1x1', blockThemeToId(s.blockTheme)];
-      }
-      return s.size === '2x2'
-        ? [s.xBlock, s.yBlock, s.direction, '2x2']
-        : [s.xBlock, s.yBlock, s.direction];
-    });
-  }
-  if (json.lasers && json.lasers.length > 0) {
-    out.lasers = json.lasers.map(l => [l.xBlock, l.yBlock, l.direction]);
+    out.spikes = json.spikes.map(s => [s.xBlock, s.yBlock, s.direction]);
   }
   if (json.springboards && json.springboards.length > 0) {
     out.springboards = json.springboards.map(s => [s.xBlock, s.yBlock] as SavedPoint);
   }
   if (json.waterZones && json.waterZones.length > 0) {
-    // Compress water zones using the greedy rect algorithm.  Adjacent/overlapping
-    // 1×1 zones merge into larger rects, drastically reducing file size for
-    // large rooms with many painted water tiles (e.g. underwater_lake_room).
-    const layer = dehydrateZoneLayer(json.waterZones, json.widthBlocks, json.heightBlocks);
-    if (layer) out.waterLayer = layer;
+    out.waterZones = json.waterZones.map(z => [z.xBlock, z.yBlock, z.wBlock, z.hBlock] as SavedRect);
   }
   if (json.lavaZones && json.lavaZones.length > 0) {
-    // Same compression for lava.  Water and lava are never mixed.
-    const layer = dehydrateZoneLayer(json.lavaZones, json.widthBlocks, json.heightBlocks);
-    if (layer) out.lavaLayer = layer;
-  }
-  if (json.timeStopFields && json.timeStopFields.length > 0) {
-    // Same compression, independent layer — TimeStop Field tiles are not a
-    // liquid and never interact with water/lava coverage.
-    const layer = dehydrateZoneLayer(json.timeStopFields, json.widthBlocks, json.heightBlocks);
-    if (layer) out.timeStopFieldLayer = layer;
-  }
-  if (json.poisonFields && json.poisonFields.length > 0) {
-    // Same compression, independent layer — Poison Field rectangles never
-    // interact with water/lava/TimeStop coverage.
-    const layer = dehydrateZoneLayer(json.poisonFields, json.widthBlocks, json.heightBlocks);
-    if (layer) out.poisonFieldLayer = layer;
+    out.lavaZones = json.lavaZones.map(z => [z.xBlock, z.yBlock, z.wBlock, z.hBlock] as SavedRect);
   }
   if (json.breakableBlocks && json.breakableBlocks.length > 0) {
-    out.breakableBlocks = json.breakableBlocks.map(b =>
-      b.groupId === undefined ? [b.xBlock, b.yBlock] : [b.xBlock, b.yBlock, b.groupId],
-    );
+    out.breakableBlocks = json.breakableBlocks.map(b => [b.xBlock, b.yBlock] as SavedPoint);
   }
   if (json.dustBoostJars && json.dustBoostJars.length > 0) {
     out.dustBoostJars = json.dustBoostJars.map(j => [j.xBlock, j.yBlock, j.dustKind, j.dustCount]);
-  }
-  if (json.dustSwarms && json.dustSwarms.length > 0) {
-    out.dustSwarms = json.dustSwarms.map(s => [s.xBlock, s.yBlock, s.dustKind, s.dustCount]);
-  }
-  if (json.lambdaAnchors && json.lambdaAnchors.length > 0) {
-    out.lambdaAnchors = json.lambdaAnchors.map(a => [a.xBlock, a.yBlock]);
   }
   if (json.fireflyJars && json.fireflyJars.length > 0) {
     out.fireflyJars = json.fireflyJars.map(j => [j.xBlock, j.yBlock] as SavedPoint);
   }
   if (json.dustPiles && json.dustPiles.length > 0) {
-    out.dustPiles = json.dustPiles.map(p =>
-      p.spreadBlocks === undefined ? [p.xBlock, p.yBlock, p.dustCount] : [p.xBlock, p.yBlock, p.dustCount, p.spreadBlocks],
-    );
-  }
-  if (json.fireflyAreas?.length) {
-    out.fireflyAreas = json.fireflyAreas.map(a => [a.xBlock, a.yBlock, a.wBlock, a.hBlock, a.count]);
+    out.dustPiles = json.dustPiles.map(p => [p.xBlock, p.yBlock, p.dustCount]);
   }
   if (json.grasshopperAreas && json.grasshopperAreas.length > 0) {
     out.grasshopperAreas = json.grasshopperAreas.map(a => [a.xBlock, a.yBlock, a.wBlock, a.hBlock, a.count]);
@@ -552,182 +596,17 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   if (json.decorations && json.decorations.length > 0) {
     out.decorations = json.decorations.map(d => [d.xBlock, d.yBlock, d.kind] as [number, number, string]);
   }
-  if (json.pixelMaterials && json.pixelMaterials.length > 0) {
-    out.pixelMaterials = json.pixelMaterials.map(p => [p.xPixel, p.yPixel, p.material] as [number, number, number]);
-  }
   // ── Lighting authoring data ────────────────────────────────────────────
   if (json.ambientLightDirection) {
     out.ambientDir = json.ambientLightDirection;
   }
-  if (json.directionalBias    !== undefined) out.dBias = json.directionalBias;
-  if (json.sideExposureStrength !== undefined) out.sExp  = json.sideExposureStrength;
-  if (json.minimumWallLight   !== undefined) out.minWL = json.minimumWallLight;
-  if (json.falloffPower       !== undefined) out.fpow  = json.falloffPower;
-  if (json.backgroundLightSpill !== undefined) out.bgSpill = json.backgroundLightSpill;
-  if (json.solidLightSoftness   !== undefined) out.slSoft  = json.solidLightSoftness;
-  if (json.blockSeamBlending && json.blockSeamBlending !== 'off') {
-    out.seamBlend = json.blockSeamBlending;
-  }
-  if (json.voidEdgeStyle && json.voidEdgeStyle !== 'off') {
-    out.voidEdge = json.voidEdgeStyle;
-  }
   if (json.ambientLightBlockers && json.ambientLightBlockers.length > 0) {
-    // Compress clear and dark blockers separately into compact run+point layers.
-    // Keeping them in separate fields preserves the isDark identity per cell —
-    // never merge clear and dark blockers into the same primitive.
-    const clearBlockers = json.ambientLightBlockers.filter(b => !b.isDark);
-    const darkBlockers  = json.ambientLightBlockers.filter(b => b.isDark);
-    const clearLayer = dehydrateBlockerLayer(clearBlockers, json.widthBlocks, json.heightBlocks);
-    const darkLayer  = dehydrateBlockerLayer(darkBlockers,  json.widthBlocks, json.heightBlocks);
-    if (clearLayer) out.ambientBlockersClear = clearLayer;
-    if (darkLayer)  out.ambientBlockersDark  = darkLayer;
+    out.ambientBlockers = json.ambientLightBlockers.map(b => [b.xBlock, b.yBlock] as [number, number]);
   }
   if (json.lightSources && json.lightSources.length > 0) {
-    const hasExtendedLightSources = json.lightSources.some(l => (l.dustMoteCount ?? 0) > 0 || (l.dustMoteSpreadBlocks ?? 0) > 0);
-    if (hasExtendedLightSources) {
-      out.lightSourcesExt = json.lightSources.map(l => ({ ...l }));
-    } else {
-      out.lights = json.lightSources.map(l => [
-        l.xBlock, l.yBlock, l.radiusBlocks, l.colorR, l.colorG, l.colorB, l.brightnessPct,
-      ] as [number, number, number, number, number, number, number]);
-    }
-  }
-  if (json.sunbeams && json.sunbeams.length > 0) {
-    out.sunbeams = json.sunbeams.map(s => ({ ...s }));
-  }
-  if (json.sunrays !== undefined) {
-    out.sunrays = { ...json.sunrays };
-  }
-  if (json.fallingBlocks && json.fallingBlocks.length > 0) {
-    // Compact format: [xBlock, yBlock, variant_shortchar]
-    // 't' = tough, 's' = sensitive, 'c' = crumbling
-    out.fallingBlocks = json.fallingBlocks.map(fb => {
-      const v = fb.variant ?? 'tough';
-      const code = v === 'sensitive' ? 's' : v === 'crumbling' ? 'c' : 't';
-      return fb.blockTheme
-        ? [fb.xBlock, fb.yBlock, code, fb.blockTheme] as [number, number, string, string]
-        : [fb.xBlock, fb.yBlock, code] as [number, number, string];
-    });
-  }
-  if (json.zipMoveBlocks?.length) {
-    out.zipMoveBlocks = json.zipMoveBlocks.map(b => [
-      b.uid, b.xBlock, b.yBlock, Math.max(3, b.wBlock), Math.max(3, b.hBlock), b.variant === 'away' ? 'a' : 't',
-    ]);
-  }
-  if (json.grappleCarryBlocks?.length) {
-    out.grappleCarryBlocks = json.grappleCarryBlocks.map(b => [b.xBlock, b.yBlock]);
-  }
-  if (json.phantasmalTiles?.length) {
-    out.phantasmalTiles = json.phantasmalTiles.map(b => [b.xBlock, b.yBlock]);
-  }
-  if (json.crumbleBlocks && json.crumbleBlocks.length > 0) {
-    out.crumbles = json.crumbleBlocks.map(c => {
-      const entry: SavedCrumble = { r: [c.xBlock, c.yBlock, c.wBlock ?? 1, c.hBlock ?? 1] };
-      if (c.variant && c.variant !== 'normal') entry.v = c.variant;
-      if (c.isSecretFlag === 1) entry.secret = 1;
-      if (c.rampOrientation !== undefined) entry.ramp = c.rampOrientation as 0 | 1 | 2 | 3;
-      if (c.stairsOrientation !== undefined) entry.stairs = c.stairsOrientation;
-      if (c.smoothRampOrientation !== undefined) entry.smoothRamp = c.smoothRampOrientation;
-      if (c.isPillarHalfWidthFlag === 1) entry.pillar = 1;
-      if (c.blockThemeId) entry.theme = c.blockThemeId;
-      if (c.spikeDirection !== undefined) {
-        entry.sd = c.spikeDirection;
-        if (c.spikeSize === '2x2') entry.ss = '2x2';
-      }
-      return entry;
-    });
-  }
-  if (json.bouncePads && json.bouncePads.length > 0) {
-    out.bounces = json.bouncePads.map(b => {
-      const entry: SavedBounce = { r: [b.xBlock, b.yBlock, b.wBlock ?? 1, b.hBlock ?? 1] };
-      if (b.rampOrientation !== undefined) entry.ramp = b.rampOrientation as 0 | 1 | 2 | 3;
-      if (b.speedFactorIndex !== undefined && b.speedFactorIndex !== 0) entry.spd = b.speedFactorIndex as 0 | 1;
-      return entry;
-    });
-  }
-  if (json.kineticBlocks && json.kineticBlocks.length > 0) {
-    out.kineticBlocks = json.kineticBlocks.map(kb => {
-      const entry: SavedKineticBlock = { r: [kb.xBlock, kb.yBlock, kb.wBlock ?? 1, kb.hBlock ?? 1] };
-      return entry;
-    });
-  }
-  if (json.ropes && json.ropes.length > 0) {
-    out.ropes = json.ropes.map(r => {
-      const entry: SavedRoomRope = {
-        aax: r.aax, aay: r.aay, abx: r.abx, aby: r.aby,
-      };
-      if (r.segs !== undefined) entry.segs = r.segs;
-      if (r.fixed === false) entry.fixed = false;
-      if (r.destr) entry.destr = r.destr;
-      if (r.thick !== undefined) entry.thick = r.thick as 0 | 1 | 2;
-      return entry;
-    });
-  }
-  if (json.dialogueTriggers && json.dialogueTriggers.length > 0) {
-    out.dialogueTriggers = json.dialogueTriggers.map(d => ({ ...d }));
-  }
-  if (json.dustContainerPieces && json.dustContainerPieces.length > 0) {
-    out.dcPieces = json.dustContainerPieces.map(p => [p.xBlock, p.yBlock] as [number, number]);
-  }
-
-  if (json.backgroundBlocks && json.backgroundBlocks.length > 0) {
-    // Compress background blocks grouped by (themeKey, lb).  Never merge across
-    // theme differences or light-blocking differences.
-    const layers = dehydrateBgLayers(json.backgroundBlocks, json.widthBlocks, json.heightBlocks, defaultTheme);
-    if (layers) out.bgLayers = layers;
-  }
-
-  if (json.sceneLights && json.sceneLights.length > 0) {
-    out.sceneLights = json.sceneLights;
-  }
-
-  if (json.guideDustPaths && json.guideDustPaths.length > 0) {
-    out.guidePaths = json.guideDustPaths.map(p => {
-      const entry: SavedGuideDustPath = {
-        pts: p.points.map(pt => {
-          const pair: SavedGuideDustPoint = [pt.xBlock, pt.yBlock];
-          if (pt.speed !== undefined && pt.speed !== 1.0) pair[2] = pt.speed;
-          return pair;
-        }),
-      };
-      if (p.loop) entry.lp = 1;
-      if (p.moteCount !== undefined && p.moteCount !== 8) entry.n = p.moteCount;
-      if (p.moteSpeedFactor !== undefined && p.moteSpeedFactor !== 1.0) entry.sp = p.moteSpeedFactor;
-      if (p.opacityPct !== undefined && p.opacityPct !== 100) entry.op = p.opacityPct;
-      if (p.visibleInGame === false) entry.vi = 0;
-      return entry;
-    });
-  }
-
-  if (json.customBlockPlacements && json.customBlockPlacements.length > 0) {
-    out.customBlockPlacements = json.customBlockPlacements.slice();
-  }
-
-  if (json.bakedWallTemplate !== undefined) {
-    // Deep-copy the baked template arrays so we never share mutable state
-    // between the in-memory JSON and the saved-room output.
-    const b = json.bakedWallTemplate;
-    out.bakedWallTemplate = {
-      schemaVersion:         b.schemaVersion,
-      sourceHash:            b.sourceHash,
-      wallCount:             b.wallCount,
-      xWorld:                b.xWorld.slice(),
-      yWorld:                b.yWorld.slice(),
-      wWorld:                b.wWorld.slice(),
-      hWorld:                b.hWorld.slice(),
-      isPlatformFlag:        b.isPlatformFlag.slice(),
-      platformEdge:          b.platformEdge.slice(),
-      themeIndex:            b.themeIndex.slice(),
-      ...(b.themeNames !== undefined ? { themeNames: b.themeNames.slice() } : {}),
-      soundHardnessIndex:    b.soundHardnessIndex.slice(),
-      isInvisibleFlag:       b.isInvisibleFlag.slice(),
-      rampOrientationIndex:  b.rampOrientationIndex.slice(),
-      isPillarHalfWidthFlag: b.isPillarHalfWidthFlag.slice(),
-      isIceFlag:             b.isIceFlag.slice(),
-      isUltraIceFlag:        b.isUltraIceFlag.slice(),
-      rimStyleIndex:         (b.rimStyleIndex ?? []).slice(),
-      rimStyles:             (b.rimStyles ?? []).slice(),
-    };
+    out.lights = json.lightSources.map(l => [
+      l.xBlock, l.yBlock, l.radiusBlocks, l.colorR, l.colorG, l.colorB, l.brightnessPct,
+    ] as [number, number, number, number, number, number, number]);
   }
 
   return out;
@@ -742,20 +621,8 @@ function dehydrateEnemy(e: RoomJsonEnemy): SavedEnemy {
   if (e.kinds.length > 0) out.kinds = [...e.kinds];
   if (e.particleCount !== 0) out.particleCount = e.particleCount;
   if (e.isBoss) out.boss = true;
-  if (e.countsTowardRoomCompletion === false) out.countsTowardRoomCompletion = 0;
-  if (type === 'goldenMimic' && e.isGoldenMimicYFlipped) out.goldenMimicYFlipped = 1;
   if (type === 'rolling' && e.rollingEnemySpriteIndex !== undefined && e.rollingEnemySpriteIndex !== 1) {
     out.spriteIndex = e.rollingEnemySpriteIndex;
-  }
-  if (type === 'gridSnake' && e.gridSnakeLength !== undefined && e.gridSnakeLength !== 4) {
-    out.snakeLength = e.gridSnakeLength;
-  }
-  if (type === 'momentumTurret' && e.momentumTurretFacingIndex !== undefined && e.momentumTurretFacingIndex !== 0) {
-    out.momentumTurretFacingIndex = e.momentumTurretFacingIndex;
-  }
-  if (type === 'slimeSnail') {
-    if (e.slimeSnailSurfaceSideIndex !== undefined && e.slimeSnailSurfaceSideIndex !== 0) out.slimeSnailSideIndex = e.slimeSnailSurfaceSideIndex;
-    if (e.slimeSnailClockwiseFlag === 0) out.slimeSnailCw = 0;
   }
   return out;
 }
@@ -769,16 +636,118 @@ function dehydrateTransition(t: RoomJsonTransition): SavedTransition {
     spawn: [t.targetSpawnBlock[0], t.targetSpawnBlock[1]],
   };
   if (t.fadeColor) out.fade = t.fadeColor;
-  if (t.gradientOpacity !== undefined && t.gradientOpacity !== 1) out.fadeOpacity = t.gradientOpacity;
   if (t.depthBlock !== undefined) out.depth = t.depthBlock;
-  if (t.longTransition) out.lt = true;
-  if (t.isSecretDoor) out.secret = true;
-  // Save gradientWidthBlocks whenever it differs from the legacy default of 3,
-  // so zero-gradient transitions survive a dehydrate→hydrate round-trip.
-  const gw = t.gradientWidthBlocks;
-  if (gw !== undefined && gw !== 3) out.gw = gw;
   return out;
 }
+
+/**
+ * Expand a SavedRoomV2 back into a RoomJsonDef (the verbose format the rest
+ * of the engine already understands).  The downstream pipeline converts that
+ * into either a RoomDef (runtime) or an EditorRoomData (editor).
+ */
+export function hydrateV2Room(saved: SavedRoomV2): RoomJsonDef {
+  const [widthBlocks, heightBlocks] = saved.size;
+
+  const uniformWalls = hydrateSolidsByTheme(saved.solids);
+  const specialWalls: RoomJsonWall[] = (saved.specialWalls ?? []).map(sw => {
+    const [x, y, w, h] = sw.r;
+    const wall: RoomJsonWall = { xBlock: x, yBlock: y, wBlock: w, hBlock: h };
+    if (sw.theme) wall.blockTheme = sw.theme;
+    if (sw.plat === 1) {
+      wall.isPlatform = true;
+      if (sw.edge !== undefined && sw.edge !== 0) wall.platformEdge = sw.edge;
+    }
+    if (sw.ramp !== undefined) wall.rampOrientation = sw.ramp;
+    if (sw.half === 1) wall.isPillarHalfWidth = true;
+    return wall;
+  });
+
+  const enemies: RoomJsonEnemy[] = (saved.enemies ?? []).map(e => enemyTypeToFlags(e.type, {
+    xBlock: e.pos[0],
+    yBlock: e.pos[1],
+    kinds: e.kinds ? [...e.kinds] : [],
+    particleCount: e.particleCount ?? 0,
+    isBoss: e.boss === true,
+    spriteIndex: e.spriteIndex,
+  }));
+
+  const transitions: RoomJsonTransition[] = (saved.transitions ?? []).map(t => {
+    const jt: RoomJsonTransition = {
+      direction: t.dir,
+      positionBlock: t.pos,
+      openingSizeBlocks: t.size,
+      targetRoomId: t.to,
+      targetSpawnBlock: [t.spawn[0], t.spawn[1]],
+    };
+    if (t.fade) jt.fadeColor = t.fade;
+    if (t.depth !== undefined) jt.depthBlock = t.depth;
+    return jt;
+  });
+
+  const skillTombs: RoomJsonSkillTomb[] = (saved.saveTombs ?? []).map(([x, y]) => ({ xBlock: x, yBlock: y }));
+  const dustSkillTombs: RoomJsonDustSkillTomb[] | undefined = saved.skillTombs
+    ? saved.skillTombs.map(([x, y, weaveId]) => ({ xBlock: x, yBlock: y, weaveId }))
+    : undefined;
+
+  const json: RoomJsonDef = {
+    id: saved.id,
+    name: saved.name,
+    worldNumber: saved.world,
+    mapX: saved.map ? saved.map[0] : 0,
+    mapY: saved.map ? saved.map[1] : 0,
+    widthBlocks,
+    heightBlocks,
+    playerSpawnBlock: [saved.spawn[0], saved.spawn[1]],
+    interiorWalls: [...uniformWalls, ...specialWalls],
+    enemies,
+    transitions,
+    skillTombs,
+  };
+
+  if (saved.theme) json.blockTheme = saved.theme;
+  if (saved.bg)    json.backgroundId = saved.bg;
+  if (saved.light) json.lightingEffect = saved.light;
+  if (saved.song)  json.songId = saved.song;
+  if (dustSkillTombs && dustSkillTombs.length > 0) json.dustSkillTombs = dustSkillTombs;
+  if (saved.skillBooks)     json.skillBooks      = saved.skillBooks.map(([x, y]) => ({ xBlock: x, yBlock: y }));
+  if (saved.dustContainers) json.dustContainers  = saved.dustContainers.map(([x, y]) => ({ xBlock: x, yBlock: y }));
+  if (saved.spikes)         json.spikes          = saved.spikes.map(([x, y, dir]) => ({ xBlock: x, yBlock: y, direction: dir }) as RoomJsonSpike);
+  if (saved.springboards)   json.springboards    = saved.springboards.map(([x, y]) => ({ xBlock: x, yBlock: y }) as RoomJsonSpringboard);
+  if (saved.waterZones)     json.waterZones      = saved.waterZones.map(([x, y, w, h]) => ({ xBlock: x, yBlock: y, wBlock: w, hBlock: h }) as RoomJsonZone);
+  if (saved.lavaZones)      json.lavaZones       = saved.lavaZones.map(([x, y, w, h]) => ({ xBlock: x, yBlock: y, wBlock: w, hBlock: h }) as RoomJsonZone);
+  if (saved.breakableBlocks) json.breakableBlocks = saved.breakableBlocks.map(([x, y]) => ({ xBlock: x, yBlock: y }) as RoomJsonBreakableBlock);
+  if (saved.dustBoostJars)  json.dustBoostJars   = saved.dustBoostJars.map(([x, y, kind, count]) => ({ xBlock: x, yBlock: y, dustKind: kind, dustCount: count }) as RoomJsonDustBoostJar);
+  if (saved.fireflyJars)    json.fireflyJars     = saved.fireflyJars.map(([x, y]) => ({ xBlock: x, yBlock: y }) as RoomJsonFireflyJar);
+  if (saved.dustPiles)      json.dustPiles       = saved.dustPiles.map(([x, y, count]) => ({ xBlock: x, yBlock: y, dustCount: count }) as RoomJsonDustPile);
+  if (saved.grasshopperAreas) json.grasshopperAreas = saved.grasshopperAreas.map(([x, y, w, h, count]) => ({ xBlock: x, yBlock: y, wBlock: w, hBlock: h, count }) as RoomJsonGrasshopperArea);
+  if (saved.decorations)    json.decorations     = saved.decorations.map(([x, y, kind]) => ({ xBlock: x, yBlock: y, kind }) as RoomJsonDecoration);
+  if (saved.ambientDir) {
+    // Cast — the JSON field is typed as the literal union `AmbientLightDirection`.
+    json.ambientLightDirection = saved.ambientDir as RoomJsonDef['ambientLightDirection'];
+  }
+  if (saved.ambientBlockers && saved.ambientBlockers.length > 0) {
+    json.ambientLightBlockers = saved.ambientBlockers.map(([x, y]) => ({ xBlock: x, yBlock: y }));
+  }
+  if (saved.lights && saved.lights.length > 0) {
+    json.lightSources = saved.lights.map(([x, y, r, cr, cg, cb, br]) => ({
+      xBlock: x, yBlock: y, radiusBlocks: r,
+      colorR: cr, colorG: cg, colorB: cb, brightnessPct: br,
+    }));
+  }
+
+  return json;
+}
+
+/**
+ * Top-level hydrate: accepts either a legacy RoomJsonDef-shaped object or a
+ * v2 SavedRoomV2, returns the verbose RoomJsonDef ready to feed the existing
+ * RoomDef / EditorRoomData conversion pipelines.
+ */
+export function hydrateRoomJson(data: unknown): RoomJsonDef {
+  if (isSavedRoomV2(data)) return hydrateV2Room(data);
+  return data as RoomJsonDef;
+}
+
 
 /** Build a theme→occupancy Map from a list of uniform RoomJsonWall rectangles. */
 function buildCoverageByTheme(
@@ -874,7 +843,7 @@ export function validateSolidsRoundtrip(
 export function validateRoomRoundtrip(json: RoomJsonDef): string[] {
   const saved = dehydrateRoom(json);
   const rebuilt = hydrateV2Room(saved);
-  const defaultTheme: BlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme ?? 'blackRock';
+  const defaultTheme: BlockTheme = json.blockTheme ?? 'blackRock';
 
   const errors = validateSolidsRoundtrip(
     json.interiorWalls, json.widthBlocks, json.heightBlocks, defaultTheme,
@@ -888,45 +857,6 @@ export function validateRoomRoundtrip(json: RoomJsonDef): string[] {
   }
   if (rebuilt.transitions.length !== json.transitions.length) {
     errors.push(`Transition count mismatch: ${json.transitions.length} → ${rebuilt.transitions.length}`);
-  }
-  const semanticCollections = [
-    'skillTombs', 'dustSkillTombs',
-    'challengeFields', 'challengeGates', 'challengeTotems', 'gates',
-    'dustContainers', 'dustContainerPieces', 'dustBoostJars', 'dustSwarms',
-    'lambdaAnchors', 'fireflyJars', 'springboards', 'breakableBlocks',
-    'dustPiles', 'grasshopperAreas', 'fireflyAreas', 'decorations',
-    'lightSources', 'sunbeams', 'sceneLights', 'fallingBlocks', 'crumbleBlocks',
-    'spikes', 'lasers', 'bouncePads', 'kineticBlocks', 'grappleCarryBlocks',
-    'zipMoveBlocks', 'phantasmalTiles', 'pixelMaterials', 'ropes',
-    'dialogueTriggers', 'guideDustPaths', 'customBlockPlacements',
-  ] as const satisfies readonly (keyof RoomJsonDef)[];
-  for (const key of semanticCollections) {
-    const beforeCount = (json[key] as readonly unknown[] | undefined)?.length ?? 0;
-    const afterCount = (rebuilt[key] as readonly unknown[] | undefined)?.length ?? 0;
-    if (beforeCount !== afterCount) {
-      errors.push(`Persistence mismatch in ${key}: ${beforeCount} → ${afterCount}`);
-    }
-  }
-
-  const canonicalEnemies = (room: RoomJsonDef) => room.enemies.map(enemy => dehydrateEnemy(enemy));
-  if (JSON.stringify(canonicalEnemies(json)) !== JSON.stringify(canonicalEnemies(rebuilt))) {
-    errors.push('Persistence mismatch in enemies (subtype or authored property changed)');
-  }
-  const canonicalTransitions = (room: RoomJsonDef) => room.transitions.map(transition => dehydrateTransition(transition));
-  if (JSON.stringify(canonicalTransitions(json)) !== JSON.stringify(canonicalTransitions(rebuilt))) {
-    errors.push('Persistence mismatch in transitions (authored property changed)');
-  }
-
-  const normalize = (value: unknown): string => JSON.stringify(value ?? null);
-  const semanticSettings = [
-    'backgroundLightSpill', 'solidLightSoftness', 'sunrays', 'rimStyles',
-    'ambientLightDirection', 'directionalBias', 'sideExposureStrength',
-    'minimumWallLight', 'falloffPower', 'blockSeamBlending', 'voidEdgeStyle',
-  ] as const satisfies readonly (keyof RoomJsonDef)[];
-  for (const key of semanticSettings) {
-    if (normalize(json[key]) !== normalize(rebuilt[key])) {
-      errors.push(`Persistence mismatch in room setting ${key}`);
-    }
   }
   return errors;
 }

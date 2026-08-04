@@ -40,12 +40,6 @@ import {
   applyHolyHealingAura,
 } from './elementEffectHandlers';
 import { applyPlayerDamageWithKnockback } from '../playerDamage';
-import { applyODCHit } from '../clusters/orbitalDustCoreAi';
-import {
-  ODC_SMALL_RING_RADII,
-  ODC_LARGE_RING_RADII,
-} from '../clusters/orbitalDustCoreConfig';
-import { DWA_HIT_FLASH_TICKS } from '../clusters/dustWeaverArchitectConfig';
 
 // Particle half-size: 1/6th of the player's full width (8 world units) divided by 2.
 // Square hitbox side = 8/6 ≈ 1.333 wu; radius = side/2 ≈ 0.667 wu.
@@ -105,12 +99,6 @@ const _chainLightningPosY        = new Float32Array(32);
 const _chainLightningKillerOwner = new Int32Array(32);
 const _chainLightningVictimOwner = new Int32Array(32);
 let _chainLightningCount = 0;
-
-// Pre-allocated module-level maps for cluster lookups — cleared and rebuilt
-// each tick inside applyInterParticleForces to avoid per-tick heap allocation.
-// Using Map rather than typed arrays because entity IDs are opaque and not
-// guaranteed to be small consecutive integers.
-const _ownerIsPlayerMap          = new Map<number, boolean>();
 
 // ---- Main export --------------------------------------------------------
 
@@ -457,12 +445,15 @@ export function applyInterParticleForces(world: WorldState): void {
   const ENEMY_MAX_DAMAGE = 4;
   const DUST_PARTICLES_PER_ARMOR = 4;
 
-  // Pre-compute cluster lookups to avoid O(n²) within particle loop.
-  // Module-level Maps are cleared and refilled each tick — no per-tick heap allocation.
-  _ownerIsPlayerMap.clear();
+  // Pre-compute cluster lookups to avoid O(n²) within particle loop
+  const ownerIsPlayerMap = new Map<number, boolean>();
+  const ownerIsRadiantTetherMap = new Map<number, boolean>();
+  const ownerHasTakenDamageMap = new Map<number, boolean>();
   for (let ci = 0; ci < clusters.length; ci++) {
     const cluster = clusters[ci];
-    _ownerIsPlayerMap.set(cluster.entityId, cluster.isPlayerFlag === 1);
+    ownerIsPlayerMap.set(cluster.entityId, cluster.isPlayerFlag === 1);
+    ownerIsRadiantTetherMap.set(cluster.entityId, cluster.isRadiantTetherFlag === 1);
+    ownerHasTakenDamageMap.set(cluster.entityId, cluster.healthPoints < cluster.maxHealthPoints);
   }
 
   // Pre-compute player's dust count for armor calculation (only once per tick)
@@ -483,7 +474,9 @@ export function applyInterParticleForces(world: WorldState): void {
     if (ownerI === -1) continue; // unowned (Fluid)
 
     // Fast lookup for attacker's player status
-    const attackerIsPlayer = _ownerIsPlayerMap.get(ownerI) ?? false;
+    const attackerIsPlayer = ownerIsPlayerMap.get(ownerI) ?? false;
+    const attackerIsRadiantTether = ownerIsRadiantTetherMap.get(ownerI) ?? false;
+    const attackerHasTakenDamage = ownerHasTakenDamageMap.get(ownerI) ?? false;
 
     for (let ci = 0; ci < clusters.length; ci++) {
       const cluster = clusters[ci];
@@ -492,13 +485,15 @@ export function applyInterParticleForces(world: WorldState): void {
 
       const dxc = positionXWorld[i] - cluster.positionXWorld;
       const dyc = positionYWorld[i] - cluster.positionYWorld;
-      // ODC: expand collision radius to cover the outermost ring.
-      let collisionRadius = CORE_RADIUS_WORLD;
-      if (cluster.isOrbitalDustCoreFlag === 1) {
-        const odcRadii = cluster.isOrbitalDustCoreLargeFlag === 1 ? ODC_LARGE_RING_RADII : ODC_SMALL_RING_RADII;
-        collisionRadius = odcRadii[0] + 12; // outermost ring radius + band thickness
-      }
-      if (dxc * dxc + dyc * dyc < collisionRadius * collisionRadius) {
+      if (dxc * dxc + dyc * dyc < CORE_RADIUS_WORLD * CORE_RADIUS_WORLD) {
+        if (
+          attackerIsRadiantTether &&
+          !attackerHasTakenDamage &&
+          cluster.isPlayerFlag === 1
+        ) {
+          // Radiant Tether dust remains non-offensive until the boss is damaged.
+          break;
+        }
         const profile = getElementProfile(kindBuffer[i]);
         if (cluster.healthPoints > 0) {
           let damage: number;
@@ -514,11 +509,6 @@ export function applyInterParticleForces(world: WorldState): void {
           } else {
             // Player-to-enemy or enemy-to-enemy: use standard attackPower
             damage = profile.attackPower;
-            // In momentum mode, player-owned dust deals no offensive damage to enemies.
-            // Damage is handled exclusively via velocity collision (momentumCombat.ts).
-            if (attackerIsPlayer && world.combatMode !== 'legacy') {
-              damage = 0;
-            }
           }
 
           if (cluster.isPlayerFlag === 1 && damage > 0) {
@@ -528,9 +518,6 @@ export function applyInterParticleForces(world: WorldState): void {
               positionXWorld[i],
               positionYWorld[i],
             );
-          } else if (cluster.isOrbitalDustCoreFlag === 1 && attackerIsPlayer) {
-            // ODC: route player-particle damage through ring-aware hit handler
-            applyODCHit(world, ci, positionXWorld[i], positionYWorld[i], damage);
           } else {
             // When an enemy attack hits the player but armor absorbs all damage,
             // record the tick so the renderer can display a BLOCKED floater.
@@ -541,10 +528,6 @@ export function applyInterParticleForces(world: WorldState): void {
             if (cluster.healthPoints <= 0) {
               cluster.healthPoints = 0;
               cluster.isAliveFlag = 0;
-            }
-            // Trigger hit flash on the Architect core when it takes damage.
-            if (cluster.isDustWeaverArchitectFlag === 1 && damage > 0) {
-              cluster.dustWeaverArchitectHitFlashTicks = DWA_HIT_FLASH_TICKS;
             }
           }
           // Rolling enemies become aggressive when hit — chase player even

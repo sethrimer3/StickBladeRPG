@@ -5,16 +5,7 @@
  */
 
 import type { ClusterSnapshot } from '../snapshot';
-import { loadImg, decodeImg, hasImageFailed } from '../imageCache';
-import {
-  PLAYABLE_CHARACTER_IDS,
-  CHARACTER_AVAILABLE_ANIMATION_FRAMES,
-  CHARACTER_ANIMATION_FILE_SUFFIX,
-  getCharacterSpriteBasePath,
-  getRequiredCharacterSpriteUrls,
-  isPlayableCharacterId,
-  type CharacterAnimationFrame,
-} from './characterSpriteManifest';
+import { loadImg, loadImgWithFallback } from '../imageCache';
 export { isSpriteReady } from '../imageCache';
 
 // ── Character sprite sets ───────────────────────────────────────────────────
@@ -24,6 +15,7 @@ export interface CharacterSprites {
   idle1: HTMLImageElement;
   idle2: HTMLImageElement;
   idleBlink: HTMLImageElement;
+  sprinting: HTMLImageElement;
   crouching: HTMLImageElement;
   grappling: HTMLImageElement;
   jumping: HTMLImageElement;
@@ -36,11 +28,11 @@ export interface CharacterSprites {
 export const PLAYER_OUTLINE_THICKNESS_WORLD = 1;
 /** Precomputed outer-edge outline masks keyed by source player sprite image. */
 const _playerOutlineMaskCache = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
-/** 4-neighbour outline morphology keeps pixel-art corners cut off. */
+/** 8-neighbour offsets used to detect silhouette edges (includes diagonals). */
 const _outlineNeighborOffsets: ReadonlyArray<readonly [number, number]> = [
-            [0, -1],
+  [-1, -1], [0, -1], [1, -1],
   [-1,  0],          [1,  0],
-            [0,  1],
+  [-1,  1], [0,  1], [1,  1],
 ];
 
 /**
@@ -67,14 +59,8 @@ export function getOrCreateOuterOutlineMask(sprite: HTMLImageElement): HTMLCanva
     return alphaCanvas;
   }
   alphaCtx.clearRect(0, 0, paddedWidthPx, paddedHeightPx);
-  let alphaData: Uint8ClampedArray;
-  try {
-    alphaCtx.drawImage(sprite, 1, 1);
-    alphaData = alphaCtx.getImageData(0, 0, paddedWidthPx, paddedHeightPx).data;
-  } catch {
-    _playerOutlineMaskCache.set(sprite, alphaCanvas);
-    return alphaCanvas;
-  }
+  alphaCtx.drawImage(sprite, 1, 1);
+  const alphaData = alphaCtx.getImageData(0, 0, paddedWidthPx, paddedHeightPx).data;
 
   const isOpaqueFlag = new Uint8Array(pixelCount);
   for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
@@ -156,95 +142,35 @@ export function getOrCreateOuterOutlineMask(sprite: HTMLImageElement): HTMLCanva
   return outlineCanvas;
 }
 
-/** Precomputed gold-recoloured outline masks, keyed by source player sprite image. */
-const _playerGoldOutlineMaskCache = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
-
-/**
- * Builds a warm-gold recolour of the outer outline mask (same silhouette
- * shape as getOrCreateOuterOutlineMask, just tinted) — used to make the
- * player's outline glow gold while in an invulnerable state.
- */
-export function getOrCreateGoldOutlineMask(sprite: HTMLImageElement): HTMLCanvasElement {
-  const cached = _playerGoldOutlineMaskCache.get(sprite);
-  if (cached !== undefined) return cached;
-
-  const blackMask = getOrCreateOuterOutlineMask(sprite);
-  const goldCanvas = document.createElement('canvas');
-  goldCanvas.width = blackMask.width;
-  goldCanvas.height = blackMask.height;
-  const goldCtx = goldCanvas.getContext('2d');
-  if (goldCtx === null) {
-    _playerGoldOutlineMaskCache.set(sprite, goldCanvas);
-    return goldCanvas;
-  }
-  goldCtx.drawImage(blackMask, 0, 0);
-  // Recolour every non-transparent pixel to warm gold, keeping the silhouette's alpha.
-  goldCtx.globalCompositeOperation = 'source-in';
-  goldCtx.fillStyle = '#ffcf3f';
-  goldCtx.fillRect(0, 0, goldCanvas.width, goldCanvas.height);
-  goldCtx.globalCompositeOperation = 'source-over';
-
-  _playerGoldOutlineMaskCache.set(sprite, goldCanvas);
-  return goldCanvas;
-}
-
 function _loadCharacterSprites(characterId: string): CharacterSprites {
-  const base = getCharacterSpriteBasePath(characterId);
-  const standingImg = loadImg(`${base}_standing.png`);
-  const availableFrames = CHARACTER_AVAILABLE_ANIMATION_FRAMES[characterId as keyof typeof CHARACTER_AVAILABLE_ANIMATION_FRAMES] ?? [];
-  const framed = (key: CharacterAnimationFrame): HTMLImageElement =>
-    availableFrames.includes(key) ? loadImg(`${base}_${CHARACTER_ANIMATION_FILE_SUFFIX[key]}.png`) : standingImg;
-
+  const base = `SPRITES/PLAYERS/${characterId}/${characterId}`;
+  const standingSrc = `${base}_standing.png`;
   return {
-    standing:   standingImg,
-    idle1:      standingImg,
-    idle2:      standingImg,
-    idleBlink:  standingImg,
-    crouching:  loadImg(`${base}_crouching.png`),
-    grappling:  standingImg,
-    jumping:    framed('jumping'),
-    falling:    framed('falling'),
-    fastFalling: framed('fastFalling'),
-    swinging:   framed('swinging'),
+    standing:   loadImg(standingSrc),
+    idle1:      loadImgWithFallback([`${base}_idle1.png`, standingSrc]),
+    idle2:      loadImgWithFallback([`${base}_idle2.png`, standingSrc]),
+    idleBlink:  loadImgWithFallback([`${base}_idleBlink.png`, standingSrc]),
+    sprinting:  loadImgWithFallback([`${base}_sprinting.png`, standingSrc]),
+    crouching:  loadImgWithFallback([`${base}_crouching.png`, standingSrc]),
+    grappling:  loadImgWithFallback([`${base}_grappling.png`, standingSrc]),
+    jumping:    loadImgWithFallback([`${base}_jumping.png`, standingSrc]),
+    falling:    loadImgWithFallback([`${base}_falling.png`, standingSrc]),
+    fastFalling: loadImgWithFallback([`${base}_fastfalling.png`, standingSrc]),
+    swinging:   loadImgWithFallback([`${base}_swinging.png`, standingSrc]),
   };
 }
 
 /** Pre-loaded sprite sets for all playable characters. */
-const _characterSprites: Record<string, CharacterSprites> = Object.fromEntries(
-  PLAYABLE_CHARACTER_IDS.map((id) => [id, _loadCharacterSprites(id)]),
-);
+const _characterSprites: Record<string, CharacterSprites> = {
+  knight:   _loadCharacterSprites('knight'),
+  demonFox: _loadCharacterSprites('demonFox'),
+  princess: _loadCharacterSprites('princess'),
+  outcast:  _loadCharacterSprites('outcast'),
+};
 
 /** Returns the sprite set for the given character, falling back to knight. */
 export function getCharacterSprites(characterId: string): CharacterSprites {
   return _characterSprites[characterId] ?? _characterSprites['knight'];
-}
-
-/** Character IDs that have already logged a preload failure, so the diagnostic fires once per character per session. */
-const _preloadFailureLogged = new Set<string>();
-
-/**
- * Decodes the active character's required sprite files (per
- * `getRequiredCharacterSpriteUrls`) before gameplay becomes visible, and logs
- * an explicit diagnostic — including the character ID and the exact failed
- * URL — if any of them fail to load. Without this, a missing/broken sprite
- * silently renders as the green placeholder box forever with no indication
- * of why (see renderer.ts's `isSpriteReady` fallback).
- *
- * Fire-and-forget: never blocks or rejects, matching the existing
- * decodeRoomThemeSprites()/decodeRoomBackground() preload pattern.
- */
-export async function preloadActiveCharacterSprites(characterId: string): Promise<void> {
-  const resolvedId = isPlayableCharacterId(characterId) ? characterId : 'knight';
-  const urls = getRequiredCharacterSpriteUrls(resolvedId);
-  await Promise.all(urls.map((url) => decodeImg(url)));
-  const failedUrls = urls.filter((url) => hasImageFailed(url));
-  if (failedUrls.length > 0 && !_preloadFailureLogged.has(resolvedId)) {
-    _preloadFailureLogged.add(resolvedId);
-    console.error(
-      `[characterSprites] Character "${resolvedId}" is missing ${failedUrls.length} sprite file(s); ` +
-      `it will render as a placeholder box until these are fixed: ${failedUrls.join(', ')}`,
-    );
-  }
 }
 
 // ── Player sprite rendering constants ────────────────────────────────────────
@@ -296,8 +222,9 @@ export const HURT_FLASH_MAX_ALPHA = 0.45;
  *  3. Airborne & moving upward            → jumping sprite
  *  4. Airborne & fast-falling             → fastFalling sprite
  *  5. Airborne & moving downward          → falling sprite
- *  6. Idle animation states               → idle1 / idle2 / idleBlink
- *  7. Default                             → standing sprite
+ *  6. Sprinting                           → sprinting sprite
+ *  7. Idle animation states               → idle1 / idle2 / idleBlink
+ *  8. Default                             → standing sprite
  *
  * When grappling with low/zero velocity, the standing sprite is shown.
  */
@@ -330,6 +257,8 @@ export function getPlayerSprite(
   }
 
   // ── Grounded states ───────────────────────────────────────────────────
+  if (cluster.isSprintingFlag === 1) return sprites.sprinting;
+
   // Idle animation states: 0=standing, 1=idle1, 2=idle2, 3=idleBlink
   switch (cluster.playerIdleAnimState) {
     case 1: return sprites.idle1;

@@ -1,12 +1,264 @@
 import { WorldState } from '../sim/world';
-import type { SecondaryWeaveGesturePhase } from '../input/secondaryWeaveGesture';
-import { _MutableCluster, _makeEmptyCluster, _fillCluster } from './snapshotClusterInit';
+import { ClusterState } from '../sim/clusters/state';
+import { INFLUENCE_RADIUS_WORLD } from '../sim/clusters/binding';
+import { DASH_COOLDOWN_TICKS } from '../sim/clusters/dashConstants';
 
-// Re-export public snapshot interfaces from their dedicated types module so
-// that all existing `import { ... } from './snapshot'` callers continue to
-// work without modification.
-export type { ParticleSnapshot, ClusterSnapshot, WallSnapshot, WorldSnapshot } from './snapshotTypes';
-import type { WorldSnapshot } from './snapshotTypes';
+export interface ParticleSnapshot {
+  readonly positionXWorld:    Float32Array;
+  readonly positionYWorld:    Float32Array;
+  readonly velocityXWorld:    Float32Array;
+  readonly velocityYWorld:    Float32Array;
+  readonly isAliveFlag:       Uint8Array;
+  readonly kindBuffer:        Uint8Array;
+  readonly ownerEntityId:     Int32Array;
+  /** Current age in ticks — used by renderer to compute normalizedAge. */
+  readonly ageTicks:          Float32Array;
+  /** Max lifetime in ticks — used with ageTicks for normalizedAge. */
+  readonly lifetimeTicks:     Float32Array;
+  /**
+   * Per-particle disturbance level in [0, 1].
+   * Non-zero only for Fluid background particles; drives their alpha.
+   */
+  readonly disturbanceFactor: Float32Array;
+  /**
+   * Behavior mode for each particle (matches sim/particles/state.ts).
+   * 0 = orbit, 1 = attack (offensive), 2 = shield.
+   * Used by the renderer to keep offensive particles at their full 4×4 size.
+   */
+  readonly behaviorMode:      Uint8Array;
+  readonly particleCount:     number;
+}
+
+export interface ClusterSnapshot {
+  readonly entityId:              number;
+  readonly positionXWorld:        number;
+  readonly positionYWorld:        number;
+  /** Horizontal velocity (world units/sec), used for high-speed VFX. */
+  readonly velocityXWorld:        number;
+  /** Vertical velocity (world units/sec), used for high-speed VFX. */
+  readonly velocityYWorld:        number;
+  readonly isAliveFlag:           0 | 1;
+  readonly isPlayerFlag:          0 | 1;
+  readonly healthPoints:          number;
+  readonly maxHealthPoints:       number;
+  /** Radius (world units) of this cluster's particle influence ring. */
+  readonly influenceRadiusWorld:  number;
+  /** Ticks until dash is available again (0 = ready). */
+  readonly dashCooldownTicks:     number;
+  /** Max dash cooldown ticks (used to compute recharge progress bar). */
+  readonly maxDashCooldownTicks:  number;
+  /** Counts down after dash recharges — drives the golden ring animation. */
+  readonly dashRechargeAnimTicks: number;
+  /** Half-width of the cluster box (world units). Used by renderer to draw a box. */
+  readonly halfWidthWorld:        number;
+  /** Half-height of the cluster box (world units). Used by renderer to draw a box. */
+  readonly halfHeightWorld:       number;
+  /** 1 if this cluster is a flying eye, rendered as concentric diamond outlines. */
+  readonly isFlyingEyeFlag:       0 | 1;
+  /** Angle (radians) the eye is currently looking — used to offset inner diamonds. */
+  readonly flyingEyeFacingAngleRad: number;
+  /** Primary element kind of this flying eye (ParticleKind value). Drives eye colour. */
+  readonly flyingEyeElementKind:  number;
+  /** 1 if this cluster is a rolling ground enemy, rendered with a rotating sprite. */
+  readonly isRollingEnemyFlag:    0 | 1;
+  /** Which enemy sprite to render (1–6), corresponding to enemy (N).png. */
+  readonly rollingEnemySpriteIndex: number;
+  /** Accumulated roll angle (radians) used to rotate the enemy sprite. */
+  readonly rollingEnemyRollAngleRad: number;
+  /** 1 when the player is facing left (sprites face right by default). */
+  readonly isFacingLeftFlag: 0 | 1;
+  /** 1 while the player is sprinting. */
+  readonly isSprintingFlag: 0 | 1;
+  /** 1 while the player is crouching. */
+  readonly isCrouchingFlag: 0 | 1;
+  /** 1 when the cluster is resting on a surface (floor or platform top). */
+  readonly isGroundedFlag: 0 | 1;
+  /** 1 while the player is performing a controlled wall slide. */
+  readonly isWallSlidingFlag: 0 | 1;
+  /**
+   * Current idle animation state:
+   *  0 = standing, 1 = idle1, 2 = idle2, 3 = idleBlink
+   */
+  readonly playerIdleAnimState: number;
+  /** 1 if this cluster is a rock elemental. */
+  readonly isRockElementalFlag: 0 | 1;
+  /** Current rock elemental state (0-6). */
+  readonly rockElementalState: number;
+  /** Activation lerp progress [0,1]. */
+  readonly rockElementalActivationProgress: number;
+  /** Current orbit angle (radians) for dust positioning. */
+  readonly rockElementalOrbitAngleRad: number;
+  /** Number of orbiting dust particles. */
+  readonly rockElementalDustCount: number;
+  /** 1 if this cluster is the Radiant Tether boss. */
+  readonly isRadiantTetherFlag: 0 | 1;
+  /** Current Radiant Tether state (0-6). */
+  readonly radiantTetherState: number;
+  /** Ticks elapsed in the current Radiant Tether state. */
+  readonly radiantTetherStateTicks: number;
+  /** Base angle (radians) for evenly-spaced chain/telegraph directions. */
+  readonly radiantTetherBaseAngleRad: number;
+  /** Current number of active chains. */
+  readonly radiantTetherChainCount: number;
+  /** 1 if this cluster is a grapple hunter. */
+  readonly isGrappleHunterFlag: 0 | 1;
+  /** Current grapple hunter state (0-4). */
+  readonly grappleHunterState: number;
+  /** Start index for grapple hunter chain particles (-1 if none). */
+  readonly grappleHunterChainStartIndex: number;
+  /** X of grapple chain tip (world units). */
+  readonly grappleHunterTipXWorld: number;
+  /** Y of grapple chain tip (world units). */
+  readonly grappleHunterTipYWorld: number;
+  /**
+   * Ticks remaining of invulnerability after taking damage.
+   * Non-zero while the player cannot be damaged again.
+   */
+  readonly invulnerabilityTicks: number;
+  /**
+   * Ticks remaining in the hurt visual feedback window.
+   * Non-zero while the player sprite should show damage tint / flash.
+   */
+  readonly hurtTicks: number;
+  /** 1 if this cluster is a slime enemy. */
+  readonly isSlimeFlag: 0 | 1;
+  /** 1 if this cluster is a large dust slime enemy. */
+  readonly isLargeSlimeFlag: 0 | 1;
+  /** Accumulated orbit angle (radians) for large slime dust visual. */
+  readonly largeSlimeDustOrbitAngleRad: number;
+  /** 1 if this cluster is a wheel enemy. */
+  readonly isWheelEnemyFlag: 0 | 1;
+  /** Accumulated roll angle (radians) for wheel enemy spoke renderer. */
+  readonly wheelRollAngleRad: number;
+  /** 1 if this cluster is a golden beetle — crawls on surfaces, flies when agitated. */
+  readonly isBeetleFlag: 0 | 1;
+  /**
+   * Current beetle AI state:
+   *  0=crawl_toward, 1=crawl_away, 2=idle, 3=fly_away, 4=fly_toward
+   */
+  readonly beetleAiState: number;
+  /** X component of the surface normal the beetle is attached to (0 when flying). */
+  readonly beetleSurfaceNormalXWorld: number;
+  /** Y component of the surface normal (−1=floor, +1=ceiling, ±0 with X for walls). */
+  readonly beetleSurfaceNormalYWorld: number;
+  /** 1 while the beetle is airborne (flying states). */
+  readonly beetleIsFlightModeFlag: 0 | 1;
+  /** 1 if this cluster is a bubble enemy (water or ice). */
+  readonly isBubbleEnemyFlag: 0 | 1;
+  /** 1 for the ice variant, 0 for the water variant. */
+  readonly isIceBubbleFlag: 0 | 1;
+  /** 0 = alive/drifting, 1 = popped. */
+  readonly bubbleState: number;
+  /** Current orbit rotation angle (radians). */
+  readonly bubbleOrbitAngleRad: number;
+  /** 1 if this cluster is a square stampede enemy. */
+  readonly isSquareStampedeFlag: 0 | 1;
+  /**
+   * Index into the WorldSnapshot trail ring-buffer arrays.
+   * -1 when not assigned.
+   */
+  readonly squareStampedeSlotIndex: number;
+  /** Original full-health half-size (world units) — constant after spawn. */
+  readonly squareStampedeBaseHalfSizeWorld: number;
+  /** 1 if this cluster is a golden mimic enemy. */
+  readonly isGoldenMimicFlag: 0 | 1;
+  /** 1 for the XY-flipped variant of the golden mimic. */
+  readonly isGoldenMimicYFlippedFlag: 0 | 1;
+  /**
+   * Current mimic state: 0=active, 1=heap.
+   * Used by renderer to select heap vs. active visual mode.
+   */
+  readonly goldenMimicState: number;
+  /**
+   * Fade alpha for the heap state, in [1.0, 0.0].
+   * Applied as globalAlpha by the renderer during the fade-out.
+   */
+  readonly goldenMimicFadeAlpha: number;
+  /**
+   * Render-interpolated X position (world units).
+   * Linearly blended between the previous tick's position and the current tick's
+   * position using the frame's sub-tick alpha, so sprites animate smoothly at
+   * any refresh rate instead of snapping discretely each physics tick.
+   */
+  readonly renderPositionXWorld: number;
+  /**
+   * Render-interpolated Y position (world units).
+   * See `renderPositionXWorld` for details.
+   */
+  readonly renderPositionYWorld: number;
+}
+
+export interface WallSnapshot {
+  readonly count:   number;
+  readonly xWorld:  Float32Array;
+  readonly yWorld:  Float32Array;
+  readonly wWorld:  Float32Array;
+  readonly hWorld:  Float32Array;
+  readonly isPlatformFlag: Uint8Array;
+  /** 0=top, 1=bottom, 2=left, 3=right. Only meaningful when isPlatformFlag=1. */
+  readonly platformEdge: Uint8Array;
+  /** Per-wall theme index: 0=blackRock, 1=brownRock, 2=dirt.  Uses room default when 255. */
+  readonly themeIndex: Uint8Array;
+  /** 1 if the wall is an invisible collision boundary (not rendered). */
+  readonly isInvisibleFlag: Uint8Array;
+  /** Ramp orientation: 255=not a ramp, 0=rises right(/), 1=rises left(\), 2=ceiling⌐, 3=ceiling¬. */
+  readonly rampOrientationIndex: Uint8Array;
+  /** 1 if the wall is a half-width pillar (4 px wide). */
+  readonly isPillarHalfWidthFlag: Uint8Array;
+}
+
+export interface WorldSnapshot {
+  readonly tick:     number;
+  readonly particles: ParticleSnapshot;
+  readonly clusters:  readonly ClusterSnapshot[];
+  readonly walls:     WallSnapshot;
+  /** 1 while the player's grapple hook is attached; 0 otherwise. */
+  readonly isGrappleActiveFlag:  0 | 1;
+  /** 1 while a fired grapple is in-flight/missed and simulating limp chain links. */
+  readonly isGrappleMissActiveFlag: 0 | 1;
+  /** Start index in particle buffers for grapple chain links (or -1 if unavailable). */
+  readonly grappleParticleStartIndex: number;
+  /** 1 when the grapple is attached to the top surface of a wall block. */
+  readonly isGrappleTopSurfaceFlag: 0 | 1;
+  /** 1 when the player has arrived at a top-surface grapple anchor and is sticking. */
+  readonly isGrappleStuckFlag: 0 | 1;
+  /** World-space X of the grapple anchor point (only valid when isGrappleActiveFlag=1). */
+  readonly grappleAnchorXWorld:  number;
+  /** World-space Y of the grapple anchor point (only valid when isGrappleActiveFlag=1). */
+  readonly grappleAnchorYWorld:  number;
+  /** Remaining ticks for grapple attach burst visual effect. */
+  readonly grappleAttachFxTicks: number;
+  readonly grappleAttachFxXWorld: number;
+  readonly grappleAttachFxYWorld: number;
+  /** 1 while the player is holding block or a sustained weave — used to drive player sprite rotation speed. */
+  readonly isPlayerBlockingFlag: 0 | 1;
+  /** 1 when the player has a grapple charge available (grapple hook is equipped). */
+  readonly hasGrappleChargeFlag: 0 | 1;
+  /** 1 while the player has any sustained Weave active (primary or secondary). */
+  readonly isPlayerWeaveActiveFlag: 0 | 1;
+  /** Selected character identifier ('knight', 'demonFox', 'princess', or 'outcast'). */
+  readonly characterId: string;
+  /** Number of active grasshoppers. */
+  readonly grasshopperCount: number;
+  /** X positions of grasshoppers (world units). */
+  readonly grasshopperXWorld: Float32Array;
+  /** Y positions of grasshoppers (world units). */
+  readonly grasshopperYWorld: Float32Array;
+  /** Per-grasshopper alive flags. */
+  readonly isGrasshopperAliveFlag: Uint8Array;
+
+  // ── Square Stampede trail ring buffers ────────────────────────────────────
+  /** Flattened trail X positions [slot * stride + ringIndex] (world units). */
+  readonly squareStampedeTrailXWorld: Float32Array;
+  /** Flattened trail Y positions. Same layout as squareStampedeTrailXWorld. */
+  readonly squareStampedeTrailYWorld: Float32Array;
+  /** Write-head per slot — points to the NEXT slot to be overwritten. */
+  readonly squareStampedeTrailHead: Uint8Array;
+  /** Number of valid trail entries per slot (0..stride). */
+  readonly squareStampedeTrailCount: Uint8Array;
+  /** Number of entries per slot (SQUARE_STAMPEDE_TRAIL_COUNT). */
+  readonly squareStampedeTrailStride: number;
+}
 
 // ── Reusable allocation-free snapshot ─────────────────────────────────────
 
@@ -16,86 +268,33 @@ import type { WorldSnapshot } from './snapshotTypes';
  */
 const MAX_REUSABLE_CLUSTERS = 64;
 
+/** Mutable version of ClusterSnapshot for use only within this module. */
+type _MutableCluster = { -readonly [K in keyof ClusterSnapshot]: ClusterSnapshot[K] };
+
 /**
  * Internal mutable backing accessed only through the snapshot module
  * functions.  External callers see only the readonly WorldSnapshot view.
  */
 interface _ReusableBacking {
   tick: number;
-  /** Sub-object whose typed-array fields are refreshed on every room transition via refreshSnapshotWorldArrayRefs(). */
+  /** Sub-object whose typed-array fields are fixed references; only particleCount changes. */
   readonly particles: { particleCount: number };
   clusters: _MutableCluster[];
-  /** Sub-object whose typed-array fields are refreshed on every room transition via refreshSnapshotWorldArrayRefs(). */
+  /** Sub-object whose typed-array fields are fixed references; only count changes. */
   readonly walls: { count: number };
   isGrappleActiveFlag: 0 | 1;
   isGrappleMissActiveFlag: 0 | 1;
   grappleParticleStartIndex: number;
-  isGrappleZipActiveFlag: 0 | 1;
+  isGrappleTopSurfaceFlag: 0 | 1;
   isGrappleStuckFlag: 0 | 1;
   grappleAnchorXWorld: number;
   grappleAnchorYWorld: number;
-  /** Outward surface normal at the anchor — 0,0 when not on a wall surface. */
-  grappleAnchorNormalXWorld: number;
-  grappleAnchorNormalYWorld: number;
-  // Debug grapple collision visualization fields
-  grappleDebugSweepFromXWorld: number;
-  grappleDebugSweepFromYWorld: number;
-  grappleDebugSweepToXWorld:   number;
-  grappleDebugSweepToYWorld:   number;
-  grappleDebugRawHitXWorld:    number;
-  grappleDebugRawHitYWorld:    number;
-  isGrappleDebugActiveFlag:    0 | 1;
   grappleAttachFxTicks: number;
   grappleAttachFxXWorld: number;
   grappleAttachFxYWorld: number;
-  grappleProximityBounceTicksLeft: number;
-  grappleProximityBounceRotationAngleRad: number;
-  grappleFailBeamTicksLeft: number;
-  grappleFailBeamTotalTicks: number;
-  grappleFailBeamStartXWorld: number;
-  grappleFailBeamStartYWorld: number;
-  grappleFailBeamEndXWorld: number;
-  grappleFailBeamEndYWorld: number;
-  grappleIceBounceTicksLeft: number;
-  grappleIceBounceTicksTotal: number;
-  grappleIceBounceStartXWorld: number;
-  grappleIceBounceStartYWorld: number;
-  grappleIceBounceEndXWorld: number;
-  grappleIceBounceEndYWorld: number;
-  grappleEmptyFxTicksLeft: number;
-  grappleEmptyFxTotalTicks: number;
-  grappleEmptyFxXWorld: number;
-  grappleEmptyFxYWorld: number;
-  zipImpactFxTicksLeft: number;
-  zipImpactFxTotalTicks: number;
-  zipImpactFxXWorld: number;
-  zipImpactFxYWorld: number;
-  zipImpactFxScale: number;
-  zipImpactFxNormalXWorld: number;
-  zipImpactFxNormalYWorld: number;
-  isZipJumpWindowOpenFlag: 0 | 1;
   isPlayerBlockingFlag: 0 | 1;
   hasGrappleChargeFlag: 0 | 1;
-  /** Ticks remaining for the golden recharge-ring VFX (> 0 = ring active). */
-  grappleRechargeRingTicksLeft: number;
-  /** Total duration of the recharge-ring VFX in ticks. */
-  grappleRechargeRingTotalTicks: number;
   isPlayerWeaveActiveFlag: 0 | 1;
-  selectedDustKind: number;
-  hasBowWeaveUnlockedFlag: 0 | 1;
-  secondaryWeaveGesturePhase: SecondaryWeaveGesturePhase;
-  secondaryWeaveGestureHoldAimXWorld: number;
-  secondaryWeaveGestureHoldAimYWorld: number;
-  bowArrowPhase: number;
-  bowArrowDirXWorld: number;
-  bowArrowDirYWorld: number;
-  hasSwordWeaveUnlockedFlag: 0 | 1;
-  newSwordActiveFlag: number;
-  newSwordToShieldTransition01: number;
-  newSwordReachWorld: number;
-  newSwordHandAnchorXWorld: number;
-  newSwordHandAnchorYWorld: number;
-  newSwordCurrentAngleRad: number;
   characterId: string;
   grasshopperCount: number;
   squareStampedeTrailXWorld: Float32Array;
@@ -103,49 +302,6 @@ interface _ReusableBacking {
   squareStampedeTrailHead: Uint8Array;
   squareStampedeTrailCount: Uint8Array;
   squareStampedeTrailStride: number;
-  slimeSnailTrailCol: Int16Array;
-  slimeSnailTrailRow: Int16Array;
-  slimeSnailTrailSideIndex: Uint8Array;
-  slimeSnailTrailRemainingTicks: Uint16Array;
-  slimeSnailTrailVisualSeed: Uint32Array;
-  slimeSnailTrailHead: Uint8Array;
-  slimeSnailTrailCount: Uint8Array;
-  slimeSnailTrailStride: number;
-  needleProjectileXWorld:Float32Array;needleProjectileYWorld:Float32Array;needleProjectileVelXWorld:Float32Array;needleProjectileVelYWorld:Float32Array;needleProjectileAliveFlag:Uint8Array;
-  beeSwarmBeeXWorld: Float32Array;
-  beeSwarmBeeYWorld: Float32Array;
-  beeSwarmBeeVelXWorld: Float32Array;
-  beeSwarmBeeVelYWorld: Float32Array;
-  constellationMoteXWorld: Float32Array;
-  constellationMoteYWorld: Float32Array;
-  constellationMoteVelXWorld: Float32Array;
-  constellationMoteVelYWorld: Float32Array;
-  constellationMoteTargetLocalX: Float32Array;
-  constellationMoteTargetLocalY: Float32Array;
-  constellationMotePulsePhaseRad: Float32Array;
-  odcMoteAngleRad: Float32Array;
-  odcMoteRadiusWorld: Float32Array;
-  odcMoteAliveFlag: Uint8Array;
-  odcMotePulsePhaseRad: Float32Array;
-  cwFireDustAliveFlag: Uint8Array;
-  cwSmokeAliveFlag: Uint8Array;
-  cwProjectileAliveFlag: Uint8Array;
-  cwTelegraphAliveFlag: Uint8Array;
-  voidSphereAliveFlag: Uint8Array;
-  phantasmalSpikeAliveFlag: Uint8Array;
-  phantasmalBlockAliveFlag: Uint8Array;
-  phantasmalShockwaveAliveFlag: Uint8Array;
-  voidLaserAliveFlag: Uint8Array;
-  voidLaserDustAliveFlag: Uint8Array;
-  iceSpikeAliveFlag: Uint8Array;
-  playerWeaveAimDirXWorld: number;
-  playerWeaveAimDirYWorld: number;
-  grappleDisplayRadiusWorld: number;
-  grappleTensionFactor: number;
-  isGrappleWrappingEnabled: 0 | 1;
-  grappleWrapPointCount: number;
-  ropeCount: number;
-  webSpiderFadingWebActiveCount: number;
   /** @internal Pre-allocated cluster objects — not part of the public API. */
   readonly _clusterPool: _MutableCluster[];
 }
@@ -172,6 +328,153 @@ export type ReusableWorldSnapshot = WorldSnapshot & { readonly [_reusableTag]: t
 /** @internal Cast to mutable backing — only valid within this module. */
 function _asBacking(snap: ReusableWorldSnapshot): _ReusableBacking {
   return snap as unknown as _ReusableBacking;
+}
+
+/** Returns a zeroed-out cluster object ready for pool use. */
+function _makeEmptyCluster(): _MutableCluster {
+  return {
+    entityId: 0,
+    positionXWorld: 0,
+    positionYWorld: 0,
+    velocityXWorld: 0,
+    velocityYWorld: 0,
+    isAliveFlag: 0,
+    isPlayerFlag: 0,
+    healthPoints: 0,
+    maxHealthPoints: 1,
+    influenceRadiusWorld: 0,
+    dashCooldownTicks: 0,
+    maxDashCooldownTicks: 1,
+    dashRechargeAnimTicks: 0,
+    halfWidthWorld: 0,
+    halfHeightWorld: 0,
+    isFlyingEyeFlag: 0,
+    flyingEyeFacingAngleRad: 0,
+    flyingEyeElementKind: 0,
+    isRollingEnemyFlag: 0,
+    rollingEnemySpriteIndex: 0,
+    rollingEnemyRollAngleRad: 0,
+    isFacingLeftFlag: 0,
+    isSprintingFlag: 0,
+    isCrouchingFlag: 0,
+    isGroundedFlag: 0,
+    isWallSlidingFlag: 0,
+    playerIdleAnimState: 0,
+    isRockElementalFlag: 0,
+    rockElementalState: 0,
+    rockElementalActivationProgress: 0,
+    rockElementalOrbitAngleRad: 0,
+    rockElementalDustCount: 0,
+    isRadiantTetherFlag: 0,
+    radiantTetherState: 0,
+    radiantTetherStateTicks: 0,
+    radiantTetherBaseAngleRad: 0,
+    radiantTetherChainCount: 0,
+    isGrappleHunterFlag: 0,
+    grappleHunterState: 0,
+    grappleHunterChainStartIndex: -1,
+    grappleHunterTipXWorld: 0,
+    grappleHunterTipYWorld: 0,
+    invulnerabilityTicks: 0,
+    hurtTicks: 0,
+    isSlimeFlag: 0,
+    isLargeSlimeFlag: 0,
+    largeSlimeDustOrbitAngleRad: 0,
+    isWheelEnemyFlag: 0,
+    wheelRollAngleRad: 0,
+    isBeetleFlag: 0,
+    beetleAiState: 0,
+    beetleSurfaceNormalXWorld: 0,
+    beetleSurfaceNormalYWorld: 0,
+    beetleIsFlightModeFlag: 0,
+    isBubbleEnemyFlag: 0,
+    isIceBubbleFlag: 0,
+    bubbleState: 0,
+    bubbleOrbitAngleRad: 0,
+    isSquareStampedeFlag: 0,
+    squareStampedeSlotIndex: -1,
+    squareStampedeBaseHalfSizeWorld: 0,
+    isGoldenMimicFlag: 0,
+    isGoldenMimicYFlippedFlag: 0,
+    goldenMimicState: 0,
+    goldenMimicFadeAlpha: 1.0,
+    renderPositionXWorld: 0,
+    renderPositionYWorld: 0,
+  };
+}
+
+/** Copies all ClusterState fields into a pre-allocated _MutableCluster object. */
+function _fillCluster(dst: _MutableCluster, src: ClusterState): void {
+  dst.entityId                        = src.entityId;
+  dst.positionXWorld                  = src.positionXWorld;
+  dst.positionYWorld                  = src.positionYWorld;
+  dst.velocityXWorld                  = src.velocityXWorld;
+  dst.velocityYWorld                  = src.velocityYWorld;
+  dst.isAliveFlag                     = src.isAliveFlag;
+  dst.isPlayerFlag                    = src.isPlayerFlag;
+  dst.healthPoints                    = src.healthPoints;
+  dst.maxHealthPoints                 = src.maxHealthPoints;
+  dst.influenceRadiusWorld            = INFLUENCE_RADIUS_WORLD;
+  dst.dashCooldownTicks               = src.dashCooldownTicks;
+  dst.maxDashCooldownTicks            = DASH_COOLDOWN_TICKS;
+  dst.dashRechargeAnimTicks           = src.dashRechargeAnimTicks;
+  dst.halfWidthWorld                  = src.halfWidthWorld;
+  dst.halfHeightWorld                 = src.halfHeightWorld;
+  dst.isFlyingEyeFlag                 = src.isFlyingEyeFlag;
+  dst.flyingEyeFacingAngleRad         = src.flyingEyeFacingAngleRad;
+  dst.flyingEyeElementKind            = src.flyingEyeElementKind;
+  dst.isRollingEnemyFlag              = src.isRollingEnemyFlag;
+  dst.rollingEnemySpriteIndex         = src.rollingEnemySpriteIndex;
+  dst.rollingEnemyRollAngleRad        = src.rollingEnemyRollAngleRad;
+  dst.isFacingLeftFlag                = src.isFacingLeftFlag;
+  dst.isSprintingFlag                 = src.isSprintingFlag;
+  dst.isCrouchingFlag                 = src.isCrouchingFlag;
+  dst.isGroundedFlag                  = src.isGroundedFlag;
+  dst.isWallSlidingFlag               = src.isWallSlidingFlag;
+  dst.playerIdleAnimState             = src.playerIdleAnimState;
+  dst.isRockElementalFlag             = src.isRockElementalFlag;
+  dst.rockElementalState              = src.rockElementalState;
+  dst.rockElementalActivationProgress = src.rockElementalActivationProgress;
+  dst.rockElementalOrbitAngleRad      = src.rockElementalOrbitAngleRad;
+  dst.rockElementalDustCount          = src.rockElementalDustCount;
+  dst.isRadiantTetherFlag             = src.isRadiantTetherFlag;
+  dst.radiantTetherState              = src.radiantTetherState;
+  dst.radiantTetherStateTicks         = src.radiantTetherStateTicks;
+  dst.radiantTetherBaseAngleRad       = src.radiantTetherBaseAngleRad;
+  dst.radiantTetherChainCount         = src.radiantTetherChainCount;
+  dst.isGrappleHunterFlag             = src.isGrappleHunterFlag;
+  dst.grappleHunterState              = src.grappleHunterState;
+  dst.grappleHunterChainStartIndex    = src.grappleHunterChainStartIndex;
+  dst.grappleHunterTipXWorld          = src.grappleHunterTipXWorld;
+  dst.grappleHunterTipYWorld          = src.grappleHunterTipYWorld;
+  dst.invulnerabilityTicks            = src.invulnerabilityTicks;
+  dst.hurtTicks                       = src.hurtTicks;
+  dst.isSlimeFlag                     = src.isSlimeFlag;
+  dst.isLargeSlimeFlag                = src.isLargeSlimeFlag;
+  dst.largeSlimeDustOrbitAngleRad     = src.largeSlimeDustOrbitAngleRad;
+  dst.isWheelEnemyFlag                = src.isWheelEnemyFlag;
+  dst.wheelRollAngleRad               = src.wheelRollAngleRad;
+  dst.isBeetleFlag                    = src.isBeetleFlag;
+  dst.beetleAiState                   = src.beetleAiState;
+  dst.beetleSurfaceNormalXWorld       = src.beetleSurfaceNormalXWorld;
+  dst.beetleSurfaceNormalYWorld       = src.beetleSurfaceNormalYWorld;
+  dst.beetleIsFlightModeFlag          = src.beetleIsFlightModeFlag;
+  dst.isBubbleEnemyFlag               = src.isBubbleEnemyFlag;
+  dst.isIceBubbleFlag                 = src.isIceBubbleFlag;
+  dst.bubbleState                     = src.bubbleState;
+  dst.bubbleOrbitAngleRad             = src.bubbleOrbitAngleRad;
+  dst.isSquareStampedeFlag            = src.isSquareStampedeFlag;
+  dst.squareStampedeSlotIndex         = src.squareStampedeSlotIndex;
+  dst.squareStampedeBaseHalfSizeWorld = src.squareStampedeBaseHalfSizeWorld;
+  dst.isGoldenMimicFlag               = src.isGoldenMimicFlag;
+  dst.isGoldenMimicYFlippedFlag       = src.isGoldenMimicYFlippedFlag;
+  dst.goldenMimicState                = src.goldenMimicState;
+  dst.goldenMimicFadeAlpha            = src.goldenMimicFadeAlpha;
+  // Render interpolation: initialised to the physics position by default.
+  // updateSnapshotInPlace() overwrites these with the blended position when
+  // prev-position buffers and an alpha are supplied.
+  dst.renderPositionXWorld            = src.positionXWorld;
+  dst.renderPositionYWorld            = src.positionYWorld;
 }
 
 /**
@@ -203,7 +506,6 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
       lifetimeTicks:     world.lifetimeTicks,
       disturbanceFactor: world.disturbanceFactor,
       behaviorMode:      world.behaviorMode,
-      noiseTickSeed:     world.noiseTickSeed,
       particleCount:     world.particleCount,
     },
     clusters,
@@ -219,74 +521,20 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
       isInvisibleFlag:      world.wallIsInvisibleFlag,
       rampOrientationIndex: world.wallRampOrientationIndex,
       isPillarHalfWidthFlag: world.wallIsPillarHalfWidthFlag,
-      surfaceRimStyleIndex: world.wallSurfaceRimStyleIndex,
-      surfaceRimStyleTable: world.wallSurfaceRimStyleTable,
     },
     isGrappleActiveFlag:      world.isGrappleActiveFlag,
     isGrappleMissActiveFlag:  world.isGrappleMissActiveFlag,
     grappleParticleStartIndex: world.grappleParticleStartIndex,
-    isGrappleZipActiveFlag:  world.isGrappleZipActiveFlag,
+    isGrappleTopSurfaceFlag:  world.isGrappleTopSurfaceFlag,
     isGrappleStuckFlag:       world.isGrappleStuckFlag,
     grappleAnchorXWorld:      world.grappleAnchorXWorld,
     grappleAnchorYWorld:      world.grappleAnchorYWorld,
-    grappleAnchorNormalXWorld: world.grappleAnchorNormalXWorld,
-    grappleAnchorNormalYWorld: world.grappleAnchorNormalYWorld,
-    grappleDebugSweepFromXWorld: world.grappleDebugSweepFromXWorld,
-    grappleDebugSweepFromYWorld: world.grappleDebugSweepFromYWorld,
-    grappleDebugSweepToXWorld:   world.grappleDebugSweepToXWorld,
-    grappleDebugSweepToYWorld:   world.grappleDebugSweepToYWorld,
-    grappleDebugRawHitXWorld:    world.grappleDebugRawHitXWorld,
-    grappleDebugRawHitYWorld:    world.grappleDebugRawHitYWorld,
-    isGrappleDebugActiveFlag:    world.isGrappleDebugActiveFlag,
     grappleAttachFxTicks:     world.grappleAttachFxTicks,
     grappleAttachFxXWorld:    world.grappleAttachFxXWorld,
     grappleAttachFxYWorld:    world.grappleAttachFxYWorld,
-    grappleProximityBounceTicksLeft:        world.grappleProximityBounceTicksLeft,
-    grappleProximityBounceRotationAngleRad: world.grappleProximityBounceRotationAngleRad,
-    grappleFailBeamTicksLeft:       world.grappleFailBeamTicksLeft,
-    grappleFailBeamTotalTicks:      world.grappleFailBeamTotalTicks,
-    grappleFailBeamStartXWorld:     world.grappleFailBeamStartXWorld,
-    grappleFailBeamStartYWorld:     world.grappleFailBeamStartYWorld,
-    grappleFailBeamEndXWorld:       world.grappleFailBeamEndXWorld,
-    grappleFailBeamEndYWorld:       world.grappleFailBeamEndYWorld,
-    grappleIceBounceTicksLeft:      world.grappleIceBounceTicksLeft,
-    grappleIceBounceTicksTotal:     world.grappleIceBounceTicksTotal,
-    grappleIceBounceStartXWorld:    world.grappleIceBounceStartXWorld,
-    grappleIceBounceStartYWorld:    world.grappleIceBounceStartYWorld,
-    grappleIceBounceEndXWorld:      world.grappleIceBounceEndXWorld,
-    grappleIceBounceEndYWorld:      world.grappleIceBounceEndYWorld,
-    grappleEmptyFxTicksLeft:        world.grappleEmptyFxTicksLeft,
-    grappleEmptyFxTotalTicks:       world.grappleEmptyFxTotalTicks,
-    grappleEmptyFxXWorld:           world.grappleEmptyFxXWorld,
-    grappleEmptyFxYWorld:           world.grappleEmptyFxYWorld,
-    zipImpactFxTicksLeft:           world.zipImpactFxTicksLeft,
-    zipImpactFxTotalTicks:          world.zipImpactFxTotalTicks,
-    zipImpactFxXWorld:              world.zipImpactFxXWorld,
-    zipImpactFxYWorld:              world.zipImpactFxYWorld,
-    zipImpactFxScale:               world.zipImpactFxScale,
-    zipImpactFxNormalXWorld:        world.zipImpactFxNormalXWorld,
-    zipImpactFxNormalYWorld:        world.zipImpactFxNormalYWorld,
-    isZipJumpWindowOpenFlag:        world.isZipJumpWindowOpenFlag,
     isPlayerBlockingFlag:     world.isPlayerBlockingFlag,
     hasGrappleChargeFlag:     world.hasGrappleChargeFlag,
-    grappleRechargeRingTicksLeft:   world.grappleRechargeRingTicksLeft,
-    grappleRechargeRingTotalTicks:  world.grappleRechargeRingTotalTicks,
     isPlayerWeaveActiveFlag:  (world.isPlayerPrimaryWeaveActiveFlag === 1 || world.isPlayerSecondaryWeaveActiveFlag === 1) ? 1 : 0,
-    selectedDustKind: world.selectedDustKind,
-    hasBowWeaveUnlockedFlag: world.hasBowWeaveUnlockedFlag,
-    secondaryWeaveGesturePhase: world.secondaryWeaveGesture.phase,
-    secondaryWeaveGestureHoldAimXWorld: world.secondaryWeaveGesture.holdAimXWorld,
-    secondaryWeaveGestureHoldAimYWorld: world.secondaryWeaveGesture.holdAimYWorld,
-    bowArrowPhase: world.bowArrowPhase,
-    bowArrowDirXWorld: world.bowArrowDirXWorld,
-    bowArrowDirYWorld: world.bowArrowDirYWorld,
-    hasSwordWeaveUnlockedFlag: world.hasSwordWeaveUnlockedFlag,
-    newSwordActiveFlag: world.newSwordActiveFlag,
-    newSwordToShieldTransition01: world.newSwordToShieldTransition01,
-    newSwordReachWorld: world.newSwordReachWorld,
-    newSwordHandAnchorXWorld: world.newSwordHandAnchorXWorld,
-    newSwordHandAnchorYWorld: world.newSwordHandAnchorYWorld,
-    newSwordCurrentAngleRad: world.newSwordCurrentAngleRad,
     characterId:              world.characterId,
     grasshopperCount:         world.grasshopperCount,
     grasshopperXWorld:        world.grasshopperXWorld,
@@ -297,156 +545,6 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
     squareStampedeTrailHead:   world.squareStampedeTrailHead,
     squareStampedeTrailCount:  world.squareStampedeTrailCount,
     squareStampedeTrailStride: world.squareStampedeTrailStride,
-    slimeSnailTrailCol:            world.slimeSnailTrailCol,
-    slimeSnailTrailRow:            world.slimeSnailTrailRow,
-    slimeSnailTrailSideIndex:      world.slimeSnailTrailSideIndex,
-    slimeSnailTrailRemainingTicks: world.slimeSnailTrailRemainingTicks,
-    slimeSnailTrailVisualSeed:     world.slimeSnailTrailVisualSeed,
-    slimeSnailTrailHead:           world.slimeSnailTrailHead,
-    slimeSnailTrailCount:          world.slimeSnailTrailCount,
-    slimeSnailTrailStride:         world.slimeSnailTrailStride,
-    needleProjectileXWorld:world.needleProjectileXWorld,needleProjectileYWorld:world.needleProjectileYWorld,needleProjectileVelXWorld:world.needleProjectileVelXWorld,needleProjectileVelYWorld:world.needleProjectileVelYWorld,needleProjectileAliveFlag:world.needleProjectileAliveFlag,
-    beeSwarmBeeXWorld:         world.beeSwarmBeeXWorld,
-    beeSwarmBeeYWorld:         world.beeSwarmBeeYWorld,
-    beeSwarmBeeVelXWorld:      world.beeSwarmBeeVelXWorld,
-    beeSwarmBeeVelYWorld:      world.beeSwarmBeeVelYWorld,
-    constellationMoteXWorld:        world.constellationMoteXWorld,
-    constellationMoteYWorld:        world.constellationMoteYWorld,
-    constellationMoteVelXWorld:     world.constellationMoteVelXWorld,
-    constellationMoteVelYWorld:     world.constellationMoteVelYWorld,
-    constellationMoteTargetLocalX:  world.constellationMoteTargetLocalX,
-    constellationMoteTargetLocalY:  world.constellationMoteTargetLocalY,
-    constellationMotePulsePhaseRad: world.constellationMotePulsePhaseRad,
-    odcMoteAngleRad:        world.odcMoteAngleRad,
-    odcMoteRadiusWorld:     world.odcMoteRadiusWorld,
-    odcMoteAliveFlag:       world.odcMoteAliveFlag,
-    odcMotePulsePhaseRad:   world.odcMotePulsePhaseRad,
-    dbmMoteXWorld:          world.dbmMoteXWorld,
-    dbmMoteYWorld:          world.dbmMoteYWorld,
-    dbmMoteVelXWorld:       world.dbmMoteVelXWorld,
-    dbmMoteVelYWorld:       world.dbmMoteVelYWorld,
-    dbmMoteTargetLocalX:    world.dbmMoteTargetLocalX,
-    dbmMoteTargetLocalY:    world.dbmMoteTargetLocalY,
-    dbmMotePulsePhaseRad:   world.dbmMotePulsePhaseRad,
-    dwaMoteAngleRad:             world.dwaMoteAngleRad,
-    dwaMotePulsePhaseRad:        world.dwaMotePulsePhaseRad,
-    vsMoteAngleRad:              world.vsMoteAngleRad,
-    vsMoteRadiusWorld:           world.vsMoteRadiusWorld,
-    vsMotePulsePhaseRad:         world.vsMotePulsePhaseRad,
-    dlMoteAngleRad:              world.dlMoteAngleRad,
-    dlMotePulsePhaseRad:         world.dlMotePulsePhaseRad,
-    deMoteOffsetXWorld:          world.deMoteOffsetXWorld,
-    deMoteOffsetYWorld:          world.deMoteOffsetYWorld,
-    deMotePulsePhaseRad:         world.deMotePulsePhaseRad,
-    vspProjXWorld:               world.vspProjXWorld,
-    vspProjYWorld:               world.vspProjYWorld,
-    vspProjVelXWorld:            world.vspProjVelXWorld,
-    vspProjVelYWorld:            world.vspProjVelYWorld,
-    vspProjLifetimeTicks:        world.vspProjLifetimeTicks,
-    vspProjAliveFlag:            world.vspProjAliveFlag,
-    cwFireDustXWorld:            world.cwFireDustXWorld,
-    cwFireDustYWorld:            world.cwFireDustYWorld,
-    cwFireDustAgeTicks:          world.cwFireDustAgeTicks,
-    cwFireDustLifetimeTicks:     world.cwFireDustLifetimeTicks,
-    cwFireDustColorIndex:        world.cwFireDustColorIndex,
-    cwFireDustAliveFlag:         world.cwFireDustAliveFlag,
-    cwSmokeXWorld:               world.cwSmokeXWorld,
-    cwSmokeYWorld:               world.cwSmokeYWorld,
-    cwSmokeAgeTicks:             world.cwSmokeAgeTicks,
-    cwSmokeLifetimeTicks:        world.cwSmokeLifetimeTicks,
-    cwSmokeAliveFlag:            world.cwSmokeAliveFlag,
-    cwProjectileXWorld:          world.cwProjectileXWorld,
-    cwProjectileYWorld:          world.cwProjectileYWorld,
-    cwProjectileType:            world.cwProjectileType,
-    cwProjectileAliveFlag:       world.cwProjectileAliveFlag,
-    cwTelegraphXWorld:           world.cwTelegraphXWorld,
-    cwTelegraphYWorld:           world.cwTelegraphYWorld,
-    cwTelegraphHalfSizeWorld:    world.cwTelegraphHalfSizeWorld,
-    cwTelegraphTicksLeft:        world.cwTelegraphTicksLeft,
-    cwTelegraphMaxTicks:         world.cwTelegraphMaxTicks,
-    cwTelegraphKind:             world.cwTelegraphKind,
-    cwTelegraphAliveFlag:        world.cwTelegraphAliveFlag,
-    voidSphereXWorld:            world.voidSphereXWorld,
-    voidSphereYWorld:            world.voidSphereYWorld,
-    voidSpherePulsePhaseRad:     world.voidSpherePulsePhaseRad,
-    voidSphereAliveFlag:         world.voidSphereAliveFlag,
-    phantasmalSpikeXWorld:       world.phantasmalSpikeXWorld,
-    phantasmalSpikeYWorld:       world.phantasmalSpikeYWorld,
-    phantasmalSpikeDirection:    world.phantasmalSpikeDirection,
-    phantasmalSpikeAgeTicks:     world.phantasmalSpikeAgeTicks,
-    phantasmalSpikeAliveFlag:    world.phantasmalSpikeAliveFlag,
-    phantasmalBlockXWorld:       world.phantasmalBlockXWorld,
-    phantasmalBlockYWorld:       world.phantasmalBlockYWorld,
-    phantasmalBlockAgeTicks:     world.phantasmalBlockAgeTicks,
-    phantasmalBlockFlashTicks:   world.phantasmalBlockFlashTicks,
-    phantasmalBlockAliveFlag:    world.phantasmalBlockAliveFlag,
-    phantasmalShockwaveXWorld:   world.phantasmalShockwaveXWorld,
-    phantasmalShockwaveYWorld:   world.phantasmalShockwaveYWorld,
-    phantasmalShockwaveAgeTicks: world.phantasmalShockwaveAgeTicks,
-    phantasmalShockwaveAliveFlag: world.phantasmalShockwaveAliveFlag,
-    voidLaserStartXWorld:        world.voidLaserStartXWorld,
-    voidLaserStartYWorld:        world.voidLaserStartYWorld,
-    voidLaserEndXWorld:          world.voidLaserEndXWorld,
-    voidLaserEndYWorld:          world.voidLaserEndYWorld,
-    voidLaserVisibleStartXWorld: world.voidLaserVisibleStartXWorld,
-    voidLaserVisibleStartYWorld: world.voidLaserVisibleStartYWorld,
-    voidLaserVisibleEndXWorld:   world.voidLaserVisibleEndXWorld,
-    voidLaserVisibleEndYWorld:   world.voidLaserVisibleEndYWorld,
-    voidLaserAgeTicks:           world.voidLaserAgeTicks,
-    voidLaserAliveFlag:          world.voidLaserAliveFlag,
-    voidLaserDustXWorld:         world.voidLaserDustXWorld,
-    voidLaserDustYWorld:         world.voidLaserDustYWorld,
-    voidLaserDustAgeTicks:       world.voidLaserDustAgeTicks,
-    voidLaserDustKind:           world.voidLaserDustKind,
-    voidLaserDustAliveFlag:      world.voidLaserDustAliveFlag,
-    iceSpikeXWorld:              world.iceSpikeXWorld,
-    iceSpikeBaseYWorld:          world.iceSpikeBaseYWorld,
-    iceSpikeAgeTicks:            world.iceSpikeAgeTicks,
-    iceSpikeDelayTicks:          world.iceSpikeDelayTicks,
-    iceSpikeAliveFlag:           world.iceSpikeAliveFlag,
-    architectBlockCount:         world.architectBlockCount,
-    architectBlockXWorld:        world.architectBlockXWorld,
-    architectBlockYWorld:        world.architectBlockYWorld,
-    architectBlockHealth:        world.architectBlockHealth,
-    architectBlockMaxHealth:     world.architectBlockMaxHealth,
-    architectBlockLifetimeTicks: world.architectBlockLifetimeTicks,
-    architectBlockGraceTicks:    world.architectBlockGraceTicks,
-    architectBlockFormTicks:     world.architectBlockFormTicks,
-    architectBlockCrumbleTicks:  world.architectBlockCrumbleTicks,
-    architectBlockState:         world.architectBlockState,
-    isArchitectBlockAliveFlag:   world.isArchitectBlockAliveFlag,
-    architectBlockOwnerSlot:     world.architectBlockOwnerSlot,
-    // Dust Nail projectiles — shared typed-array views.
-    dwaNailXWorld:               world.dwaNailXWorld,
-    dwaNailYWorld:               world.dwaNailYWorld,
-    dwaNailVelXWorld:            world.dwaNailVelXWorld,
-    dwaNailVelYWorld:            world.dwaNailVelYWorld,
-    dwaNailLifetimeTicks:        world.dwaNailLifetimeTicks,
-    isDwaNailAliveFlag:          world.isDwaNailAliveFlag,
-    playerWeaveAimDirXWorld:    world.playerWeaveAimDirXWorld,
-    playerWeaveAimDirYWorld:    world.playerWeaveAimDirYWorld,
-    // Grapple display
-    grappleDisplayRadiusWorld: world.grappleDisplayRadiusWorld,
-    grappleTensionFactor:          world.grappleTensionFactor,
-    // Phase 2: geometric grapple wrapping (shared typed-array views)
-    isGrappleWrappingEnabled:      world.isGrappleWrappingEnabled,
-    grappleWrapPointCount:         world.grappleWrapPointCount,
-    grappleWrapPointXWorld:        world.grappleWrapPointXWorld,
-    grappleWrapPointYWorld:        world.grappleWrapPointYWorld,
-    ropeCount:           world.ropeCount,
-    ropeSegmentCount:    world.ropeSegmentCount,
-    ropeHalfThickWorld:  world.ropeHalfThickWorld,
-    ropeSegPosXWorld:    world.ropeSegPosXWorld,
-    ropeSegPosYWorld:    world.ropeSegPosYWorld,
-    // Web Spider fading web ring buffer — shared typed-array views
-    webSpiderFadingWebMaxCount:        world.webSpiderFadingWebMaxCount,
-    webSpiderFadingWebActiveCount:     world.webSpiderFadingWebActiveCount,
-    webSpiderFadingWebFromXWorld:      world.webSpiderFadingWebFromXWorld,
-    webSpiderFadingWebFromYWorld:      world.webSpiderFadingWebFromYWorld,
-    webSpiderFadingWebToXWorld:        world.webSpiderFadingWebToXWorld,
-    webSpiderFadingWebToYWorld:        world.webSpiderFadingWebToYWorld,
-    webSpiderFadingWebRemainingTicks:  world.webSpiderFadingWebRemainingTicks,
-    webSpiderFadingWebMaxTicks:        world.webSpiderFadingWebMaxTicks,
     _clusterPool:             clusterPool,
   };
 
@@ -484,82 +582,17 @@ export function updateSnapshotInPlace(
   b.isGrappleActiveFlag       = world.isGrappleActiveFlag;
   b.isGrappleMissActiveFlag   = world.isGrappleMissActiveFlag;
   b.grappleParticleStartIndex = world.grappleParticleStartIndex;
-  b.isGrappleZipActiveFlag   = world.isGrappleZipActiveFlag;
+  b.isGrappleTopSurfaceFlag   = world.isGrappleTopSurfaceFlag;
   b.isGrappleStuckFlag        = world.isGrappleStuckFlag;
   b.grappleAnchorXWorld       = world.grappleAnchorXWorld;
   b.grappleAnchorYWorld       = world.grappleAnchorYWorld;
-  b.grappleAnchorNormalXWorld = world.grappleAnchorNormalXWorld;
-  b.grappleAnchorNormalYWorld = world.grappleAnchorNormalYWorld;
-  b.grappleDebugSweepFromXWorld = world.grappleDebugSweepFromXWorld;
-  b.grappleDebugSweepFromYWorld = world.grappleDebugSweepFromYWorld;
-  b.grappleDebugSweepToXWorld   = world.grappleDebugSweepToXWorld;
-  b.grappleDebugSweepToYWorld   = world.grappleDebugSweepToYWorld;
-  b.grappleDebugRawHitXWorld    = world.grappleDebugRawHitXWorld;
-  b.grappleDebugRawHitYWorld    = world.grappleDebugRawHitYWorld;
-  b.isGrappleDebugActiveFlag    = world.isGrappleDebugActiveFlag;
   b.grappleAttachFxTicks      = world.grappleAttachFxTicks;
   b.grappleAttachFxXWorld     = world.grappleAttachFxXWorld;
   b.grappleAttachFxYWorld     = world.grappleAttachFxYWorld;
-  b.grappleProximityBounceTicksLeft        = world.grappleProximityBounceTicksLeft;
-  b.grappleProximityBounceRotationAngleRad = world.grappleProximityBounceRotationAngleRad;
-  b.grappleFailBeamTicksLeft       = world.grappleFailBeamTicksLeft;
-  b.grappleFailBeamTotalTicks      = world.grappleFailBeamTotalTicks;
-  b.grappleFailBeamStartXWorld     = world.grappleFailBeamStartXWorld;
-  b.grappleFailBeamStartYWorld     = world.grappleFailBeamStartYWorld;
-  b.grappleFailBeamEndXWorld       = world.grappleFailBeamEndXWorld;
-  b.grappleFailBeamEndYWorld       = world.grappleFailBeamEndYWorld;
-  b.grappleIceBounceTicksLeft      = world.grappleIceBounceTicksLeft;
-  b.grappleIceBounceTicksTotal     = world.grappleIceBounceTicksTotal;
-  b.grappleIceBounceStartXWorld    = world.grappleIceBounceStartXWorld;
-  b.grappleIceBounceStartYWorld    = world.grappleIceBounceStartYWorld;
-  b.grappleIceBounceEndXWorld      = world.grappleIceBounceEndXWorld;
-  b.grappleIceBounceEndYWorld      = world.grappleIceBounceEndYWorld;
-  b.grappleEmptyFxTicksLeft        = world.grappleEmptyFxTicksLeft;
-  b.grappleEmptyFxTotalTicks       = world.grappleEmptyFxTotalTicks;
-  b.grappleEmptyFxXWorld           = world.grappleEmptyFxXWorld;
-  b.grappleEmptyFxYWorld           = world.grappleEmptyFxYWorld;
-  b.zipImpactFxTicksLeft           = world.zipImpactFxTicksLeft;
-  b.zipImpactFxTotalTicks          = world.zipImpactFxTotalTicks;
-  b.zipImpactFxXWorld              = world.zipImpactFxXWorld;
-  b.zipImpactFxYWorld              = world.zipImpactFxYWorld;
-  b.zipImpactFxScale               = world.zipImpactFxScale;
-  b.zipImpactFxNormalXWorld        = world.zipImpactFxNormalXWorld;
-  b.zipImpactFxNormalYWorld        = world.zipImpactFxNormalYWorld;
-  b.isZipJumpWindowOpenFlag        = world.isZipJumpWindowOpenFlag;
   b.isPlayerBlockingFlag      = world.isPlayerBlockingFlag;
   b.hasGrappleChargeFlag      = world.hasGrappleChargeFlag;
-  b.grappleRechargeRingTicksLeft  = world.grappleRechargeRingTicksLeft;
-  b.grappleRechargeRingTotalTicks = world.grappleRechargeRingTotalTicks;
   b.isPlayerWeaveActiveFlag   = (world.isPlayerPrimaryWeaveActiveFlag === 1 || world.isPlayerSecondaryWeaveActiveFlag === 1) ? 1 : 0;
-  b.selectedDustKind = world.selectedDustKind;
-  b.hasBowWeaveUnlockedFlag = world.hasBowWeaveUnlockedFlag;
-  b.secondaryWeaveGesturePhase = world.secondaryWeaveGesture.phase;
-  b.secondaryWeaveGestureHoldAimXWorld = world.secondaryWeaveGesture.holdAimXWorld;
-  b.secondaryWeaveGestureHoldAimYWorld = world.secondaryWeaveGesture.holdAimYWorld;
-  b.bowArrowPhase = world.bowArrowPhase;
-  b.bowArrowDirXWorld = world.bowArrowDirXWorld;
-  b.bowArrowDirYWorld = world.bowArrowDirYWorld;
-  b.hasSwordWeaveUnlockedFlag = world.hasSwordWeaveUnlockedFlag;
-  b.newSwordActiveFlag = world.newSwordActiveFlag;
-  b.newSwordToShieldTransition01 = world.newSwordToShieldTransition01;
-  b.newSwordReachWorld = world.newSwordReachWorld;
-  b.newSwordHandAnchorXWorld = world.newSwordHandAnchorXWorld;
-  b.newSwordHandAnchorYWorld = world.newSwordHandAnchorYWorld;
-  b.newSwordCurrentAngleRad = world.newSwordCurrentAngleRad;
-  b.characterId               = world.characterId;
   b.grasshopperCount          = world.grasshopperCount;
-
-  b.playerWeaveAimDirXWorld    = world.playerWeaveAimDirXWorld;
-  b.playerWeaveAimDirYWorld    = world.playerWeaveAimDirYWorld;
-
-  // Grapple display
-  b.grappleDisplayRadiusWorld = world.grappleDisplayRadiusWorld;
-  b.grappleTensionFactor          = world.grappleTensionFactor;
-  // Phase 2: geometric wrapping (typed-array fields are shared views — no copy needed)
-  b.isGrappleWrappingEnabled      = world.isGrappleWrappingEnabled;
-  b.grappleWrapPointCount         = world.grappleWrapPointCount;
-  b.ropeCount = world.ropeCount;
-  b.webSpiderFadingWebActiveCount = world.webSpiderFadingWebActiveCount;
 
   const clusterCount = world.clusters.length;
   const pool = b._clusterPool;
@@ -592,196 +625,11 @@ export function updateSnapshotInPlace(
 }
 
 /**
- * Re-points every typed-array field in the reusable snapshot at the new world's
- * buffers.  Must be called after a resident WorldState hot-swap (or any room
- * transition that replaces the active WorldState object) so that render and
- * interpolation code reads from the correct buffers rather than the previous
- * room's memory.
- *
- * `resetReusableSnapshot` calls this automatically, so callers do not need to
- * invoke it directly.
- */
-export function refreshSnapshotWorldArrayRefs(
-  snap: ReusableWorldSnapshot,
-  world: WorldState,
-): void {
-  // Use a plain Record cast for the sub-objects and for backing fields that are
-  // not exposed in _ReusableBacking (typed-array fields only present at runtime).
-  const raw = snap as unknown as Record<string, unknown>;
-
-  // ── Particles sub-object ─────────────────────────────────────────────────
-  const p = (snap as unknown as { particles: Record<string, unknown> }).particles;
-  p.positionXWorld    = world.positionXWorld;
-  p.positionYWorld    = world.positionYWorld;
-  p.velocityXWorld    = world.velocityXWorld;
-  p.velocityYWorld    = world.velocityYWorld;
-  p.isAliveFlag       = world.isAliveFlag;
-  p.kindBuffer        = world.kindBuffer;
-  p.ownerEntityId     = world.ownerEntityId;
-  p.ageTicks          = world.ageTicks;
-  p.lifetimeTicks     = world.lifetimeTicks;
-  p.disturbanceFactor = world.disturbanceFactor;
-  p.behaviorMode      = world.behaviorMode;
-  p.noiseTickSeed     = world.noiseTickSeed;
-
-  // ── Walls sub-object ─────────────────────────────────────────────────────
-  const w = (snap as unknown as { walls: Record<string, unknown> }).walls;
-  w.xWorld                = world.wallXWorld;
-  w.yWorld                = world.wallYWorld;
-  w.wWorld                = world.wallWWorld;
-  w.hWorld                = world.wallHWorld;
-  w.isPlatformFlag        = world.wallIsPlatformFlag;
-  w.platformEdge          = world.wallPlatformEdge;
-  raw.squareStampedeTrailCount       = world.squareStampedeTrailCount;
-  raw.slimeSnailTrailCol             = world.slimeSnailTrailCol;
-  raw.slimeSnailTrailRow             = world.slimeSnailTrailRow;
-  raw.slimeSnailTrailSideIndex       = world.slimeSnailTrailSideIndex;
-  raw.slimeSnailTrailRemainingTicks  = world.slimeSnailTrailRemainingTicks;
-  raw.slimeSnailTrailVisualSeed      = world.slimeSnailTrailVisualSeed;
-  raw.slimeSnailTrailHead            = world.slimeSnailTrailHead;
-  raw.slimeSnailTrailCount           = world.slimeSnailTrailCount;
-  raw.needleProjectileXWorld=world.needleProjectileXWorld;raw.needleProjectileYWorld=world.needleProjectileYWorld;raw.needleProjectileVelXWorld=world.needleProjectileVelXWorld;raw.needleProjectileVelYWorld=world.needleProjectileVelYWorld;raw.needleProjectileAliveFlag=world.needleProjectileAliveFlag;
-  raw.beeSwarmBeeXWorld              = world.beeSwarmBeeXWorld;
-  raw.beeSwarmBeeYWorld              = world.beeSwarmBeeYWorld;
-  raw.beeSwarmBeeVelXWorld           = world.beeSwarmBeeVelXWorld;
-  raw.beeSwarmBeeVelYWorld           = world.beeSwarmBeeVelYWorld;
-  raw.constellationMoteXWorld        = world.constellationMoteXWorld;
-  raw.constellationMoteYWorld        = world.constellationMoteYWorld;
-  raw.constellationMoteVelXWorld     = world.constellationMoteVelXWorld;
-  raw.constellationMoteVelYWorld     = world.constellationMoteVelYWorld;
-  raw.constellationMoteTargetLocalX  = world.constellationMoteTargetLocalX;
-  raw.constellationMoteTargetLocalY  = world.constellationMoteTargetLocalY;
-  raw.constellationMotePulsePhaseRad = world.constellationMotePulsePhaseRad;
-  raw.odcMoteAngleRad                = world.odcMoteAngleRad;
-  raw.odcMoteRadiusWorld             = world.odcMoteRadiusWorld;
-  raw.odcMoteAliveFlag               = world.odcMoteAliveFlag;
-  raw.odcMotePulsePhaseRad           = world.odcMotePulsePhaseRad;
-  raw.dbmMoteXWorld                  = world.dbmMoteXWorld;
-  raw.dbmMoteYWorld                  = world.dbmMoteYWorld;
-  raw.dbmMoteVelXWorld               = world.dbmMoteVelXWorld;
-  raw.dbmMoteVelYWorld               = world.dbmMoteVelYWorld;
-  raw.dbmMoteTargetLocalX            = world.dbmMoteTargetLocalX;
-  raw.dbmMoteTargetLocalY            = world.dbmMoteTargetLocalY;
-  raw.dbmMotePulsePhaseRad           = world.dbmMotePulsePhaseRad;
-  raw.dwaMoteAngleRad                = world.dwaMoteAngleRad;
-  raw.dwaMotePulsePhaseRad           = world.dwaMotePulsePhaseRad;
-  raw.vsMoteAngleRad                 = world.vsMoteAngleRad;
-  raw.vsMoteRadiusWorld              = world.vsMoteRadiusWorld;
-  raw.vsMotePulsePhaseRad            = world.vsMotePulsePhaseRad;
-  raw.dlMoteAngleRad                 = world.dlMoteAngleRad;
-  raw.dlMotePulsePhaseRad            = world.dlMotePulsePhaseRad;
-  raw.deMoteOffsetXWorld             = world.deMoteOffsetXWorld;
-  raw.deMoteOffsetYWorld             = world.deMoteOffsetYWorld;
-  raw.deMotePulsePhaseRad            = world.deMotePulsePhaseRad;
-  raw.vspProjXWorld                  = world.vspProjXWorld;
-  raw.vspProjYWorld                  = world.vspProjYWorld;
-  raw.vspProjVelXWorld               = world.vspProjVelXWorld;
-  raw.vspProjVelYWorld               = world.vspProjVelYWorld;
-  raw.vspProjLifetimeTicks           = world.vspProjLifetimeTicks;
-  raw.vspProjAliveFlag               = world.vspProjAliveFlag;
-  raw.cwFireDustXWorld               = world.cwFireDustXWorld;
-  raw.cwFireDustYWorld               = world.cwFireDustYWorld;
-  raw.cwFireDustAgeTicks             = world.cwFireDustAgeTicks;
-  raw.cwFireDustLifetimeTicks        = world.cwFireDustLifetimeTicks;
-  raw.cwFireDustColorIndex           = world.cwFireDustColorIndex;
-  raw.cwFireDustAliveFlag            = world.cwFireDustAliveFlag;
-  raw.cwSmokeXWorld                  = world.cwSmokeXWorld;
-  raw.cwSmokeYWorld                  = world.cwSmokeYWorld;
-  raw.cwSmokeAgeTicks                = world.cwSmokeAgeTicks;
-  raw.cwSmokeLifetimeTicks           = world.cwSmokeLifetimeTicks;
-  raw.cwSmokeAliveFlag               = world.cwSmokeAliveFlag;
-  raw.cwProjectileXWorld             = world.cwProjectileXWorld;
-  raw.cwProjectileYWorld             = world.cwProjectileYWorld;
-  raw.cwProjectileType               = world.cwProjectileType;
-  raw.cwProjectileAliveFlag          = world.cwProjectileAliveFlag;
-  raw.cwTelegraphXWorld              = world.cwTelegraphXWorld;
-  raw.cwTelegraphYWorld              = world.cwTelegraphYWorld;
-  raw.cwTelegraphHalfSizeWorld       = world.cwTelegraphHalfSizeWorld;
-  raw.cwTelegraphTicksLeft           = world.cwTelegraphTicksLeft;
-  raw.cwTelegraphMaxTicks            = world.cwTelegraphMaxTicks;
-  raw.cwTelegraphKind                = world.cwTelegraphKind;
-  raw.cwTelegraphAliveFlag           = world.cwTelegraphAliveFlag;
-  raw.voidSphereXWorld               = world.voidSphereXWorld;
-  raw.voidSphereYWorld               = world.voidSphereYWorld;
-  raw.voidSpherePulsePhaseRad        = world.voidSpherePulsePhaseRad;
-  raw.voidSphereAliveFlag            = world.voidSphereAliveFlag;
-  raw.phantasmalSpikeXWorld          = world.phantasmalSpikeXWorld;
-  raw.phantasmalSpikeYWorld          = world.phantasmalSpikeYWorld;
-  raw.phantasmalSpikeDirection       = world.phantasmalSpikeDirection;
-  raw.phantasmalSpikeAgeTicks        = world.phantasmalSpikeAgeTicks;
-  raw.phantasmalSpikeAliveFlag       = world.phantasmalSpikeAliveFlag;
-  raw.phantasmalBlockXWorld          = world.phantasmalBlockXWorld;
-  raw.phantasmalBlockYWorld          = world.phantasmalBlockYWorld;
-  raw.phantasmalBlockAgeTicks        = world.phantasmalBlockAgeTicks;
-  raw.phantasmalBlockFlashTicks      = world.phantasmalBlockFlashTicks;
-  raw.phantasmalBlockAliveFlag       = world.phantasmalBlockAliveFlag;
-  raw.phantasmalShockwaveXWorld      = world.phantasmalShockwaveXWorld;
-  raw.phantasmalShockwaveYWorld      = world.phantasmalShockwaveYWorld;
-  raw.phantasmalShockwaveAgeTicks    = world.phantasmalShockwaveAgeTicks;
-  raw.phantasmalShockwaveAliveFlag   = world.phantasmalShockwaveAliveFlag;
-  raw.voidLaserStartXWorld           = world.voidLaserStartXWorld;
-  raw.voidLaserStartYWorld           = world.voidLaserStartYWorld;
-  raw.voidLaserEndXWorld             = world.voidLaserEndXWorld;
-  raw.voidLaserEndYWorld             = world.voidLaserEndYWorld;
-  raw.voidLaserVisibleStartXWorld    = world.voidLaserVisibleStartXWorld;
-  raw.voidLaserVisibleStartYWorld    = world.voidLaserVisibleStartYWorld;
-  raw.voidLaserVisibleEndXWorld      = world.voidLaserVisibleEndXWorld;
-  raw.voidLaserVisibleEndYWorld      = world.voidLaserVisibleEndYWorld;
-  raw.voidLaserAgeTicks              = world.voidLaserAgeTicks;
-  raw.voidLaserAliveFlag             = world.voidLaserAliveFlag;
-  raw.voidLaserDustXWorld            = world.voidLaserDustXWorld;
-  raw.voidLaserDustYWorld            = world.voidLaserDustYWorld;
-  raw.voidLaserDustAgeTicks          = world.voidLaserDustAgeTicks;
-  raw.voidLaserDustKind              = world.voidLaserDustKind;
-  raw.voidLaserDustAliveFlag         = world.voidLaserDustAliveFlag;
-  raw.iceSpikeXWorld                 = world.iceSpikeXWorld;
-  raw.iceSpikeBaseYWorld             = world.iceSpikeBaseYWorld;
-  raw.iceSpikeAgeTicks               = world.iceSpikeAgeTicks;
-  raw.iceSpikeDelayTicks             = world.iceSpikeDelayTicks;
-  raw.iceSpikeAliveFlag              = world.iceSpikeAliveFlag;
-  raw.architectBlockXWorld           = world.architectBlockXWorld;
-  raw.architectBlockYWorld           = world.architectBlockYWorld;
-  raw.architectBlockHealth           = world.architectBlockHealth;
-  raw.architectBlockMaxHealth        = world.architectBlockMaxHealth;
-  raw.architectBlockLifetimeTicks    = world.architectBlockLifetimeTicks;
-  raw.architectBlockGraceTicks       = world.architectBlockGraceTicks;
-  raw.architectBlockFormTicks        = world.architectBlockFormTicks;
-  raw.architectBlockCrumbleTicks     = world.architectBlockCrumbleTicks;
-  raw.architectBlockState            = world.architectBlockState;
-  raw.isArchitectBlockAliveFlag      = world.isArchitectBlockAliveFlag;
-  raw.architectBlockOwnerSlot        = world.architectBlockOwnerSlot;
-  raw.dwaNailXWorld                  = world.dwaNailXWorld;
-  raw.dwaNailYWorld                  = world.dwaNailYWorld;
-  raw.dwaNailVelXWorld               = world.dwaNailVelXWorld;
-  raw.dwaNailVelYWorld               = world.dwaNailVelYWorld;
-  raw.dwaNailLifetimeTicks           = world.dwaNailLifetimeTicks;
-  raw.isDwaNailAliveFlag             = world.isDwaNailAliveFlag;
-  raw.grappleWrapPointXWorld         = world.grappleWrapPointXWorld;
-  raw.grappleWrapPointYWorld         = world.grappleWrapPointYWorld;
-  raw.ropeSegmentCount               = world.ropeSegmentCount;
-  raw.ropeHalfThickWorld             = world.ropeHalfThickWorld;
-  raw.ropeSegPosXWorld               = world.ropeSegPosXWorld;
-  raw.ropeSegPosYWorld               = world.ropeSegPosYWorld;
-  raw.webSpiderFadingWebFromXWorld     = world.webSpiderFadingWebFromXWorld;
-  raw.webSpiderFadingWebFromYWorld     = world.webSpiderFadingWebFromYWorld;
-  raw.webSpiderFadingWebToXWorld       = world.webSpiderFadingWebToXWorld;
-  raw.webSpiderFadingWebToYWorld       = world.webSpiderFadingWebToYWorld;
-  raw.webSpiderFadingWebRemainingTicks = world.webSpiderFadingWebRemainingTicks;
-  raw.webSpiderFadingWebMaxTicks       = world.webSpiderFadingWebMaxTicks;
-}
-
-/**
  * Resets the reusable snapshot after a room load that changes the cluster
  * set.  Ensures the cluster array is properly sized and all slots are
  * populated from the current world state.
- *
- * Also calls `refreshSnapshotWorldArrayRefs` to re-point every typed-array
- * field at the new world's buffers.  This is essential after a resident
- * WorldState hot-swap where `world` is a different object than the one passed
- * to `createReusableSnapshot`.
  */
 export function resetReusableSnapshot(snap: ReusableWorldSnapshot, world: WorldState): void {
-  refreshSnapshotWorldArrayRefs(snap, world);
   const b = _asBacking(snap);
   // Grow pool if this room has more clusters than any previous room.
   while (b._clusterPool.length < world.clusters.length) {
@@ -795,7 +643,129 @@ export function resetReusableSnapshot(snap: ReusableWorldSnapshot, world: WorldS
   updateSnapshotInPlace(snap, world);
 }
 
-// Re-export the allocating (non-hot-path) snapshot factory from its dedicated
-// module so existing `import { createSnapshot } from './snapshot'` callers
-// continue to work without modification.
-export { createSnapshot } from './snapshotAllocating';
+export function createSnapshot(world: WorldState): WorldSnapshot {
+  const clusterSnapshots: ClusterSnapshot[] = [];
+  for (let i = 0; i < world.clusters.length; i++) {
+    const c: ClusterState = world.clusters[i];
+    clusterSnapshots.push({
+      entityId:              c.entityId,
+      positionXWorld:        c.positionXWorld,
+      positionYWorld:        c.positionYWorld,
+      velocityXWorld:        c.velocityXWorld,
+      velocityYWorld:        c.velocityYWorld,
+      isAliveFlag:           c.isAliveFlag,
+      isPlayerFlag:          c.isPlayerFlag,
+      healthPoints:          c.healthPoints,
+      maxHealthPoints:       c.maxHealthPoints,
+      influenceRadiusWorld:  INFLUENCE_RADIUS_WORLD,
+      dashCooldownTicks:     c.dashCooldownTicks,
+      maxDashCooldownTicks:  DASH_COOLDOWN_TICKS,
+      dashRechargeAnimTicks: c.dashRechargeAnimTicks,
+      halfWidthWorld:        c.halfWidthWorld,
+      halfHeightWorld:       c.halfHeightWorld,
+      isFlyingEyeFlag:          c.isFlyingEyeFlag,
+      flyingEyeFacingAngleRad:  c.flyingEyeFacingAngleRad,
+      flyingEyeElementKind:     c.flyingEyeElementKind,
+      isRollingEnemyFlag:       c.isRollingEnemyFlag,
+      rollingEnemySpriteIndex:  c.rollingEnemySpriteIndex,
+      rollingEnemyRollAngleRad: c.rollingEnemyRollAngleRad,
+      isFacingLeftFlag:          c.isFacingLeftFlag,
+      isSprintingFlag:           c.isSprintingFlag,
+      isCrouchingFlag:           c.isCrouchingFlag,
+      isGroundedFlag:            c.isGroundedFlag,
+      isWallSlidingFlag:         c.isWallSlidingFlag,
+      playerIdleAnimState:       c.playerIdleAnimState,
+      isRockElementalFlag:              c.isRockElementalFlag,
+      rockElementalState:               c.rockElementalState,
+      rockElementalActivationProgress:  c.rockElementalActivationProgress,
+      rockElementalOrbitAngleRad:       c.rockElementalOrbitAngleRad,
+      rockElementalDustCount:           c.rockElementalDustCount,
+      isRadiantTetherFlag:              c.isRadiantTetherFlag,
+      radiantTetherState:               c.radiantTetherState,
+      radiantTetherStateTicks:          c.radiantTetherStateTicks,
+      radiantTetherBaseAngleRad:        c.radiantTetherBaseAngleRad,
+      radiantTetherChainCount:          c.radiantTetherChainCount,
+      isGrappleHunterFlag:              c.isGrappleHunterFlag,
+      grappleHunterState:               c.grappleHunterState,
+      grappleHunterChainStartIndex:     c.grappleHunterChainStartIndex,
+      grappleHunterTipXWorld:           c.grappleHunterTipXWorld,
+      grappleHunterTipYWorld:           c.grappleHunterTipYWorld,
+      invulnerabilityTicks:             c.invulnerabilityTicks,
+      hurtTicks:                        c.hurtTicks,
+      isSlimeFlag:                c.isSlimeFlag,
+      isLargeSlimeFlag:           c.isLargeSlimeFlag,
+      largeSlimeDustOrbitAngleRad: c.largeSlimeDustOrbitAngleRad,
+      isWheelEnemyFlag:           c.isWheelEnemyFlag,
+      wheelRollAngleRad:          c.wheelRollAngleRad,
+      isBeetleFlag:                  c.isBeetleFlag,
+      beetleAiState:                 c.beetleAiState,
+      beetleSurfaceNormalXWorld:     c.beetleSurfaceNormalXWorld,
+      beetleSurfaceNormalYWorld:     c.beetleSurfaceNormalYWorld,
+      beetleIsFlightModeFlag:        c.beetleIsFlightModeFlag,
+      isBubbleEnemyFlag:             c.isBubbleEnemyFlag,
+      isIceBubbleFlag:               c.isIceBubbleFlag,
+      bubbleState:                   c.bubbleState,
+      bubbleOrbitAngleRad:           c.bubbleOrbitAngleRad,
+      isSquareStampedeFlag:          c.isSquareStampedeFlag,
+      squareStampedeSlotIndex:       c.squareStampedeSlotIndex,
+      squareStampedeBaseHalfSizeWorld: c.squareStampedeBaseHalfSizeWorld,
+      renderPositionXWorld:          c.positionXWorld,
+      renderPositionYWorld:          c.positionYWorld,
+    });
+  }
+
+  return {
+    tick: world.tick,
+    particles: {
+      positionXWorld:    world.positionXWorld,
+      positionYWorld:    world.positionYWorld,
+      velocityXWorld:    world.velocityXWorld,
+      velocityYWorld:    world.velocityYWorld,
+      isAliveFlag:       world.isAliveFlag,
+      kindBuffer:        world.kindBuffer,
+      ownerEntityId:     world.ownerEntityId,
+      ageTicks:          world.ageTicks,
+      lifetimeTicks:     world.lifetimeTicks,
+      disturbanceFactor: world.disturbanceFactor,
+      behaviorMode:      world.behaviorMode,
+      particleCount:     world.particleCount,
+    },
+    clusters: clusterSnapshots,
+    walls: {
+      count:  world.wallCount,
+      xWorld: world.wallXWorld,
+      yWorld: world.wallYWorld,
+      wWorld: world.wallWWorld,
+      hWorld: world.wallHWorld,
+      isPlatformFlag: world.wallIsPlatformFlag,
+      platformEdge: world.wallPlatformEdge,
+      themeIndex: world.wallThemeIndex,
+      isInvisibleFlag: world.wallIsInvisibleFlag,
+      rampOrientationIndex: world.wallRampOrientationIndex,
+      isPillarHalfWidthFlag: world.wallIsPillarHalfWidthFlag,
+    },
+    isGrappleActiveFlag: world.isGrappleActiveFlag,
+    isGrappleMissActiveFlag: world.isGrappleMissActiveFlag,
+    grappleParticleStartIndex: world.grappleParticleStartIndex,
+    isGrappleTopSurfaceFlag: world.isGrappleTopSurfaceFlag,
+    isGrappleStuckFlag: world.isGrappleStuckFlag,
+    grappleAnchorXWorld: world.grappleAnchorXWorld,
+    grappleAnchorYWorld: world.grappleAnchorYWorld,
+    grappleAttachFxTicks: world.grappleAttachFxTicks,
+    grappleAttachFxXWorld: world.grappleAttachFxXWorld,
+    grappleAttachFxYWorld: world.grappleAttachFxYWorld,
+    isPlayerBlockingFlag: world.isPlayerBlockingFlag,
+    hasGrappleChargeFlag: world.hasGrappleChargeFlag,
+    isPlayerWeaveActiveFlag: (world.isPlayerPrimaryWeaveActiveFlag === 1 || world.isPlayerSecondaryWeaveActiveFlag === 1) ? 1 : 0,
+    characterId: world.characterId,
+    grasshopperCount:       world.grasshopperCount,
+    grasshopperXWorld:      world.grasshopperXWorld,
+    grasshopperYWorld:      world.grasshopperYWorld,
+    isGrasshopperAliveFlag: world.isGrasshopperAliveFlag,
+    squareStampedeTrailXWorld: world.squareStampedeTrailXWorld,
+    squareStampedeTrailYWorld: world.squareStampedeTrailYWorld,
+    squareStampedeTrailHead:   world.squareStampedeTrailHead,
+    squareStampedeTrailCount:  world.squareStampedeTrailCount,
+    squareStampedeTrailStride: world.squareStampedeTrailStride,
+  };
+}

@@ -50,38 +50,12 @@ export function tickEnemyMovement(
   if (cluster.isWheelEnemyFlag === 1) {
     return;
   }
-  // Wall snakes drive their own movement/pathing in snakeAi.ts
-  if (cluster.isWallSnakeFlag === 1 || cluster.isNeedleSnakeFlag === 1) {
-    return;
-  }
   // Bubble enemies have their own AI — skip standard gravity/movement
   if (cluster.isBubbleEnemyFlag === 1) {
     return;
   }
-  // Web Spider has its own movement AI — handled in webSpiderAi.ts
-  if (cluster.isWebSpiderFlag === 1) {
-    return;
-  }
-  // Orbital Dust Core has its own movement — handled in orbitalDustCoreAi.ts
-  if (cluster.isOrbitalDustCoreFlag === 1) {
-    return;
-  }
   // Golden Mimic has its own movement AI — velocity set in goldenMimicAi.ts
   if (cluster.isGoldenMimicFlag === 1) {
-    return;
-  }
-  // Grid block enemies move on the tile grid in gridBlockEnemyAi.ts — no gravity or chase
-  if (cluster.isGridBlockEnemyFlag === 1) {
-    return;
-  }
-  if (cluster.isMomentumTurretFlag === 1) {
-    return;
-  }
-  if (cluster.isShadowEnemyFlag === 1 || cluster.isNeedleUrchinFlag === 1) return;
-  if (cluster.isCrimsonWizardFlag === 1) {
-    return;
-  }
-  if (cluster.isHeraldFlag === 1) {
     return;
   }
   if (cluster.isFlyingEyeFlag === 1) {
@@ -168,10 +142,6 @@ export function tickEnemyMovement(
     // ── Radiant Tether boss: fully floating, no gravity ─────────────────
     // Movement is handled by the chain winching system in radiantTetherAi.ts
     // No gravity, no enemy walk logic — boss moves purely via chain tension.
-
-  } else if (cluster.isRadiantWebFlag === 1) {
-    // ── Radiant Web boss: fully floating, no gravity ─────────────────────
-    // Movement is handled by radiantWebAi.ts drift logic.
 
   } else if (cluster.isGrappleHunterFlag === 1) {
     // ── Grapple Hunter: ground-based with gravity ───────────────────────
