@@ -11,10 +11,6 @@ const FALLBACK_KNOCKBACK_DIR_X = 1.0;
 /** Threshold for considering two X positions identical when computing knockback direction. */
 const HORIZONTAL_POSITION_EPSILON_WORLD = 0.01;
 
-import type { ChallengeModeState } from './challengeMode';
-import { consumeChallengeReturn } from './challengeMode';
-import { getPlayerMoteCount, normalizeMoteCount } from './playerMoteLife';
-
 
 const INVULNERABILITY_DURATION_TICKS = 90;
 /** Ticks of hurt visual feedback after taking damage (~0.33 s at 60 fps). */
@@ -38,30 +34,6 @@ export interface PlayerDamageTarget {
   isGroundedFlag: 0 | 1;
   invulnerabilityTicks: number;
   hurtTicks: number;
-  isHighVelocityAttacking?: 0 | 1;
-  halfWidthWorld?: number;
-  halfHeightWorld?: number;
-  challengeMode?: ChallengeModeState | null;
-  challengeReturnGuard?: 0 | 1;
-}
-
-export interface PlayerDamageOptions {
-  challengeState?: ChallengeModeState;
-  clearTransientMovement?: () => void;
-  bypassMomentumInvulnerability?: boolean;
-  /**
-   * When true, skip the generic post-hit `invulnerabilityTicks > 0` gate.
-   * Used exclusively by the Poison Field exposure controller (see
-   * sim/poisonField/poisonExposureState.ts): poison damage is scheduled on
-   * its own independent 3.0s cadence (or fires exactly once on a
-   * Verdant-switch-away transition) and must not be silently swallowed just
-   * because an unrelated contact hazard (spike/lava/enemy) granted the
-   * player a brief 1.5s invulnerability window moments earlier. The hit
-   * still SETS invulnerabilityTicks afterward as normal, so it continues to
-   * protect the player from an immediate unrelated follow-up hit — this only
-   * bypasses the check on the way IN for poison's own scheduled ticks.
-   */
-  bypassContactInvulnerability?: boolean;
 }
 
 export function applyPlayerDamageWithKnockback(
@@ -69,40 +41,18 @@ export function applyPlayerDamageWithKnockback(
   damagePoints: number,
   sourceXWorld: number,
   _sourceYWorld: number,
-  options?: PlayerDamageOptions,
-): boolean {
-  if (player.isAliveFlag === 0) return false;
-  if (player.invulnerabilityTicks > 0 && options?.bypassContactInvulnerability !== true) return false;
-  if (player.isHighVelocityAttacking === 1 && options?.bypassMomentumInvulnerability !== true) return false; // momentum combat invulnerability
-  if (player.challengeReturnGuard === 1) return false;
+): void {
+  if (player.isAliveFlag === 0) return;
+  if (player.invulnerabilityTicks > 0) return;
 
-  const damageToApply = normalizeMoteCount(Math.ceil(damagePoints));
-  if (damageToApply <= 0) return false;
+  const damageToApply = Math.max(0, damagePoints);
+  if (damageToApply <= 0) return;
 
-  const challenge = options?.challengeState ?? player.challengeMode ?? undefined;
-  if (challenge?.isActive) {
-    const anchorXWorld = challenge.anchorXWorld;
-    const anchorYWorld = challenge.anchorYWorld;
-    if (!consumeChallengeReturn(challenge)) return false;
-    player.positionXWorld = anchorXWorld;
-    player.positionYWorld = anchorYWorld;
-    player.velocityXWorld = 0;
-    player.velocityYWorld = 0;
-    player.isGroundedFlag = 0;
-    player.challengeReturnGuard = 1;
-    options?.clearTransientMovement?.();
-    return true;
-  }
-
-  // Reaching zero motes is survivable. A subsequent otherwise-valid damage
-  // event at zero is fatal through this canonical pipeline.
-  if (getPlayerMoteCount(player) === 0) {
+  player.healthPoints -= damageToApply;
+  if (player.healthPoints <= 0) {
     player.healthPoints = 0;
     player.isAliveFlag = 0;
-    return true;
   }
-
-  player.healthPoints = Math.max(0, getPlayerMoteCount(player) - damageToApply);
 
   // Horizontal knockback direction based solely on whether the source is to
   // the left or right of the player — prevents diagonal sources from pushing
@@ -122,11 +72,4 @@ export function applyPlayerDamageWithKnockback(
 
   player.invulnerabilityTicks = INVULNERABILITY_DURATION_TICKS;
   player.hurtTicks = HURT_VISUAL_DURATION_TICKS;
-  return true;
-}
-
-export function killPlayerImmediately(player: PlayerDamageTarget): void {
-  if (player.isAliveFlag === 0) return;
-  player.healthPoints = 0;
-  player.isAliveFlag = 0;
 }

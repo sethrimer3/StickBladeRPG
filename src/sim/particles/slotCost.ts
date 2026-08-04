@@ -1,7 +1,7 @@
 /**
  * Dust slot costs per ParticleKind.
  *
- * Golden Dust uses the foundational cost of 1.
+ * Only Gold Dust (Physical) is player-equippable; its cost is 1.
  * All other kinds have a uniform cost of 1 (legacy — enemies may use them).
  *
  * The array is indexed by ParticleKind value (0–PARTICLE_KIND_COUNT-1).
@@ -15,7 +15,7 @@ import { ParticleKind, PARTICLE_KIND_COUNT } from './kinds';
  * Length must equal PARTICLE_KIND_COUNT.
  */
 const SLOT_COSTS: number[] = [
-  1, // Golden     (0)
+  1, // Physical   (0)
   1, // Fire       (1)  — legacy
   1, // Ice        (2)  — legacy
   1, // Lightning  (3)  — legacy
@@ -35,7 +35,6 @@ const SLOT_COSTS: number[] = [
   1, // Stone      (17) — legacy
   0, // Gold       (18) — non-equippable grapple-chain placeholder
   0, // Light      (19) — non-equippable boss light-chain placeholder
-  1, // FireDust   (20) — equippable fire mote
 ];
 
 if (SLOT_COSTS.length !== PARTICLE_KIND_COUNT) {

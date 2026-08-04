@@ -28,6 +28,7 @@ export function integrateParticles(world: WorldState): void {
 
   for (let i = 0; i < particleCount; i++) {
     if (isAliveFlag[i] === 0) continue;
+
     const profile = getElementProfile(kindBuffer[i]);
 
     // ---- Drag -----------------------------------------------------------

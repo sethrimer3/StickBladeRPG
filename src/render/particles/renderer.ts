@@ -1,11 +1,6 @@
 import { WorldSnapshot } from '../snapshot';
 import { getParticleStyle } from './styles';
 import { getKindShape, ParticleShape, ParticleKind } from '../../sim/particles/kinds';
-import { BEHAVIOR_MODE_GRAPPLE_CHAIN } from '../../sim/clusters/grappleShared';
-import { renderPixelLockedDust } from './pixelLockedDustRenderer';
-import type { EditorRenderMask } from '../../editor/editorRenderMask';
-import { isLayerVisibleInMask } from '../../editor/editorRenderMask';
-import { getLayerForParticleKind } from '../../editor/editorParticleLayers';
 
 // ---- Shape drawing helpers -----------------------------------------------
 
@@ -134,40 +129,22 @@ const MIN_VISIBLE_ALPHA = 0.004;
 // 1.5 world units at zoom 1.0 = 3×3 in-game (virtual) pixels per mote.
 const PARTICLE_RENDER_RADIUS_WORLD = 1.5;
 
-export function renderParticles(
-  ctx: CanvasRenderingContext2D,
-  snapshot: WorldSnapshot,
-  offsetXPx: number,
-  offsetYPx: number,
-  scalePx: number,
-  mask?: EditorRenderMask | null,
-): void {
+export function renderParticles(ctx: CanvasRenderingContext2D, snapshot: WorldSnapshot, offsetXPx: number, offsetYPx: number, scalePx: number): void {
   const { particles } = snapshot;
   const {
     particleCount, isAliveFlag,
     positionXWorld, positionYWorld,
     kindBuffer, ageTicks, lifetimeTicks,
-    disturbanceFactor, behaviorMode,
+    disturbanceFactor,
   } = particles;
 
   // Radius in screen pixels: world-unit radius scaled by zoom.
   const radiusPx = PARTICLE_RENDER_RADIUS_WORLD * scalePx;
 
-  // Render Fluid background particles only.  All gameplay-relevant particles
-  // (non-Fluid, non-GrappleChain) are drawn by renderPixelLockedDust() which
-  // is called after this function in the Canvas 2D fallback path.
   for (let i = 0; i < particleCount; i++) {
     if (isAliveFlag[i] === 0) continue;
-    // Grapple chain particles are hidden here — renderGrapple() is the visual authority.
-    if (behaviorMode[i] === BEHAVIOR_MODE_GRAPPLE_CHAIN) continue;
 
     const kind  = kindBuffer[i];
-
-    // Gameplay particles are handled by renderPixelLockedDust() below.
-    if (kind !== ParticleKind.Fluid) continue;
-
-    if (!isLayerVisibleInMask(mask, getLayerForParticleKind(kind))) continue;
-
     const style = getParticleStyle(kind);
 
     const screenX = positionXWorld[i] * scalePx + offsetXPx;
@@ -179,7 +156,9 @@ export function renderParticles(
     const ageFade = 1.0 - normAge;
 
     // Fluid background particles are only visible when disturbed
-    const alpha = disturbanceFactor[i] * ageFade * 0.55;
+    const alpha = kind === ParticleKind.Fluid
+      ? disturbanceFactor[i] * ageFade * 0.55
+      : ageFade;
 
     if (alpha <= MIN_VISIBLE_ALPHA) continue;
 
@@ -188,9 +167,5 @@ export function renderParticles(
     drawParticleShape(ctx, screenX, screenY, radiusPx, kind);
   }
   ctx.globalAlpha = 1.0;
-
-  // Render all gameplay-relevant (non-Fluid, non-GrappleChain) particles using
-  // the Pixel-Locked Prismatic Dust renderer for crisp, grid-snapped motes.
-  renderPixelLockedDust(ctx, snapshot, offsetXPx, offsetYPx, scalePx, mask);
 }
 

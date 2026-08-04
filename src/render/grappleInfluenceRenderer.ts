@@ -13,34 +13,7 @@
  */
 
 import type { WorldSnapshot, WallSnapshot } from './snapshot';
-import { BLOCK_SIZE_SMALL } from '../levels/roomDef';
-import { getWallLayoutCache } from './walls/blockWallLayoutCache';
-import { isSurfaceEligibleForGrapple, type GrappleEligibilityState } from '../sim/clusters/grappleSurfaceEligibility';
-import { SURFACE_SIDES } from '../sim/world/surfaceExposure';
-
-// ── DEV-only grapple-eligible surface debug overlay ───────────────────────────
-//
-// Toggle via the browser console: `window.__dwGrappleEligibleOverlay = true`.
-// Draws every currently grapple-eligible surface segment (facing + range +
-// line-of-sight all satisfied) in a fixed bright cyan, independent of the
-// mouse-direction angular fade the normal gold highlight applies. Compare
-// against:
-//   - `window.__dwEdgeOverlay` (wallTilePassRenderers.ts) — ALL geometrically
-//     exposed segments, whether or not they're grapple-eligible right now.
-//   - the normal gold edge-glow — the subset of eligible segments currently
-//     bright enough to be visible given the mouse-direction fade.
-// Discrepancies between this overlay and the gold glow point at fade/opacity
-// logic; discrepancies between this overlay and `__dwEdgeOverlay` point at
-// the eligibility layer (range/facing/LOS) rather than the base geometry.
-declare global {
-  interface Window {
-    __dwGrappleEligibleOverlay?: boolean;
-  }
-}
-
-function _devGrappleEligibleOverlayEnabled(): boolean {
-  return typeof window !== 'undefined' && window.__dwGrappleEligibleOverlay === true;
-}
+import { INFLUENCE_RADIUS_WORLD } from '../sim/clusters/binding';
 
 // ── Gold colour palette ──────────────────────────────────────────────────────
 
@@ -89,24 +62,6 @@ function goldRgba(t: number, alpha: number): string {
 
 /** Number of small arcs used to approximate the smooth angular fade. */
 const CIRCLE_ARC_SEGMENTS = 64;
-
-// ── Tension pulse constants (Phase 9) ─────────────────────────────────────
-
-/**
- * Maximum additional opacity multiplier applied to the influence circle and
- * edge glow when the grapple rope is out of effective range.
- *
- * Final boost = 1.0 + grappleTensionFactor × pulseWave × TENSION_PULSE_BOOST_FACTOR
- * At full tension with a peak pulse wave (1.0):
- *   opacity × (1.0 + 1.0 × 1.0 × 1.5) = opacity × 2.5
- * Final alpha is clamped to 1.0 so we never exceed full-bright.
- */
-const TENSION_PULSE_BOOST_FACTOR = 1.5;
-
-/** Pulse frequency at minimum tension (Hz). */
-const TENSION_PULSE_MIN_HZ = 4;
-/** Pulse frequency at maximum tension (Hz). */
-const TENSION_PULSE_MAX_HZ = 12;
 
 /**
  * Draws the influence-radius circle as a series of arcs whose colour and
@@ -247,20 +202,48 @@ function isEdgeOccluded(
   return false;
 }
 
+/**
+ * Probes a point just outside an edge to determine whether open air exists
+ * in front of it.  Returns false if the probe point falls inside any solid
+ * (visible) wall other than `excludeIndex`, meaning the edge is buried
+ * against an adjacent wall and should not be highlighted.
+ */
+/** Distance (world units) to probe outside an edge to check for open air. */
+const OPEN_AIR_PROBE_DISTANCE_WORLD = 1.0;
+
+function isOpenAirInFront(
+  probeXWorld: number,
+  probeYWorld: number,
+  walls: WallSnapshot,
+  excludeIndex: number,
+): boolean {
+  for (let wj = 0; wj < walls.count; wj++) {
+    if (wj === excludeIndex) continue;
+    if (walls.isInvisibleFlag[wj] === 1) continue;
+    const minX = walls.xWorld[wj];
+    const minY = walls.yWorld[wj];
+    const maxX = minX + walls.wWorld[wj];
+    const maxY = minY + walls.hWorld[wj];
+    // Open intervals intentional: probe landing exactly on a wall boundary
+    // (not inside it) still counts as open air.
+    if (probeXWorld > minX && probeXWorld < maxX &&
+        probeYWorld > minY && probeYWorld < maxY) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── Reachable Edge Glow ─────────────────────────────────────────────────────
 
 /**
- * For every exposed tile-side segment from the authoritative
- * `SurfaceExposureMap` (shared with the wall-sprite edge-shading renderer —
- * see `blockWallLayoutCache.ts`'s `surfaceExposureMap` field), draws a thin
- * golden outline when that segment is grapple-eligible per
- * `isSurfaceEligibleForGrapple` (facing + range + line-of-sight).
- *
- * This replaces the previous per-wall-rect edge derivation (which probed a
- * fixed distance outside each merged wall's AABB edges to guess at open air)
- * with a lookup against real per-tile exposure data, so highlights can never
- * appear on a side that is actually buried inside a grouped block or facing
- * out of the room's bounds.
+ * For each wall within influence radius, draws a thin golden outline on any
+ * edge that:
+ *   1. **Faces the player** — the player is on the outward side of the edge.
+ *   2. **Is within range** — the closest point on the edge to the player is
+ *      within INFLUENCE_RADIUS_WORLD.
+ *   3. **Is in line-of-sight** — no other wall blocks the ray from the player
+ *      to the edge midpoint.
  *
  * The brightness/opacity of each qualifying edge segment is modulated by how
  * close that segment's angle (from the player) is to the mouse direction.
@@ -268,8 +251,6 @@ function isEdgeOccluded(
 function drawReachableEdgeGlow(
   ctx: CanvasRenderingContext2D,
   snapshot: WorldSnapshot,
-  roomWidthBlocks: number,
-  roomHeightBlocks: number,
   playerXWorld: number,
   playerYWorld: number,
   mouseAngleRad: number,
@@ -280,77 +261,91 @@ function drawReachableEdgeGlow(
 ): void {
   if (maxOpacity <= 0) return;
 
+  const influenceRadiusSq = INFLUENCE_RADIUS_WORLD * INFLUENCE_RADIUS_WORLD;
   const walls = snapshot.walls;
-  const influenceRadiusWorld = snapshot.grappleDisplayRadiusWorld;
-
-  // Reuses the same cached SurfaceExposureMap the wall-tile edge-shading
-  // renderer builds (see wallTilePassRenderers.ts) — one authoritative
-  // instance per wall-layout signature, not rebuilt here.
-  const surfaceExposureMap = getWallLayoutCache(walls, BLOCK_SIZE_SMALL, roomWidthBlocks, roomHeightBlocks).surfaceExposureMap;
-
-  // Build a compact set of currently-slimed surface keys once per render
-  // call, rather than scanning the trail buffer per segment.
-  const slimedKeys = new Set<string>();
-  {
-    const stride = snapshot.slimeSnailTrailStride;
-    const slotCount = snapshot.slimeSnailTrailCount.length;
-    for (let slot = 0; slot < slotCount; slot++) {
-      const count = snapshot.slimeSnailTrailCount[slot];
-      if (count === 0) continue;
-      const base = slot * stride;
-      for (let i = 0; i < count; i++) {
-        const flat = base + i;
-        if (snapshot.slimeSnailTrailRemainingTicks[flat] <= 0) continue;
-        slimedKeys.add(`${snapshot.slimeSnailTrailCol[flat]},${snapshot.slimeSnailTrailRow[flat]},${snapshot.slimeSnailTrailSideIndex[flat]}`);
-      }
-    }
-  }
-
-  const eligibility: GrappleEligibilityState = {
-    playerXWorld,
-    playerYWorld,
-    maxRangeWorldSq: influenceRadiusWorld * influenceRadiusWorld,
-    hasLineOfSight: (xWorld: number, yWorld: number): boolean =>
-      !isEdgeOccluded(playerXWorld, playerYWorld, xWorld, yWorld, walls, -1),
-    isSurfaceForbidden: (segment): boolean =>
-      slimedKeys.has(`${segment.col},${segment.row},${SURFACE_SIDES.indexOf(segment.side)}`),
-  };
 
   ctx.lineWidth = 1.0;
 
-  const debugOverlayEnabled = _devGrappleEligibleOverlayEnabled();
+  for (let wi = 0; wi < walls.count; wi++) {
+    if (walls.isInvisibleFlag[wi] === 1) continue;
 
-  for (const segment of surfaceExposureMap.segments) {
-    const eligible = isSurfaceEligibleForGrapple(segment, eligibility);
+    const wallMinXWorld = walls.xWorld[wi];
+    const wallMinYWorld = walls.yWorld[wi];
+    const wallMaxXWorld = wallMinXWorld + walls.wWorld[wi];
+    const wallMaxYWorld = wallMinYWorld + walls.hWorld[wi];
 
-    const sx0 = segment.x0 * scalePx + offsetXPx;
-    const sy0 = segment.y0 * scalePx + offsetYPx;
-    const sx1 = segment.x1 * scalePx + offsetXPx;
-    const sy1 = segment.y1 * scalePx + offsetYPx;
+    // Quick reject: bounding-circle check — closest point on AABB to player
+    const closestXWorld = Math.max(wallMinXWorld, Math.min(playerXWorld, wallMaxXWorld));
+    const closestYWorld = Math.max(wallMinYWorld, Math.min(playerYWorld, wallMaxYWorld));
+    const dxAabb = closestXWorld - playerXWorld;
+    const dyAabb = closestYWorld - playerYWorld;
+    if (dxAabb * dxAabb + dyAabb * dyAabb > influenceRadiusSq) continue;
 
-    // DEV-only: draw every grapple-eligible segment at full opacity in a
-    // fixed debug colour, independent of the mouse-direction fade, so it's
-    // obvious whether "eligible" (this) and "actually highlighted" (the
-    // angle-faded gold line below) agree. Toggle via
-    // `window.__dwGrappleEligibleOverlay = true`.
-    if (debugOverlayEnabled && eligible) {
-      ctx.save();
-      ctx.strokeStyle = '#00e5ff';
-      ctx.beginPath();
-      ctx.moveTo(sx0, sy0);
-      ctx.lineTo(sx1, sy1);
-      ctx.stroke();
-      ctx.restore();
+    // Screen coords of wall corners
+    const sMinX = wallMinXWorld * scalePx + offsetXPx;
+    const sMinY = wallMinYWorld * scalePx + offsetYPx;
+    const sMaxX = wallMaxXWorld * scalePx + offsetXPx;
+    const sMaxY = wallMaxYWorld * scalePx + offsetYPx;
+
+    const edgeMidXWorld = (wallMinXWorld + wallMaxXWorld) * 0.5;
+    const edgeMidYWorld = (wallMinYWorld + wallMaxYWorld) * 0.5;
+
+    // ── Top edge: player must be above the wall's top surface ──────────────
+    if (playerYWorld < wallMinYWorld) {
+      // Closest point on this edge to the player
+      const cpX = Math.max(wallMinXWorld, Math.min(playerXWorld, wallMaxXWorld));
+      const edgeDxSq = (cpX - playerXWorld) * (cpX - playerXWorld);
+      const edgeDySq = (wallMinYWorld - playerYWorld) * (wallMinYWorld - playerYWorld);
+      if (edgeDxSq + edgeDySq <= influenceRadiusSq &&
+          isOpenAirInFront(edgeMidXWorld, wallMinYWorld - OPEN_AIR_PROBE_DISTANCE_WORLD, walls, wi) &&
+          !isEdgeOccluded(playerXWorld, playerYWorld, edgeMidXWorld, wallMinYWorld, walls, wi)) {
+        drawEdgeSegment(ctx, sMinX, sMinY, sMaxX, sMinY,
+          playerXWorld, playerYWorld, edgeMidXWorld, wallMinYWorld,
+          mouseAngleRad, maxOpacity);
+      }
     }
 
-    if (!eligible) continue;
+    // ── Bottom edge: player must be below the wall's bottom surface ────────
+    if (playerYWorld > wallMaxYWorld) {
+      const cpX = Math.max(wallMinXWorld, Math.min(playerXWorld, wallMaxXWorld));
+      const edgeDxSq = (cpX - playerXWorld) * (cpX - playerXWorld);
+      const edgeDySq = (wallMaxYWorld - playerYWorld) * (wallMaxYWorld - playerYWorld);
+      if (edgeDxSq + edgeDySq <= influenceRadiusSq &&
+          isOpenAirInFront(edgeMidXWorld, wallMaxYWorld + OPEN_AIR_PROBE_DISTANCE_WORLD, walls, wi) &&
+          !isEdgeOccluded(playerXWorld, playerYWorld, edgeMidXWorld, wallMaxYWorld, walls, wi)) {
+        drawEdgeSegment(ctx, sMinX, sMaxY, sMaxX, sMaxY,
+          playerXWorld, playerYWorld, edgeMidXWorld, wallMaxYWorld,
+          mouseAngleRad, maxOpacity);
+      }
+    }
 
-    const midXWorld = (segment.x0 + segment.x1) * 0.5;
-    const midYWorld = (segment.y0 + segment.y1) * 0.5;
+    // ── Left edge: player must be left of the wall's left surface ──────────
+    if (playerXWorld < wallMinXWorld) {
+      const cpY = Math.max(wallMinYWorld, Math.min(playerYWorld, wallMaxYWorld));
+      const edgeDxSq = (wallMinXWorld - playerXWorld) * (wallMinXWorld - playerXWorld);
+      const edgeDySq = (cpY - playerYWorld) * (cpY - playerYWorld);
+      if (edgeDxSq + edgeDySq <= influenceRadiusSq &&
+          isOpenAirInFront(wallMinXWorld - OPEN_AIR_PROBE_DISTANCE_WORLD, edgeMidYWorld, walls, wi) &&
+          !isEdgeOccluded(playerXWorld, playerYWorld, wallMinXWorld, edgeMidYWorld, walls, wi)) {
+        drawEdgeSegment(ctx, sMinX, sMinY, sMinX, sMaxY,
+          playerXWorld, playerYWorld, wallMinXWorld, edgeMidYWorld,
+          mouseAngleRad, maxOpacity);
+      }
+    }
 
-    drawEdgeSegment(ctx, sx0, sy0, sx1, sy1,
-      playerXWorld, playerYWorld, midXWorld, midYWorld,
-      mouseAngleRad, maxOpacity);
+    // ── Right edge: player must be right of the wall's right surface ───────
+    if (playerXWorld > wallMaxXWorld) {
+      const cpY = Math.max(wallMinYWorld, Math.min(playerYWorld, wallMaxYWorld));
+      const edgeDxSq = (wallMaxXWorld - playerXWorld) * (wallMaxXWorld - playerXWorld);
+      const edgeDySq = (cpY - playerYWorld) * (cpY - playerYWorld);
+      if (edgeDxSq + edgeDySq <= influenceRadiusSq &&
+          isOpenAirInFront(wallMaxXWorld + OPEN_AIR_PROBE_DISTANCE_WORLD, edgeMidYWorld, walls, wi) &&
+          !isEdgeOccluded(playerXWorld, playerYWorld, wallMaxXWorld, edgeMidYWorld, walls, wi)) {
+        drawEdgeSegment(ctx, sMaxX, sMinY, sMaxX, sMaxY,
+          playerXWorld, playerYWorld, wallMaxXWorld, edgeMidYWorld,
+          mouseAngleRad, maxOpacity);
+      }
+    }
   }
 }
 
@@ -400,8 +395,6 @@ function drawEdgeSegment(
 export function renderGrappleInfluenceVisuals(
   ctx: CanvasRenderingContext2D,
   snapshot: WorldSnapshot,
-  roomWidthBlocks: number,
-  roomHeightBlocks: number,
   offsetXPx: number,
   offsetYPx: number,
   scalePx: number,
@@ -433,16 +426,6 @@ export function renderGrappleInfluenceVisuals(
   }
   if (!hasPlayer) return;
 
-  // Player position in virtual-canvas screen coordinates
-  const playerScreenXPx = playerXWorld * scalePx + offsetXPx;
-  const playerScreenYPx = playerYWorld * scalePx + offsetYPx;
-
-  // Fast reject: skip all influence visuals when the player is completely offscreen
-  // (margin = influence radius so edge glows on nearby walls remain visible).
-  const influenceRadiusPx = snapshot.grappleDisplayRadiusWorld * scalePx;
-  if (playerScreenXPx + influenceRadiusPx < 0 || playerScreenXPx - influenceRadiusPx > virtualWidthPx) return;
-  if (playerScreenYPx + influenceRadiusPx < 0 || playerScreenYPx - influenceRadiusPx > virtualHeightPx) return;
-
   // Convert device-pixel mouse position to virtual canvas pixels, then to world
   const virtualMouseXPx = (mouseXPx / canvasWidthPx) * virtualWidthPx;
   const virtualMouseYPx = (mouseYPx / canvasHeightPx) * virtualHeightPx;
@@ -452,33 +435,18 @@ export function renderGrappleInfluenceVisuals(
   // Angle from player to mouse in world space
   const mouseAngleRad = Math.atan2(mouseYWorld - playerYWorld, mouseXWorld - playerXWorld);
 
+  // Player position in virtual-canvas screen coordinates
+  const playerScreenXPx = playerXWorld * scalePx + offsetXPx;
+  const playerScreenYPx = playerYWorld * scalePx + offsetYPx;
+
   ctx.save();
 
-  // ── Phase 9: tension pulse — widen circle highlight and flicker ───────────
-  // When grappleTensionFactor > 0 (rope out of effective range), the influence
-  // circle pulses faster and brighter as a "rope under tension" warning.
-  const tension = snapshot.grappleTensionFactor;
-  let circleOpacity = influenceCircleMaxOpacity;
-  let edgeOpacity   = edgeGlowMaxOpacity;
-  if (tension > 0) {
-    // Pulse frequency scales from TENSION_PULSE_MIN_HZ → MAX_HZ as tension goes 0 → 1.
-    const pulseFrequencyHz = TENSION_PULSE_MIN_HZ + tension * (TENSION_PULSE_MAX_HZ - TENSION_PULSE_MIN_HZ);
-    // Use tick-based square-ish sine so the pulse is visible even at low frame rates.
-    const pulseWave = 0.5 + 0.5 * Math.sin(snapshot.tick * (2 * Math.PI * pulseFrequencyHz / 60));
-    const boost = 1.0 + tension * pulseWave * TENSION_PULSE_BOOST_FACTOR;
-    circleOpacity = Math.min(1.0, influenceCircleMaxOpacity * boost);
-    edgeOpacity   = Math.min(1.0, edgeGlowMaxOpacity   * boost);
-  }
-
-  // Draw influence circle using the smoothed mote-based display radius
-  const radiusScreenPx = snapshot.grappleDisplayRadiusWorld * scalePx;
-  drawInfluenceCircle(ctx, playerScreenXPx, playerScreenYPx, radiusScreenPx, mouseAngleRad, circleOpacity, influenceHighlightWidth);
+  // Draw influence circle
+  const radiusScreenPx = INFLUENCE_RADIUS_WORLD * scalePx;
+  drawInfluenceCircle(ctx, playerScreenXPx, playerScreenYPx, radiusScreenPx, mouseAngleRad, influenceCircleMaxOpacity, influenceHighlightWidth);
 
   // Draw reachable edge glow on walls within range
-  drawReachableEdgeGlow(
-    ctx, snapshot, roomWidthBlocks, roomHeightBlocks,
-    playerXWorld, playerYWorld, mouseAngleRad, edgeOpacity, offsetXPx, offsetYPx, scalePx,
-  );
+  drawReachableEdgeGlow(ctx, snapshot, playerXWorld, playerYWorld, mouseAngleRad, edgeGlowMaxOpacity, offsetXPx, offsetYPx, scalePx);
 
   ctx.restore();
 }

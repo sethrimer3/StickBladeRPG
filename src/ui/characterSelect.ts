@@ -7,19 +7,14 @@
  * Press Enter or click the selected card to confirm.
  */
 
-import { getUiFontFamily, t, tDynamic } from '../i18n';
-import { PLAYABLE_CHARACTER_IDS, getCharacterSpriteBasePath } from '../render/clusters/characterSpriteManifest';
+const CHARACTER_IDS = ['knight', 'demonFox', 'princess', 'outcast'] as const;
 
-/** Internal character ids — never translated (used for assets and save data). */
-const CHARACTER_IDS = PLAYABLE_CHARACTER_IDS;
-
-/**
- * Resolves the player-facing display name for an internal character id.
- * Falls back to the id itself only if a catalog entry is somehow absent.
- */
-function characterLabel(characterId: string): string {
-  return tDynamic(`characterSelect.name.${characterId}`) ?? characterId;
-}
+const CHARACTER_LABELS: Record<string, string> = {
+  knight: 'Knight',
+  demonFox: 'Demon Fox',
+  princess: 'Princess',
+  outcast: 'Outcast',
+};
 
 export interface CharacterSelectCallbacks {
   /** Called when the player confirms their character selection. */
@@ -45,14 +40,14 @@ export function showCharacterSelect(
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: radial-gradient(ellipse at center, rgba(30,25,15,0.95) 0%, rgba(10,8,4,0.98) 100%);
-    font-family: ${getUiFontFamily()}; color: #d4a84b;
+    font-family: 'Cinzel', serif; color: #d4a84b;
     z-index: 100;
   `;
   uiRoot.appendChild(container);
 
   // ── Title ─────────────────────────────────────────────────────────────────
   const title = document.createElement('h1');
-  title.textContent = t('characterSelect.title');
+  title.textContent = 'Select Character';
   title.style.cssText = `
     color: #d4a84b; font-size: 2.2rem; margin-bottom: 2rem;
     text-shadow: 0 0 30px rgba(212,168,75,0.4);
@@ -71,9 +66,8 @@ export function showCharacterSelect(
   // Pre-load character menu sprites for the cards (fall back to standing if no menu sprite)
   const spriteImages: HTMLImageElement[] = CHARACTER_IDS.map((id) => {
     const img = new Image();
-    const base = getCharacterSpriteBasePath(id);
-    const menuSpriteSrc = `${base}_menu_sprite.png`;
-    const standingSrc   = `${base}_standing.png`;
+    const menuSpriteSrc = `SPRITES/PLAYERS/${id}/${id}_menu_sprite.png`;
+    const standingSrc   = `SPRITES/PLAYERS/${id}/${id}_standing.png`;
     // Try the menu sprite first; fall back to standing on error.
     img.src = menuSpriteSrc;
     img.onerror = () => { img.src = standingSrc; };
@@ -107,7 +101,7 @@ export function showCharacterSelect(
 
     // Character name label
     const label = document.createElement('div');
-    label.textContent = characterLabel(CHARACTER_IDS[i]);
+    label.textContent = CHARACTER_LABELS[CHARACTER_IDS[i]] ?? CHARACTER_IDS[i];
     label.style.cssText = `
       font-size: 0.9rem; color: #d4a84b;
       letter-spacing: 0.08em; font-weight: 400;
@@ -140,7 +134,7 @@ export function showCharacterSelect(
 
   // ── Navigation hint ───────────────────────────────────────────────────────
   const hint = document.createElement('div');
-  hint.textContent = t('characterSelect.hint');
+  hint.textContent = '← A/D or Arrow Keys to select · Enter to confirm →';
   hint.style.cssText = `
     font-size: 0.75rem; color: rgba(212,168,75,0.4);
     letter-spacing: 0.06em; margin-bottom: 1.5rem;
@@ -149,11 +143,11 @@ export function showCharacterSelect(
 
   // ── Confirm button ────────────────────────────────────────────────────────
   const confirmBtn = document.createElement('button');
-  confirmBtn.textContent = t('common.confirm');
+  confirmBtn.textContent = 'Confirm';
   confirmBtn.style.cssText = `
     background: rgba(212,168,75,0.08); border: 1px solid rgba(212,168,75,0.5);
     color: #d4a84b; padding: 0.8rem 3rem; font-size: 1.1rem;
-    font-family: ${getUiFontFamily()}; cursor: pointer; transition: all 0.25s;
+    font-family: 'Cinzel', serif; cursor: pointer; transition: all 0.25s;
     border-radius: 3px; letter-spacing: 0.1em; margin-bottom: 0.8rem;
   `;
   confirmBtn.addEventListener('mouseenter', () => {
@@ -169,11 +163,11 @@ export function showCharacterSelect(
 
   // ── Back button ───────────────────────────────────────────────────────────
   const backBtn = document.createElement('button');
-  backBtn.textContent = t('common.back');
+  backBtn.textContent = 'Back';
   backBtn.style.cssText = `
     background: transparent; border: 1px solid rgba(212,168,75,0.25);
     color: rgba(212,168,75,0.6); padding: 0.6rem 2.5rem; font-size: 0.9rem;
-    font-family: ${getUiFontFamily()}; cursor: pointer; transition: all 0.25s;
+    font-family: 'Cinzel', serif; cursor: pointer; transition: all 0.25s;
     border-radius: 2px; letter-spacing: 0.1em;
   `;
   backBtn.addEventListener('mouseenter', () => {

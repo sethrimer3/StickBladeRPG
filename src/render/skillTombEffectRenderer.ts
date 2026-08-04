@@ -69,12 +69,6 @@ interface SkillTombParticle {
 interface SkillTombState {
   xWorld: number;
   yWorld: number;
-  /** Original block X position — used as a stable consumed-tomb key. */
-  xBlock: number;
-  /** Original block Y position — used as a stable consumed-tomb key. */
-  yBlock: number;
-  /** Weave ID granted when this tomb is consumed. */
-  weaveId: string;
   particles: SkillTombParticle[];
   /** True when the player is within interact radius. */
   isPlayerNearbyFlag: boolean;
@@ -141,14 +135,7 @@ export class SkillTombEffectRenderer {
       for (let p = 0; p < PARTICLES_PER_TOMB; p++) {
         particles.push(spawnParticle(p));
       }
-      this.tombStates.push({
-        xWorld, yWorld,
-        xBlock: tombs[i].xBlock,
-        yBlock: tombs[i].yBlock,
-        weaveId: tombs[i].weaveId,
-        particles,
-        isPlayerNearbyFlag: false,
-      });
+      this.tombStates.push({ xWorld, yWorld, particles, isPlayerNearbyFlag: false });
     }
   }
 
@@ -190,28 +177,6 @@ export class SkillTombEffectRenderer {
     return -1;
   }
 
-  /** Returns the weave ID of the tomb at the given index, or '' if out of range. */
-  getTombWeaveId(index: number): string {
-    return this.tombStates[index]?.weaveId ?? '';
-  }
-
-  /**
-   * Returns a stable key for the tomb at the given index, in the form
-   * `"${xBlock}:${yBlock}"`.  Used to track consumed tombs across room re-entries.
-   */
-  getTombPositionKey(index: number): string {
-    const tomb = this.tombStates[index];
-    if (!tomb) return '';
-    return `${tomb.xBlock}:${tomb.yBlock}`;
-  }
-
-  /** Remove the tomb at the given index (marks it as consumed and hides its visuals). */
-  removeTomb(index: number): void {
-    if (index >= 0 && index < this.tombStates.length) {
-      this.tombStates.splice(index, 1);
-    }
-  }
-
   /**
    * Draw particles that should appear behind the skill tomb sprite.
    * Call this before renderSprite().
@@ -221,10 +186,8 @@ export class SkillTombEffectRenderer {
     offsetXPx: number,
     offsetYPx: number,
     zoom: number,
-    vpW = 480,
-    vpH = 270,
   ): void {
-    this.renderLayer(ctx, offsetXPx, offsetYPx, zoom, true, vpW, vpH);
+    this.renderLayer(ctx, offsetXPx, offsetYPx, zoom, true);
   }
 
   /**
@@ -236,24 +199,18 @@ export class SkillTombEffectRenderer {
     offsetXPx: number,
     offsetYPx: number,
     zoom: number,
-    vpW = 480,
-    vpH = 270,
   ): void {
     if (!this.isSpriteLoaded) return;
     const spriteW = SKILL_TOMB_WIDTH_WORLD * zoom;
     const spriteH = SKILL_TOMB_HEIGHT_WORLD * zoom;
-    const halfW = spriteW / 2;
-    const halfH = spriteH / 2;
     for (let t = 0; t < this.tombStates.length; t++) {
       const tomb = this.tombStates[t];
       const screenX = tomb.xWorld * zoom + offsetXPx;
       const screenY = tomb.yWorld * zoom + offsetYPx;
-      if (screenX + halfW < 0 || screenX - halfW > vpW) continue;
-      if (screenY + halfH < 0 || screenY - halfH > vpH) continue;
       ctx.drawImage(
         this.tombSprite,
-        screenX - halfW,
-        screenY - halfH,
+        screenX - spriteW / 2,
+        screenY - spriteH / 2,
         spriteW,
         spriteH,
       );
@@ -270,11 +227,9 @@ export class SkillTombEffectRenderer {
     offsetXPx: number,
     offsetYPx: number,
     zoom: number,
-    vpW = 480,
-    vpH = 270,
   ): void {
-    this.renderLayer(ctx, offsetXPx, offsetYPx, zoom, false, vpW, vpH);
-    this.renderPrompts(ctx, offsetXPx, offsetYPx, zoom, vpW, vpH);
+    this.renderLayer(ctx, offsetXPx, offsetYPx, zoom, false);
+    this.renderPrompts(ctx, offsetXPx, offsetYPx, zoom);
   }
 
   /** Draw the "F" interact prompt above each nearby skill tomb. */
@@ -283,8 +238,6 @@ export class SkillTombEffectRenderer {
     offsetXPx: number,
     offsetYPx: number,
     zoom: number,
-    vpW = 480,
-    vpH = 270,
   ): void {
     for (let t = 0; t < this.tombStates.length; t++) {
       const tomb = this.tombStates[t];
@@ -292,8 +245,6 @@ export class SkillTombEffectRenderer {
 
       const screenX = tomb.xWorld * zoom + offsetXPx;
       const screenY = tomb.yWorld * zoom + offsetYPx;
-      // Skip prompts entirely offscreen
-      if (screenX < -50 || screenX > vpW + 50 || screenY < -50 || screenY > vpH + 50) continue;
       const labelY = screenY - SKILL_TOMB_HEIGHT_WORLD * zoom * 0.85;
       const labelSize = Math.max(6, Math.round(11 * zoom));
 
@@ -329,19 +280,9 @@ export class SkillTombEffectRenderer {
     offsetYPx: number,
     zoom: number,
     isBehindLayer: boolean,
-    vpW = 480,
-    vpH = 270,
   ): void {
-    // Particle radius for culling margin
-    const particleMarginPx = SKILL_TOMB_HEIGHT_WORLD * zoom * 2;
     for (let t = 0; t < this.tombStates.length; t++) {
       const tomb = this.tombStates[t];
-      const tombScreenX = tomb.xWorld * zoom + offsetXPx;
-      const tombScreenY = tomb.yWorld * zoom + offsetYPx;
-      // Skip tombs whose particle cloud cannot overlap the viewport.
-      if (tombScreenX + particleMarginPx < 0 || tombScreenX - particleMarginPx > vpW) continue;
-      if (tombScreenY + particleMarginPx < 0 || tombScreenY - particleMarginPx > vpH) continue;
-
       for (let p = 0; p < tomb.particles.length; p++) {
         const pk = tomb.particles[p];
         if (pk.isBehindFlag !== isBehindLayer) continue;

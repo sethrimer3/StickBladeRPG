@@ -11,135 +11,271 @@
 
 import type { WorldSnapshot } from '../render/snapshot';
 import type { WorldState } from '../sim/world';
-import { BLOCK_SIZE_SMALL, type RoomDef } from '../levels/roomDef';
-import { renderWalls, renderClusters } from '../render/clusters/renderer';
-import { renderCustomBlockSprites } from '../render/customBlockGameplayRenderer';
-import { renderGrapple } from '../render/clusters/grappleRenderer';
+import { RoomDef, BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL } from '../levels/roomDef';
+import { ParticleKind } from '../sim/particles/kinds';
+import { renderWorldBackground } from '../render/backgroundRenderer';
+import { renderWalls, renderClusters, renderGrapple } from '../render/clusters/renderer';
 import { renderRadiantTether } from '../render/clusters/radiantTetherRenderer';
-import { renderRadiantWeb } from '../render/clusters/radiantWebRenderer';
-import { renderDustConstellations } from '../render/clusters/dustConstellationRenderer';
-import { renderOrbitalDustCores } from '../render/clusters/orbitalDustCoreRenderer';
-import { renderDustBlockMimics } from '../render/clusters/dustBlockMimicRenderer';
-import { renderDustWeaverArchitects } from '../render/clusters/dustWeaverArchitectRenderer';
-import { renderVoidSingularities } from '../render/clusters/voidSingularityRenderer';
-import { renderDustLeeches } from '../render/clusters/dustLeechRenderer';
-import { collectVoidSphereScreenCircles, renderVoidSpheres } from '../render/clusters/heraldRenderer';
-import { applyVoidLensDistortion } from '../render/effects/voidLensDistortion';
 import { renderHazards } from '../render/hazards';
-import { renderTimeStopField } from '../render/timeStopFieldRenderer';
-import { renderTimeStopMomentumArrow } from '../render/effects/timeStopMomentumArrowRenderer';
-import { applyTimeStopInversionCompositor } from '../render/effects/timeStopInversionCompositor';
-import { renderTimeStopFieldDebug } from '../render/effects/timeStopFieldDebugRenderer';
 import { renderParticles } from '../render/particles/renderer';
-import { renderPixelLockedDust } from '../render/particles/pixelLockedDustRenderer';
-import { renderDustSelectionWheel } from '../render/effects/dustSelectionWheelRenderer';
-import type { DustSelectionWheelController } from './gameDustSelectionState';
-import {
-  tickPlayerRocketChargeParticles,
-  drawPlayerRocketChargeParticles,
-} from '../render/playerRocketChargeParticles';
+import { renderHudOverlay } from '../render/hud/overlay';
 import type { HudState } from '../render/hud/overlay';
 import type { CombatTextSystem } from '../render/hud/combatText';
-import type { RenderProfiler } from '../render/hud/renderProfiler';
-import { STAGE_WALLS, STAGE_ENTITIES, STAGE_PARTICLES, STAGE_DUST, STAGE_SUNBEAMS, STAGE_BLOOM, STAGE_HUD, STAGE_BG_BLOCKS, STAGE_DARK_BLOCKER, STAGE_UPSCALE } from '../render/hud/renderProfiler';
 import type { WebGLParticleRenderer } from '../render/particles/webglRenderer';
 import type { EnvironmentalDustLayer } from '../render/environmentalDust';
 import type { SkidDebrisRenderer } from '../render/skidDebrisRenderer';
-import type { CrumbleDebrisRenderer } from '../render/crumbleDebrisRenderer';
-import type { CrackedBlockShatterRenderer } from '../render/crackedBlockShatterRenderer';
-import type { BreakEffectRenderer } from '../render/breakEffectRenderer';
-import type { WeakWallJumpDebrisRenderer } from '../render/weakWallJumpDebrisRenderer';
 import type { SkillTombRenderer } from '../render/skillTombRenderer';
 import type { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
 import type { PlayerCloak } from '../render/clusters/playerCloak';
 import type { PhantomCloakExtension } from '../render/clusters/phantomCloak';
-import type { MomentumTrail } from '../render/clusters/momentumTrail';
-import type { VerdantAfterimageTrail } from '../render/clusters/verdantAfterimageTrail';
-import type { VerdantFlowerTrail } from '../render/verdantFlowerTrail';
 import {
-  PLAYER_SPRITE_PIVOT_X_WORLD,
-  PLAYER_SPRITE_WIDTH_WORLD,
-  PLAYER_SPRITE_HEIGHT_WORLD,
-} from '../render/clusters/characterSprites';
-import type { StormweaveLifeMotes } from '../sim/stormweave/lifeMotes';
-import { renderStormweaveLifeMotes } from '../render/stormweaveLifeMoteRenderer';
-import { renderIceFrostDecals } from '../render/effects/iceFrostRenderer';
-import { processPendingIceFrostImpacts } from '../sim/iceFrost';
-import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
-import type { DustContainerPickupEffect } from '../render/dustContainerPickupEffect';
-import type { PlayerDeathDustEffect } from '../render/playerDeathDust';
-import type { ClusterSnapshot } from '../render/clusterSnapshotTypes';
-import type { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
-import type { SunraysRenderer } from '../render/effects/sunraysRenderer';
-import type { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
-import type { GuideDustPathRenderer } from '../render/effects/guideDustPathRenderer';
-import type { FallingBlockDustRenderer } from '../render/fallingBlocks/fallingBlockRenderer';
-import { renderFallingBlocks } from '../render/fallingBlocks/fallingBlockRenderer';
-import { renderZipMoveBlocks } from '../render/zipMoveBlockRenderer';
-import { renderPixelMaterials } from '../render/pixelMaterials/pixelMaterialRenderer';
-import { renderPixelMaterialDebug } from '../render/pixelMaterials/pixelMaterialDebugRenderer';
-import { renderAirCurrentsDebug } from '../render/pixelMaterials/airCurrentsDebugRenderer';
-import { getAirCurrentsDebugEnabled } from '../ui/renderSettings';
+  isTheroShowcaseRoom,
+  renderTheroShowcaseEffect,
+  renderTheroBackgroundEffect,
+  renderCrystallineCracksBackground,
+} from '../render/effects/theroEffectManager';
 import type { BloomSystem } from '../render/effects/bloomSystem';
 import type { DarkRoomOverlay } from '../render/effects/darkRoomOverlay';
 import {
   renderDecorationSprites,
   addDecorationBloom,
+  collectDecorationLights,
   DecorationWaveState,
 } from '../render/effects/wallDecorations';
 import type { WallDecoration } from '../render/effects/wallDecorations';
-import { renderRopes } from '../render/ropes/ropeRenderer';
 import type { InputState } from '../input/handler';
+import { JOYSTICK_MAX_RADIUS_PX } from '../input/handler';
+import { DUST_PARTICLES_PER_CONTAINER } from './gameSpawn';
 import {
   drawTunnelDarkness,
+  DUST_CONTAINER_SIZE_WORLD,
+  HEALTH_BAR_DISPLAY_MS,
 } from './gameRoom';
+import { isOffensiveDustOutlineEnabled } from '../ui/renderSettings';
 import { getReachableEdgeGlowOpacity, getInfluenceCircleOpacity, getInfluenceHighlightWidth } from '../ui/renderSettings';
-import type { GraphicsQuality } from '../ui/renderSettings';
 import { renderGrappleInfluenceVisuals } from '../render/grappleInfluenceRenderer';
-import { renderDarkAmbientBlockerOverlay, getActiveProceduralMaterial, setRenderViewportSize, getChunkCacheStats, getActiveBackgroundLightSpill, getActiveAmbientBlockerKeys } from '../render/walls/blockSpriteRenderer';
-import { renderBackgroundBlocks, getBgChunkCacheStats } from '../render/walls/backgroundBlockRenderer';
-import {
-  drawGrappleBloom,
-  drawParticleGlow,
-  drawOffensiveDustOutlineOverlay,
-} from './gameRenderHelpers';
-import { renderGameHud } from './gameHudRenderer';
-import { renderDarkRoomLighting } from './gameDarkRoomLighting';
-import { applyRenderQualitySettings } from './gameRenderQuality';
-import { renderBackgroundPass, type StagedRoomBgInfo } from './gameRenderBackgroundPass';
-import { renderSceneLightingPass } from './gameRenderSceneLighting';
-import { renderTeleportFlash } from '../render/lambdaAnchorRenderer';
-import { renderVoidEdge } from '../render/voidEdgeRenderer';
-import {
-  renderAdjacentRoomsPass,
-  type AdjacentRoomDrawPorts,
-  type AdjacentRoomDrawImpl,
-} from './gameRenderAdjacentRooms';
-import type { ConnectedRoomRenderState } from '../render/adjacent/adjacentRoomView';
-import { getLiquidDebugStats } from '../render/liquidBodyCache';
-import { renderRoomCollectibles } from './gameRenderCollectibles';
-import { renderDeviceOverlay } from './gameRenderDeviceOverlay';
-import { resetCanvasPass } from '../render/canvasViewport';
-import { renderSnakes } from '../render/clusters/snakeRenderer';
-import { renderUltraIceSparkles } from '../render/effects/ultraIceSparkleRenderer';
-import { renderGrappleCarryBlocks, renderPhantasmalTiles } from '../render/grappleCarryBlockRenderer';
-import { renderChallengeFieldsAndGates, renderChallengeTotems } from '../render/challengeElementRenderer';
-import { renderGates, renderOpenGateRecesses } from '../render/gateRenderer';
-import {
-  isPlayerHitboxFullyCoveredByBlockers,
-  PlayerBlockerDimmingController,
-  playerBrightnessFromBlockerDimAmount,
-} from '../render/clusters/playerBlockerDimming';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 /** Fixed simulation timestep for tick-to-ms conversion. */
 const FIXED_DT_MS = 16.666;
 
-/** Warm amber fill colour (RGB components) used for the optional background light-spill overlay. */
-const BACKGROUND_SPILL_RGB = '200,150,80' as const;
+/** Touch joystick outer radius matches the max drag radius from handler.ts. */
+const JOYSTICK_OUTER_RADIUS_PX = JOYSTICK_MAX_RADIUS_PX;
+const JOYSTICK_INNER_RADIUS_PX = 22;
 
-const playerBlockerDimming = new PlayerBlockerDimmingController();
+const IS_TOUCH_DEVICE = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// HUD layout — health bar dimensions (virtual pixels)
+const HUD_HEALTH_BAR_X_PX        = 8;
+const HUD_HEALTH_BAR_Y_PX        = 8;
+const HUD_HEALTH_BAR_WIDTH_PX    = 60;
+const HUD_HEALTH_BAR_HEIGHT_PX   = 6;
+const HUD_HEALTH_DUST_GAP_PX     = 4;
+/** Visual spacing between grapple bloom dots along the chain (virtual px). */
+const GRAPPLE_BLOOM_SEGMENT_PX = 6;
+const OUTLINE_BASE_WIDTH_1080P_PX = 2;
+const OFFENSIVE_DUST_BASE_DIAMETER_WORLD = 2.0;
+
+// Health fraction thresholds for visual escalation
+const HEALTH_THRESHOLD_DANGER_FRACTION   = 0.40;  // below this → amber warning
+const HEALTH_THRESHOLD_CRITICAL_FRACTION = 0.20;  // below this → pulsing red alert
+
+// ── Optional high-water glow guard (disabled by default) ──────────────────
+// When HIGH_WATER_GLOW_GUARD_ENABLED is true and the cached decoration count
+// exceeds HIGH_WATER_DECORATION_BLOOM_LIMIT, addDecorationBloom only processes
+// decorations whose screen-space position falls within the virtual canvas
+// bounds (cheap sx/sy AABB check), skipping off-screen decorations.
+// Flip HIGH_WATER_GLOW_GUARD_ENABLED to true for pathological scenes; see
+// DECISIONS.md for full guidance.  Has no effect when false.
+const HIGH_WATER_GLOW_GUARD_ENABLED       = false;
+const HIGH_WATER_DECORATION_BLOOM_LIMIT   = 128;
+
+/**
+ * Module-level pre-allocated Set for alive enemy entity IDs.
+ * Reused each frame by `drawOffensiveDustOutlineOverlay` — avoids allocating a
+ * new Set<number> on every render call (saves one GC-eligible object per frame).
+ */
+const _aliveEnemyEntityIds = new Set<number>();
+
+function drawGrappleBloom(
+  bloomSystem: BloomSystem,
+  snapshot: WorldSnapshot,
+  offsetXPx: number,
+  offsetYPx: number,
+  scalePx: number,
+): void {
+  const hasActiveOrMiss = snapshot.isGrappleActiveFlag === 1 || snapshot.isGrappleMissActiveFlag === 1;
+  if (!hasActiveOrMiss) return;
+
+  let playerCluster: (typeof snapshot.clusters)[0] | undefined;
+  for (let ci = 0; ci < snapshot.clusters.length; ci++) {
+    const candidate = snapshot.clusters[ci];
+    if (candidate.isPlayerFlag === 1 && candidate.isAliveFlag === 1) {
+      playerCluster = candidate;
+      break;
+    }
+  }
+  if (playerCluster === undefined) return;
+
+  const playerHalfWidthPx = playerCluster.halfWidthWorld * scalePx;
+  const offsetDir = playerCluster.isFacingLeftFlag === 1 ? -1 : 1;
+  const px = playerCluster.positionXWorld * scalePx + offsetXPx + offsetDir * playerHalfWidthPx;
+  const py = playerCluster.positionYWorld * scalePx + offsetYPx;
+
+  let ax = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
+  let ay = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
+  if (snapshot.isGrappleMissActiveFlag === 1 && snapshot.grappleParticleStartIndex >= 0) {
+    const tipIndex = snapshot.grappleParticleStartIndex + 9;
+    const isTipAlive = tipIndex < snapshot.particles.particleCount && snapshot.particles.isAliveFlag[tipIndex] === 1;
+    if (isTipAlive) {
+      ax = snapshot.particles.positionXWorld[tipIndex] * scalePx + offsetXPx;
+      ay = snapshot.particles.positionYWorld[tipIndex] * scalePx + offsetYPx;
+    }
+  }
+
+  const dx = ax - px;
+  const dy = ay - py;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const segmentCount = Math.max(1, Math.floor(dist / GRAPPLE_BLOOM_SEGMENT_PX));
+  for (let segmentIndex = 0; segmentIndex <= segmentCount; segmentIndex++) {
+    const t = segmentCount > 0 ? segmentIndex / segmentCount : 0;
+    bloomSystem.glowPass.drawCircle({
+      x: px + dx * t,
+      y: py + dy * t,
+      radius: 1.2,
+      glow: {
+        enabled: true,
+        intensity: 0.28,
+        color: '#ffd972',
+      },
+    });
+  }
+
+  bloomSystem.glowPass.drawCircle({
+    x: ax,
+    y: ay,
+    radius: 3.0,
+    glow: {
+      enabled: true,
+      intensity: 0.62,
+      color: '#ffe79d',
+    },
+  });
+}
+
+/**
+ * Draws additive glow for gold dust particles into the bloom system's glow pass.
+ * Multiple overlapping particles produce a stronger combined glow (additive blend).
+ * Glow intensity scales with particle speed — faster-moving particles glow brighter.
+ */
+function drawParticleGlow(
+  bloomSystem: BloomSystem,
+  snapshot: WorldSnapshot,
+  offsetXPx: number,
+  offsetYPx: number,
+  scalePx: number,
+): void {
+  const particles = snapshot.particles;
+  /** Glow radius is slightly larger than the 3×3 dust square for a soft halo. */
+  const glowRadius = 2.5 * scalePx;
+
+  /** Speed (world units/s) at which glow reaches full intensity. */
+  const MAX_GLOW_SPEED_WORLD_PER_SEC = 120.0;
+  /** Base glow intensity for a resting particle. */
+  const BASE_GLOW_INTENSITY = 0.25;
+  /** Additional glow intensity added at maximum speed. */
+  const SPEED_GLOW_RANGE = 0.65;
+
+  for (let i = 0; i < particles.particleCount; i++) {
+    if (particles.isAliveFlag[i] === 0) continue;
+    // Only glow gold dust (Physical) particles
+    const kind = particles.kindBuffer[i];
+    if (kind !== ParticleKind.Physical && kind !== ParticleKind.Gold) continue;
+
+    const lt = particles.lifetimeTicks[i];
+    const normAge = lt > 0 ? Math.min(1.0, particles.ageTicks[i] / lt) : 0.0;
+    const ageFade = 1.0 - normAge;
+    if (ageFade < 0.05) continue;
+
+    // Velocity-based brightness: faster particles glow brighter.
+    const vx = particles.velocityXWorld[i];
+    const vy = particles.velocityYWorld[i];
+    const speedWorld = Math.sqrt(vx * vx + vy * vy);
+    const speedFactor = Math.min(1.0, speedWorld / MAX_GLOW_SPEED_WORLD_PER_SEC);
+    const intensity = (BASE_GLOW_INTENSITY + SPEED_GLOW_RANGE * speedFactor) * ageFade;
+
+    const sx = particles.positionXWorld[i] * scalePx + offsetXPx;
+    const sy = particles.positionYWorld[i] * scalePx + offsetYPx;
+
+    bloomSystem.glowPass.drawCircle({
+      x: sx,
+      y: sy,
+      radius: glowRadius,
+      glow: {
+        enabled: true,
+        intensity,
+        color: '#ffd700',
+      },
+    });
+  }
+}
+
+function drawOffensiveDustOutlineOverlay(
+  deviceCtx: CanvasRenderingContext2D,
+  snapshot: WorldSnapshot,
+  canvasWidthPx: number,
+  canvasHeightPx: number,
+  offsetXPx: number,
+  offsetYPx: number,
+  scalePx: number,
+): void {
+  if (!isOffensiveDustOutlineEnabled()) return;
+
+  const outlineScale = Math.min(canvasWidthPx / 1920.0, canvasHeightPx / 1080.0);
+  const lineWidthPx = OUTLINE_BASE_WIDTH_1080P_PX * outlineScale;
+  const worldDiameterPx = OFFENSIVE_DUST_BASE_DIAMETER_WORLD * scalePx;
+  const radiusPx = Math.max(lineWidthPx * 0.6, worldDiameterPx * 0.6);
+  const halfPixelAdjust = ((lineWidthPx % 2) === 0) ? 0.5 : 0;
+
+  // Precompute the set of alive non-player entity IDs in one O(C) pass.
+  // Cluster count is tiny (≤ ~30), so the Set construction cost is negligible.
+  // Using the module-level pre-allocated Set avoids a per-frame heap allocation.
+  _aliveEnemyEntityIds.clear();
+  for (let ci = 0; ci < snapshot.clusters.length; ci++) {
+    const cluster = snapshot.clusters[ci];
+    if (cluster.isPlayerFlag === 0 && cluster.isAliveFlag === 1) {
+      _aliveEnemyEntityIds.add(cluster.entityId);
+    }
+  }
+
+  deviceCtx.save();
+  deviceCtx.strokeStyle = '#ff1a1a';
+  deviceCtx.lineWidth = lineWidthPx;
+
+  // Collect all qualifying arc positions into a single batched path so
+  // the GPU only receives one stroke call instead of one per particle.
+  deviceCtx.beginPath();
+  let arcCount = 0;
+
+  const particles = snapshot.particles;
+  for (let i = 0; i < particles.particleCount; i++) {
+    if (particles.isAliveFlag[i] === 0) continue;
+    if (particles.behaviorMode[i] !== 1) continue;
+    if (!_aliveEnemyEntityIds.has(particles.ownerEntityId[i])) continue;
+
+    const sx = particles.positionXWorld[i] * scalePx + offsetXPx;
+    const sy = particles.positionYWorld[i] * scalePx + offsetYPx;
+    deviceCtx.moveTo(sx + halfPixelAdjust + radiusPx, sy + halfPixelAdjust);
+    deviceCtx.arc(sx + halfPixelAdjust, sy + halfPixelAdjust, radiusPx, 0, Math.PI * 2);
+    arcCount++;
+  }
+
+  if (arcCount > 0) {
+    deviceCtx.stroke();
+  }
+  deviceCtx.restore();
+}
 
 // ── Public interface ───────────────────────────────────────────────────────
 
@@ -155,47 +291,18 @@ export interface RenderFrameContext {
   webglRenderer: WebGLParticleRenderer;
   environmentalDust: EnvironmentalDustLayer;
   skidDebris: SkidDebrisRenderer;
-  crumbleDebris: CrumbleDebrisRenderer;
-  /** Momentum-speed cracked-block shatter burst — sprite-palette-sampled fragments. */
-  crackedBlockShatter: CrackedBlockShatterRenderer;
-  /** Fragile custom-block break debris (Phase 2C — material-tinted, one burst per logical placement). */
-  breakEffects: BreakEffectRenderer;
-  /** Weak wall jump cascade debris — spawns on 3rd+ consecutive wall jump. */
-  weakWallJumpDebris: WeakWallJumpDebrisRenderer;
   skillTombRenderer: SkillTombRenderer;
   skillTombEffectRenderer: SkillTombEffectRenderer;
-  /** One-shot cosmetic golden-mote burst for Dust Container / Shard pickups. */
-  dustContainerPickupEffect: DustContainerPickupEffect;
-  /** One-shot player-death disintegration burst — warm-gold motes blown leftward. */
-  playerDeathDust: PlayerDeathDustEffect;
   bloomSystem: BloomSystem;
   playerCloak: PlayerCloak;
   /** Phantasmal golden cloak extension — visible while the player is grappling. */
   phantomCloak: PhantomCloakExtension;
-  /** Golden high-speed trail — visible while momentum-combat invulnerability is active. */
-  momentumTrail: MomentumTrail;
-  /** Verdant Dust green afterimage trail — visible while moving with Verdant equipped. */
-  verdantAfterimageTrail: VerdantAfterimageTrail;
-  /** Verdant Dust temporary flower blooms along the ground path walked. */
-  verdantFlowerTrail: VerdantFlowerTrail;
-  /** Runtime visual cloud derived from canonical player health. */
-  stormweaveLifeMotes: StormweaveLifeMotes;
   darkRoomOverlay: DarkRoomOverlay;
-  /** Pixel-art atmospheric sunbeam shafts. */
-  sunbeamRenderer: SunbeamRenderer;
-  sunraysRenderer: SunraysRenderer;
-  /** Floating dust motes near local light sources. */
-  atmosphericLightDust: AtmosphericLightDust;
-  /** Golden mote particles traveling along editor-authored guide paths. */
-  guideDustPathRenderer: GuideDustPathRenderer;
   /** Decoration sway state for push-wave animation driven by entity velocity. */
   decorationWaveState: DecorationWaveState;
-  /** Falling block group dust + tile renderer. */
-  fallingBlockDust: FallingBlockDustRenderer;
 
   // World / room
   world: WorldState;
-  isChallengeModeActive: boolean;
   currentRoom: RoomDef;
   /**
    * Pre-computed snapshot updated once per frame via `updateSnapshotInPlace()`
@@ -249,93 +356,9 @@ export interface RenderFrameContext {
   collectedDustContainerKeySet: Set<string>;
   isDustContainerSpriteLoaded: boolean;
   dustContainerSprite: HTMLImageElement;
-  isDustContainerShardSpriteLoaded: boolean;
-  dustContainerShardSprite: HTMLImageElement;
-  /** Keys for already-collected dust swarms (passed from gameScreen). */
-  collectedDustSwarmKeySet: Set<string>;
-  /** Index of the linked lambda anchor in currentRoom.lambdaAnchors, or -1 if not linked. */
-  linkedAnchorIndex: number;
-  /** Room ID of the room where the linked anchor lives, or '' if none. */
-  linkedAnchorRoomId: string;
-  /** Current alpha of the full-screen teleport flash (0 = none, 1 = full). */
-  teleportFlashAlpha: number;
-  /** Called by renderFrame to decay and update the teleport flash alpha. */
-  setTeleportFlashAlpha: (a: number) => void;
 
   // Callbacks
-  /** Current speedrun timer value in milliseconds (0 = not started).
-   * Passed to renderGameHud to display in the top-right HUD corner. */
-  runTimerMs: number;
-
-  // Graphics quality for this frame — drives quality-tier rendering decisions.
-  graphicsQuality: GraphicsQuality;
-  /**
-   * When true, adaptive quality has triggered and rendering should use reduced
-   * caps (lower dust mote count, fewer dynamic lights) to recover frame rate.
-   * Set by the adaptive quality monitor in gameScreen.ts.
-   */
-  isAdaptiveReductionActive: boolean;
-  /**
-   * When true (tier 2), adaptive quality has entered deep reduction mode:
-   * sunbeam rendering and bloom are also disabled in addition to tier-1 caps.
-   * Set by the adaptive quality monitor in gameScreen.ts.
-   */
-  isDeepReductionActive: boolean;
-  /** Render-stage profiler.  When provided, timings are recorded when debug is on. */
-  renderProfiler?: RenderProfiler;
-  /**
-   * Fraction of a fixed tick elapsed since the last physics step.
-   * Used to interpolate falling block tile positions between sim updates
-   * (0 = just ticked, 1 = full tick elapsed with no physics step yet).
-   */
-  renderAlpha: number;
-  /**
-   * Per-group Y offsets captured immediately before the most recent physics
-   * tick.  Indexed by fallingBlockGroups array position (capped at
-   * MAX_FALLING_BLOCK_GROUPS = 64).  Used by renderFallingBlocks to blend
-   * between the pre-tick and post-tick offsetYWorld values for smooth motion.
-   */
-  prevFallingBlockOffsetY: Float32Array;
-
-  /**
-   * BUILD 279/284 legacy: two-room crossing and staged-room clip rect.
-   * These are always false/zero since ENABLE_TWO_ROOM_CAMERA_CROSSING is disabled.
-   * Kept to avoid breaking the call sites; will be removed in a future pass.
-   * @deprecated Use instant room transitions only (ENABLE_SIMPLE_ROOM_TRANSITIONS).
-   */
-  isCrossing: boolean;
-  crossingUnionMinXWorld: number;
-  crossingUnionMinYWorld: number;
-  crossingUnionMaxXWorld: number;
-  crossingUnionMaxYWorld: number;
-  /**
-   * When true, the camera is not clamped to room bounds — the player stays
-   * centred on screen and areas outside the room render as black void.
-   * In this mode the room clip rect is removed so out-of-room content is
-   * visible without being cut off.
-   */
-  alwaysCenterCamera: boolean;
-
-  /**
-   * When a previous room is staged after a seamless crossing, provides the
-   * minimal metadata needed to render its background layer clipped to its
-   * screen-space rect.  Null when no staging is active (always null now).
-   */
-  stagedRoom: StagedRoomBgInfo | null;
-
-  /** Dust selection wheel controller — drives the in-canvas radial UI. */
-  dustWheel: DustSelectionWheelController;
-
-  /**
-   * Render-only radius-1 connected-room view state ("Render Adjacent Rooms").
-   * Optional and empty by default; when present with views, adjacent rooms are
-   * drawn before the active room's clipped pass. All fields are omitted/empty
-   * when the effective setting is off, so the normal render path is unchanged.
-   */
-  connectedRoomState?: ConnectedRoomRenderState;
-  adjacentRoomDrawPorts?: AdjacentRoomDrawPorts;
-  adjacentRoomDrawImpl?: AdjacentRoomDrawImpl;
-  adjacentMaxChunksPerRoom?: number;
+  getPlayerDustCount: () => number;
 }
 
 /**
@@ -346,36 +369,21 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
-    playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
-    sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
+    webglRenderer, environmentalDust, skidDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem,
+    playerCloak, phantomCloak, darkRoomOverlay, decorationWaveState,
     world, currentRoom, snapshot,
     cachedDecorations, cachedDecorationCenterX, cachedDecorationCenterY,
     ox, oy, zoom, virtualWidthPx, virtualHeightPx,
-    bgColor, isDebugMode, inputState,
-    teleportFlashAlpha,
-    setTeleportFlashAlpha,
-    graphicsQuality,
-    isAdaptiveReductionActive,
-    isDeepReductionActive,
-    renderProfiler,
-    dustWheel,
+    bgColor, isDebugMode, hudState, inputState,
+    prevHealthMap, healthBarDisplayUntilTick,
+    combatText, prevLastPlayerBlockedTick,
+    collectedDustContainerKeySet,
+    isDustContainerSpriteLoaded,
+    dustContainerSprite,
+    getPlayerDustCount,
   } = r;
 
   const nowMs = performance.now();
-
-  const qc = applyRenderQualitySettings({
-    graphicsQuality,
-    isAdaptiveReductionActive,
-    isDeepReductionActive,
-    bloomSystem,
-    sunbeamRenderer,
-    sunraysRenderer,
-    atmosphericLightDust,
-  });
-
-  // Start the render profiler for this frame.
-  if (renderProfiler !== undefined) renderProfiler.beginFrame(isDebugMode);
 
   const roomWidthWorld = currentRoom.widthBlocks * BLOCK_SIZE_SMALL;
   const roomHeightWorld = currentRoom.heightBlocks * BLOCK_SIZE_SMALL;
@@ -383,15 +391,12 @@ export function renderFrame(r: RenderFrameContext): void {
   const roomScreenYPx = oy;
   const roomScreenWidthPx = roomWidthWorld * zoom;
   const roomScreenHeightPx = roomHeightWorld * zoom;
-  // Start every frame from an identity-space, unclipped context. This clears
-  // the complete virtual backing store even if a prior pass leaked a clip,
-  // transform, alpha, or composite mode.
-  resetCanvasPass(ctx, virtualCanvas.width, virtualCanvas.height, false);
+  // Keep sprite sampling nearest-neighbour even if context state changed.
+  ctx.imageSmoothingEnabled = false;
   bloomSystem.beginFrame();
 
   // ── Clear / fill virtual canvas ─────────────────────────────────────────
   // Always start from black so anything outside the room remains pure black.
-  ctx.clearRect(0, 0, virtualWidthPx, virtualHeightPx);
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, virtualWidthPx, virtualHeightPx);
   if (webglRenderer.isAvailable) {
@@ -403,157 +408,63 @@ export function renderFrame(r: RenderFrameContext): void {
     ctx.fillRect(roomScreenXPx, roomScreenYPx, roomScreenWidthPx, roomScreenHeightPx);
   }
 
-  // ── Adjacent rooms (render-only radius-1 view, drawn into the void) ───────
-  // Drawn after the black clear and before the active room's passage gradients
-  // and clipped world pass, so neighbours fill the surrounding void while the
-  // active room and player always draw on top. No-ops cheaply (no allocation,
-  // no lookups) when the effective "Render Adjacent Rooms" setting is off.
-  if (
-    r.connectedRoomState !== undefined &&
-    r.connectedRoomState.views.length > 0 &&
-    r.adjacentRoomDrawPorts !== undefined &&
-    r.adjacentRoomDrawImpl !== undefined
-  ) {
-    renderAdjacentRoomsPass({
-      ctx,
-      state: r.connectedRoomState,
-      ox, oy, zoom,
-      vpWPx: virtualWidthPx,
-      vpHPx: virtualHeightPx,
-      maxChunksPerRoom: r.adjacentMaxChunksPerRoom ?? 6,
-      ports: r.adjacentRoomDrawPorts,
-      impl: r.adjacentRoomDrawImpl,
-    });
-  }
-
-  // ── Clip rect: room bounds ────────────────────────────────────────────────
-  // Always clip to the current room bounds (instant room transitions only).
-  const clipXWorld = 0;
-  const clipYWorld = 0;
-  const clipWWorld = roomWidthWorld;
-  const clipHWorld = roomHeightWorld;
-  const clipScreenXPx = clipXWorld * zoom + ox;
-  const clipScreenYPx = clipYWorld * zoom + oy;
-  const clipScreenWPx = clipWWorld * zoom;
-  const clipScreenHPx = clipHWorld * zoom;
-
-  // Constrain all world-space rendering to the clip rect so out-of-bounds
+  // Constrain all world-space rendering to the room rectangle so out-of-room
   // areas remain black even when camera framing shows beyond room extents.
-  // This applies in always-center mode too; the unclamped camera can expose
-  // off-room pixels, and those should remain the black canvas clear.
-  // try/finally below guarantees this save() is always matched by the
-  // restore() further down, even if a renderer inside the clipped pass
-  // throws. Without it, an uncaught exception anywhere in this ~200-line
-  // block (walls, clusters, particles, effects) leaks the room-bounds clip
-  // onto the shared 2D context permanently — every subsequent frame's
-  // clear/fill gets constrained to the stale clip rect, producing a black
-  // screen with un-cleared trails in every room until reload.
   ctx.save();
-  try {
   ctx.beginPath();
-  ctx.rect(clipScreenXPx, clipScreenYPx, clipScreenWPx, clipScreenHPx);
+  ctx.rect(roomScreenXPx, roomScreenYPx, roomScreenWidthPx, roomScreenHeightPx);
   ctx.clip();
 
   // ── World background with parallax ──────────────────────────────────────
-  renderBackgroundPass({
+  renderWorldBackground(
     ctx,
-    currentRoom,
-    stagedRoom: r.stagedRoom,
-    ox,
-    oy,
-    zoom,
+    currentRoom.worldNumber,
     virtualWidthPx,
     virtualHeightPx,
+    ox,
+    oy,
     roomWidthWorld,
     roomHeightWorld,
+    zoom,
+    currentRoom.backgroundId,
+  );
+
+  // Relative camera offset (from room centre) used for procedural background parallax.
+  // When the camera is centred on the room this is 0; it grows as the camera pans.
+  const roomCenterOffsetXPx = virtualWidthPx * 0.5 - (roomWidthWorld * 0.5 * zoom);
+  const roomCenterOffsetYPx = virtualHeightPx * 0.5 - (roomHeightWorld * 0.5 * zoom);
+  const relCameraOffsetXPx = ox - roomCenterOffsetXPx;
+  const relCameraOffsetYPx = oy - roomCenterOffsetYPx;
+
+  // ── Thero effect procedural overlays ─────────────────────────────────────
+  const renderedTheroBackground = renderTheroBackgroundEffect(
+    ctx,
+    currentRoom.backgroundId,
+    virtualWidthPx,
+    virtualHeightPx,
     nowMs,
-    renderProfiler,
-  });
-
-  // ── Background light spill (optional subtle warm glow from nearby walls) ──
-  // Drawn after the world background and before background blocks / walls so
-  // it only affects the air/background layers.  Defaults to 0 (no spill) to
-  // prevent the cloudy orange-blob artefact.
-  const bgSpill = getActiveBackgroundLightSpill();
-  if (bgSpill > 0) {
-    ctx.save();
-    try {
-      // Clip to the current room so spill doesn't bleed into adjacent rooms.
-      const clipX = Math.round(ox);
-      const clipY = Math.round(oy);
-      const clipW = Math.round(roomWidthWorld * zoom);
-      const clipH = Math.round(roomHeightWorld * zoom);
-      ctx.beginPath();
-      ctx.rect(clipX, clipY, clipW, clipH);
-      ctx.clip();
-      // Warm amber tint — clamped to a subtle translucent fill.
-      const alpha = Math.min(bgSpill, 0.5);
-      ctx.fillStyle = `rgba(${BACKGROUND_SPILL_RGB},${alpha.toFixed(3)})`;
-      ctx.fillRect(clipX, clipY, clipW, clipH);
-    } finally {
-      ctx.restore();
-    }
+    relCameraOffsetXPx,
+    relCameraOffsetYPx,
+  );
+  // Legacy showcase rooms still use room-id dispatch when no explicit
+  // thero_* background override is present.
+  if (!renderedTheroBackground && isTheroShowcaseRoom(currentRoom.id)) {
+    renderTheroShowcaseEffect(
+      ctx, currentRoom.id, virtualWidthPx, virtualHeightPx, nowMs,
+      relCameraOffsetXPx, relCameraOffsetYPx,
+    );
   }
 
-  // ── Background blocks (visual-only, rendered behind sunbeams and walls) ───
-  // Life motes occupy the back-most world layer: tiles and the player occlude
-  // them, while their simulation deliberately remains collision-free.
-  renderStormweaveLifeMotes(ctx, stormweaveLifeMotes, ox, oy, zoom, world.shieldWeave, graphicsQuality, world.selectedDustKind);
-
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BG_BLOCKS);
-  renderBackgroundBlocks(ctx, currentRoom, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  if (renderProfiler !== undefined) {
-    renderProfiler.stageEnd(STAGE_BG_BLOCKS);
-    if (isDebugMode) renderProfiler.updateBgChunkStats(getBgChunkCacheStats());
+  // ── Crystalline Cracks procedural background effect ──────────────────────
+  if (currentRoom.backgroundId === 'crystallineCracks') {
+    renderCrystallineCracksBackground(
+      ctx, virtualWidthPx, virtualHeightPx, nowMs,
+      relCameraOffsetXPx, relCameraOffsetYPx,
+    );
   }
 
-  // ── Sunbeams (light shafts behind walls) ────────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_SUNBEAMS);
-  sunbeamRenderer.render(ctx, ox, oy, zoom, nowMs, virtualWidthPx, virtualHeightPx);
-  let playerForSunrayDust: ClusterSnapshot | null = null;
-  for (let i = 0; i < snapshot.clusters.length; i++) {
-    const cluster = snapshot.clusters[i];
-    if (cluster.isPlayerFlag === 1 && cluster.isAliveFlag === 1) {
-      playerForSunrayDust = cluster;
-      break;
-    }
-  }
-  sunraysRenderer.render(ctx, ox, oy, zoom, nowMs, virtualWidthPx, virtualHeightPx, playerForSunrayDust);
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_SUNBEAMS);
-
-  // ── Player-death disintegration dust (behind solid foreground walls) ─────
-  playerDeathDust.render(ctx, ox, oy, zoom);
-
-  // ── Walls ────────────────────────────────────────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_WALLS);
-  // Inform the chunk cache of the current viewport dimensions so it can cull
-  // invisible chunks correctly (virtualWidthPx can be > 480 on wider screens).
-  setRenderViewportSize(virtualWidthPx, virtualHeightPx);
   // Walls before cluster indicators so clusters are drawn on top
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_DARK_BLOCKER);
-  renderDarkAmbientBlockerOverlay(ctx, ox, oy, zoom, BLOCK_SIZE_SMALL, virtualWidthPx, virtualHeightPx);
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_DARK_BLOCKER);
-  renderOpenGateRecesses(ctx, world.gates, ox, oy, zoom);
-  renderChallengeFieldsAndGates(ctx, world.challengeMode, ox, oy, zoom, nowMs, world.clusters[0]?.positionXWorld ?? 0, world.clusters[0]?.positionYWorld ?? 0);
   renderWalls(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderGates(ctx, world.gates, ox, oy, zoom, isAdaptiveReductionActive ? 0.5 : 1);
-  renderCustomBlockSprites(ctx, currentRoom, ox, oy, zoom, world);
-  renderChallengeTotems(ctx, world.challengeMode, world.clusters[0]?.positionXWorld ?? 0, world.clusters[0]?.positionYWorld ?? 0, ox, oy, zoom, nowMs);
-  renderPhantasmalTiles(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  renderUltraIceSparkles(ctx, snapshot.walls, nowMs, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-
-  // ── Ice arrow frost decals (cosmetic, riding on exposed tile surfaces) ───
-  {
-    const surfaceExposureMap = getWallLayoutCache(
-      snapshot.walls, BLOCK_SIZE_SMALL, currentRoom.widthBlocks, currentRoom.heightBlocks,
-    ).surfaceExposureMap;
-    processPendingIceFrostImpacts(surfaceExposureMap);
-    renderIceFrostDecals(ctx, ox, oy, zoom);
-  }
-  renderRopes(ctx, snapshot, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  if (renderProfiler !== undefined && isDebugMode) {
-    renderProfiler.updateChunkStats(getChunkCacheStats());
-  }
 
   const isDarkRoom = currentRoom.lightingEffect === 'DarkRoom';
 
@@ -569,16 +480,12 @@ export function renderFrame(r: RenderFrameContext): void {
     cachedDecorationCenterY,
   );
 
-  renderDecorationSprites(ctx, cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL, decorationWaveState, virtualWidthPx, virtualHeightPx);
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_WALLS);
-
-  // ── Entities and grapple ─────────────────────────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_ENTITIES);
+  renderDecorationSprites(ctx, cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL, decorationWaveState);
 
   // Grapple influence visuals (golden circle + edge glow) drawn on top of walls
   // but behind clusters/particles so they don't obscure the action.
   renderGrappleInfluenceVisuals(
-    ctx, snapshot, currentRoom.widthBlocks, currentRoom.heightBlocks, ox, oy, zoom,
+    ctx, snapshot, ox, oy, zoom,
     inputState.mouseXPx, inputState.mouseYPx,
     canvas.width, canvas.height,
     virtualWidthPx, virtualHeightPx,
@@ -588,279 +495,406 @@ export function renderFrame(r: RenderFrameContext): void {
   );
 
   // Environmental hazards (water/lava zones behind, spikes/jars/fireflies on top)
-  // Skip entirely if the room has no hazard-type entities whatsoever.
-  if (
-    world.spikeCount > 0 || world.springboardCount > 0 ||
-    world.waterZoneCount > 0 || world.lavaZoneCount > 0 || world.poisonFieldCount > 0 ||
-    world.breakableBlockCount > 0 || world.crumbleBlockCount > 0 ||
-    world.bouncePadCount > 0 || world.kineticBlockCount > 0 ||
-    world.dustBoostJarCount > 0 || world.fireflyJarCount > 0 || world.fireflyCount > 0
-  ) {
-    renderHazards(
-      ctx,
-      world,
-      ox,
-      oy,
-      zoom,
-      world.tick,
-      virtualWidthPx,
-      virtualHeightPx,
-      graphicsQuality !== 'low' && !isAdaptiveReductionActive,
-    );
-  }
-  if (renderProfiler !== undefined && isDebugMode) {
-    renderProfiler.updateLiquidStats(getLiquidDebugStats());
-  }
+  renderHazards(ctx, world, ox, oy, zoom, world.tick);
 
-  // TimeStop Field — translucent connected-region volumes (experimental).
-  if (world.timeStopFieldCount > 0) {
-    renderTimeStopField(ctx, world, ox, oy, zoom, qc);
-  }
-
-  // One-shot golden-mote pickup burst — drawn behind the player sprite so
-  // absorbed motes visibly disappear behind it rather than popping in front.
-  dustContainerPickupEffect.render(ctx, ox, oy, zoom);
-
-  // Verdant Dust cosmetics — flowers along the walked path, then the green
-  // afterimage trail, both drawn behind the real player sprite.
-  verdantFlowerTrail.render(ctx, ox, oy, zoom);
-  verdantAfterimageTrail.render(
-    ctx, ox, oy, zoom,
-    PLAYER_SPRITE_PIVOT_X_WORLD, PLAYER_SPRITE_WIDTH_WORLD, PLAYER_SPRITE_HEIGHT_WORLD,
-  );
-
-  // TimeStop Field stored-momentum arrow — behind the player sprite, kept
-  // independent from the active-velocity speedometer/debug overlays.
-  renderTimeStopMomentumArrow(ctx, world, playerForSunrayDust, ox, oy, zoom);
-
-  const playerIsFullyCovered = playerForSunrayDust !== null
-    && isPlayerHitboxFullyCoveredByBlockers(playerForSunrayDust, getActiveAmbientBlockerKeys());
-  const playerSpriteBrightness = playerBrightnessFromBlockerDimAmount(
-    playerBlockerDimming.update(playerIsFullyCovered, nowMs),
-  );
-  renderClusters(
-    ctx,
-    snapshot,
-    ox,
-    oy,
-    zoom,
-    isDebugMode,
-    playerCloak,
-    phantomCloak,
-    /* isDebugCloak */ isDebugMode,
-    momentumTrail,
-    graphicsQuality,
-    playerSpriteBrightness,
-  );
-  if (playerForSunrayDust !== null) {
-    tickPlayerRocketChargeParticles(
-      playerForSunrayDust.renderPositionXWorld,
-      playerForSunrayDust.renderPositionYWorld,
-      playerForSunrayDust.velocityXWorld,
-      playerForSunrayDust.velocityYWorld,
-      playerForSunrayDust.isRocketBoostedFlag === 1,
-      FIXED_DT_MS * 0.001,
-    );
-    drawPlayerRocketChargeParticles(ctx, ox, oy, zoom);
-  }
-  renderSnakes(ctx, snapshot, ox, oy, zoom, isDebugMode);
+  renderClusters(ctx, snapshot, ox, oy, zoom, isDebugMode, playerCloak, phantomCloak, /* isDebugCloak */ isDebugMode);
   renderRadiantTether(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderRadiantWeb(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderDustConstellations(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderOrbitalDustCores(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderDustBlockMimics(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderDustWeaverArchitects(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderVoidSingularities(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderDustLeeches(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderGrappleCarryBlocks(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  renderGrapple(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_ENTITIES);
-
-  // ── Bloom glow pass (skipped entirely on low quality) ────────────────────
-  if (qc.isBloomEnabled) {
-    drawGrappleBloom(bloomSystem, snapshot, ox, oy, zoom);
-    drawParticleGlow(bloomSystem, snapshot, ox, oy, zoom);
-    // Decoration bloom — capped by quality tier and viewport-culled so only
-    // visible decorations submit glow circles.
-    addDecorationBloom(
-      bloomSystem, cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL, nowMs,
-      qc.maxDecorationBloomCount, virtualWidthPx, virtualHeightPx,
-    );
+  renderGrapple(ctx, snapshot, ox, oy, zoom);
+  drawGrappleBloom(bloomSystem, snapshot, ox, oy, zoom);
+  drawParticleGlow(bloomSystem, snapshot, ox, oy, zoom);
+  // Decoration bloom — always added (even outside DarkRoom) so moss/mushrooms
+  // visibly glow with the atmospheric bloom pass on any lighting setting.
+  // HIGH_WATER_GLOW_GUARD_ENABLED: when true and decoration count exceeds
+  // HIGH_WATER_DECORATION_BLOOM_LIMIT, only viewport-visible decorations are
+  // processed (viewport sx/sy AABB check).  Disabled by default — see DECISIONS.md.
+  if (HIGH_WATER_GLOW_GUARD_ENABLED && cachedDecorations.length > HIGH_WATER_DECORATION_BLOOM_LIMIT) {
+    // TODO: filter cachedDecorations to viewport-visible subset before calling addDecorationBloom.
   }
+  addDecorationBloom(bloomSystem, cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL, nowMs);
 
   // Tunnel darkness overlays
   drawTunnelDarkness(ctx, currentRoom, ox, oy, zoom);
 
-  // (Preview bubble glow removed in BUILD 277 — the blue growing glow near
-  //  transitions was visually distracting and is replaced by proper ambient-
-  //  depth shading on edge and facing-edge tiles.)
-
-  // ── Atmospheric effects (dust, debris) ──────────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_DUST);
   environmentalDust.render(ctx, ox, oy, zoom, isDebugMode);
-  atmosphericLightDust.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  guideDustPathRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   skidDebris.render(ctx, ox, oy, zoom);
-  crumbleDebris.render(ctx, ox, oy, zoom);
-  crackedBlockShatter.render(ctx, ox, oy, zoom);
-  breakEffects.render(ctx, ox, oy, zoom);
-  weakWallJumpDebris.render(ctx, ox, oy, zoom);
-  // Falling block groups — tiles + dust effects
-  if (world.fallingBlockGroups.length > 0) {
-    renderFallingBlocks(ctx, world, ox, oy, zoom, r.world.dtMs, fallingBlockDust, isDebugMode, getActiveProceduralMaterial(), r.renderAlpha, r.prevFallingBlockOffsetY);
-  }
-  renderZipMoveBlocks(ctx, world, ox, oy, zoom, qc.isBloomEnabled);
-  // Pixel-material particles (falling sand) — crisp one-native-pixel squares.
-  renderPixelMaterials(ctx, world, ox, oy, zoom);
-  // Dev-only diagnostics: occupied/active/sleeping counters + wind-impulse
-  // visualization (center, radius, direction, short fade). Disabled outside
-  // debug mode; see render/pixelMaterials/pixelMaterialDebugRenderer.ts.
-  if (isDebugMode) renderPixelMaterialDebug(ctx, world, ox, oy, zoom);
-  // Independently toggleable "Air Currents" overlay — off by default, only
-  // does any work when both debug mode and its own pause-menu checkbox are on.
-  if (isDebugMode && getAirCurrentsDebugEnabled()) {
-    renderAirCurrentsDebug(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  }
-  if (isDebugMode && world.timeStopFieldCount > 0) {
-    renderTimeStopFieldDebug(ctx, world, ox, oy, zoom);
-  }
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_DUST);
 
   // Save tombs (sprite + swirling/falling dust particles)
-  skillTombRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
+  skillTombRenderer.render(ctx, ox, oy, zoom);
 
   // Skill tombs — background particles (behind sprite), sprite, then foreground particles
-  skillTombEffectRenderer.renderBehind(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  skillTombEffectRenderer.renderSprite(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
-  skillTombEffectRenderer.renderFront(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
+  skillTombEffectRenderer.renderBehind(ctx, ox, oy, zoom);
+  skillTombEffectRenderer.renderSprite(ctx, ox, oy, zoom);
+  skillTombEffectRenderer.renderFront(ctx, ox, oy, zoom);
 
-  // ── Collectibles (dust containers, dust swarms, lambda anchors) ──────────
-  renderRoomCollectibles(r, ctx, ox, oy, zoom, nowMs, virtualWidthPx, virtualHeightPx);
+  // Dust containers (collectibles)
+  if (isDustContainerSpriteLoaded) {
+    const roomDustContainers = currentRoom.dustContainers ?? [];
+    const bobOffsetWorld = Math.sin(nowMs * 0.0032) * 1.5;
+    for (let i = 0; i < roomDustContainers.length; i++) {
+      const pickupKey = `${currentRoom.id}:${i}`;
+      if (collectedDustContainerKeySet.has(pickupKey)) continue;
 
-  // ── Particles ─────────────────────────────────────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_PARTICLES);
-  // When WebGL is available it handles Fluid background particles; all other
-  // gameplay-relevant particles are drawn by renderPixelLockedDust() on the
-  // virtual canvas so they appear crisp and pixel-locked before upscaling.
-  // When WebGL is unavailable, renderParticles() handles Fluid (soft fallback)
-  // and then also delegates to renderPixelLockedDust() internally.
+      const dc = roomDustContainers[i];
+      const dx = (dc.xBlock + 0.5) * BLOCK_SIZE_MEDIUM;
+      const dy = (dc.yBlock + 0.5) * BLOCK_SIZE_MEDIUM + bobOffsetWorld;
+      const drawSize = DUST_CONTAINER_SIZE_WORLD * zoom;
+      ctx.drawImage(
+        dustContainerSprite,
+        dx * zoom + ox - drawSize * 0.5,
+        dy * zoom + oy - drawSize * 0.5,
+        drawSize,
+        drawSize,
+      );
+    }
+  }
+
+  // Particles drawn on top of all game layers (Canvas 2D fallback only —
+  // WebGL renders to its own offscreen canvas at virtual resolution)
   if (!webglRenderer.isAvailable) {
     renderParticles(ctx, snapshot, ox, oy, zoom);
-  } else {
-    // WebGL path: gameplay particles → pixel-locked Canvas 2D renderer.
-    renderPixelLockedDust(ctx, snapshot, ox, oy, zoom);
   }
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_PARTICLES);
 
   // ── Dark room overlay (applied last, inside the room clip) ───────────────
   // Covers the entire room with a near-opaque darkness layer, then "punches"
   // radial light holes at every light source so only illuminated areas show.
   // The bloom pass (composited later on the device canvas) adds atmospheric
   // glow on top of the darkness, making light sources feel warm and radiant.
-  // Light collection and overlay rendering extracted to gameDarkRoomLighting.ts.
   if (isDarkRoom) {
-    renderDarkRoomLighting(r, qc);
+    const lights = collectDecorationLights(cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL);
+
+    // ── Authored local light sources (see RoomLightSourceDef) ──────────────
+    // Designer-placed lights are serialised in `RoomDef.lightSources`.  When
+    // the room is in DarkRoom mode they punch additional holes in the
+    // darkness mask just like decoration lights.  Brightness (0-100%) is
+    // mapped onto both the inner-radius fraction (brighter → wider fully-lit
+    // core) and a radius scalar so low-brightness lights feel dimmer.
+    //
+    // NOTE: colour is stored on RoomLightSourceDef but the DarkRoom overlay
+    // currently uses an achromatic darkness mask, so colour is not applied
+    // here yet.  This is consistent with the existing decoration-light path
+    // and matches phase-1 scope (see task spec §9).  The colour data is
+    // preserved end-to-end for a future coloured-light pass.
+    if (currentRoom.lightSources) {
+      for (const ls of currentRoom.lightSources) {
+        const bPct = Math.max(0, Math.min(100, ls.brightnessPct)) / 100;
+        if (bPct <= 0) continue;
+        const worldX = (ls.xBlock + 0.5) * BLOCK_SIZE_SMALL;
+        const worldY = (ls.yBlock + 0.5) * BLOCK_SIZE_SMALL;
+        const radiusWorld = Math.max(1, ls.radiusBlocks) * BLOCK_SIZE_SMALL;
+        // Brightness 100% → full radius + wide core; 25% → half radius + tiny core.
+        const radiusPx = radiusWorld * zoom * (0.5 + 0.5 * bPct);
+        const innerFraction = 0.1 + 0.3 * bPct;
+        lights.push({
+          xPx: worldX * zoom + ox,
+          yPx: worldY * zoom + oy,
+          radiusPx,
+          innerFraction,
+        });
+      }
+    }
+
+    // Player emits a personal lantern-sized light.
+    const playerSnap = snapshot.clusters.find(c => c.isPlayerFlag === 1 && c.isAliveFlag === 1);
+    if (playerSnap !== undefined) {
+      lights.push({
+        xPx:          playerSnap.positionXWorld * zoom + ox,
+        yPx:          playerSnap.positionYWorld * zoom + oy,
+        radiusPx:     38 * zoom,
+        innerFraction: 0.18,
+      });
+    }
+
+    // Alive Physical (golden) dust particles each contribute a small light.
+    const MAX_PARTICLE_LIGHTS = 24;
+    let particleLightCount = 0;
+    const parts = snapshot.particles;
+    for (let pi = 0; pi < parts.particleCount && particleLightCount < MAX_PARTICLE_LIGHTS; pi++) {
+      if (parts.isAliveFlag[pi] === 0) continue;
+      if (parts.kindBuffer[pi] !== ParticleKind.Physical) continue;
+      lights.push({
+        xPx:          parts.positionXWorld[pi] * zoom + ox,
+        yPx:          parts.positionYWorld[pi] * zoom + oy,
+        radiusPx:     11 * zoom,
+        innerFraction: 0.05,
+      });
+      particleLightCount++;
+    }
+
+    darkRoomOverlay.render(ctx, lights);
   }
 
-  // ── Scene-light visibility-polygon lighting pass ─────────────────────────
-  // Renders designer-placed scene lights (softGlow / spotlight / floodlight /
-  // backlight / sunray) with optional raytraced shadow polygons.
-  renderSceneLightingPass(ctx, currentRoom, snapshot, FIXED_DT_MS * 0.001, ox, oy, zoom, virtualWidthPx, virtualHeightPx, nowMs);
+  // End room clip before any HUD/screen-space overlays are drawn.
+  ctx.restore();
 
-  // ── The Herald — Void Sphere gravitational-lensing distortion ────────────
-  // Applied last (reads back everything drawn above: tiles, walls, entities,
-  // particles) so the warp visibly bends the whole scene around each sphere.
-  // The sphere sprite is redrawn crisply on top afterward so it never looks
-  // smeared by its own distortion pass. No-ops cheaply when no spheres exist.
-  const voidSphereCircles = collectVoidSphereScreenCircles(snapshot, ox, oy, zoom);
-  if (voidSphereCircles.length > 0) {
-    applyVoidLensDistortion(ctx, voidSphereCircles, virtualWidthPx, virtualHeightPx);
-    renderVoidSpheres(ctx, snapshot, ox, oy, zoom);
+  // Debug-only HUD and room name
+  if (isDebugMode) {
+    renderHudOverlay(ctx, hudState);
+
+    // ── Room name banner (top-center) ──────────────────────────────────────
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = '7px monospace';
+    const roomLabel = currentRoom.name;
+    const labelW = ctx.measureText(roomLabel).width;
+    ctx.fillText(roomLabel, (virtualWidthPx - labelW) / 2, 22);
   }
 
-  // ── TimeStop Field inversion compositor (experimental) ───────────────────
-  // Applied last, after everything else in the room — inverts the rendered
-  // scene outside the player's active connected field. Never touches HUD/UI
-  // (drawn after ctx.restore() below, outside the room clip).
-  if (world.timeStopField.visualIntensity > 0) {
-    applyTimeStopInversionCompositor(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx, qc);
-  }
-  } finally {
-    // End room clip before any HUD/screen-space overlays are drawn. Runs
-    // even on error so the clip never leaks into future frames.
-    ctx.restore();
-  }
-
-  // ── Void edge overlay (noisy black intrusion along exposed room boundaries) ─
-  renderVoidEdge(ctx, currentRoom, ox, oy, zoom);
-
-  // ── HUD layers (debug overlay, health bar, dust display, enemy bars, combat text) ──
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_HUD);
-  renderGameHud(r, nowMs);
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_HUD);
-
-  // ── Upscale virtual canvas to device canvas ────────────────────────────
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_UPSCALE);
-  resetCanvasPass(deviceCtx, canvas.width, canvas.height, false);
-  deviceCtx.drawImage(virtualCanvas, 0, 0, canvas.width, canvas.height);
-  // Composite WebGL particle canvas on top (also at virtual resolution)
-  if (webglRenderer.isAvailable) {
-    deviceCtx.save();
-    deviceCtx.beginPath();
-    deviceCtx.rect(
-      roomScreenXPx * (canvas.width / virtualWidthPx),
-      roomScreenYPx * (canvas.height / virtualHeightPx),
-      roomScreenWidthPx * (canvas.width / virtualWidthPx),
-      roomScreenHeightPx * (canvas.height / virtualHeightPx),
-    );
-    deviceCtx.clip();
-    deviceCtx.drawImage(webglRenderer.canvas, 0, 0, canvas.width, canvas.height);
-    deviceCtx.restore();
-  }
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_UPSCALE);
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BLOOM);
-  deviceCtx.save();
-  deviceCtx.beginPath();
-  deviceCtx.rect(
-    roomScreenXPx * (canvas.width / virtualWidthPx),
-    roomScreenYPx * (canvas.height / virtualHeightPx),
-    roomScreenWidthPx * (canvas.width / virtualWidthPx),
-    roomScreenHeightPx * (canvas.height / virtualHeightPx),
-  );
-  deviceCtx.clip();
-  bloomSystem.compositeToDevice(deviceCtx, canvas.width, canvas.height);
-  deviceCtx.restore();
-  if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_BLOOM);
-  drawOffensiveDustOutlineOverlay(deviceCtx, snapshot, canvas.width, canvas.height, ox, oy, zoom);
-
-  // ── Dust selection wheel (device-canvas overlay, unclipped by room bounds,
-  //     drawn on top of world content directly at full device resolution so
-  //     the icon artwork and labels read as crisp/HD rather than inheriting
-  //     the game's native pixel-art blockiness). No-ops cheaply when the
-  //     wheel is fully closed.
+  // ── Player health bar in HUD (top-left, above dust display) ─────────────
   {
-    const wheelPlayer = world.clusters[0];
-    if (wheelPlayer !== undefined) {
-      renderDustSelectionWheel(
-        deviceCtx, dustWheel,
-        wheelPlayer.positionXWorld, wheelPlayer.positionYWorld,
-        ox, oy, zoom,
-        canvas.width / virtualWidthPx, canvas.height / virtualHeightPx,
-      );
+    const playerForHealth = world.clusters[0];
+    if (playerForHealth !== undefined && playerForHealth.isAliveFlag === 1) {
+      const healthFraction = playerForHealth.healthPoints / playerForHealth.maxHealthPoints;
+      const isCritical = healthFraction < HEALTH_THRESHOLD_CRITICAL_FRACTION;
+      const isDanger   = healthFraction < HEALTH_THRESHOLD_DANGER_FRACTION;
+
+      const barX = HUD_HEALTH_BAR_X_PX;
+      const barY = HUD_HEALTH_BAR_Y_PX;
+      const barW = HUD_HEALTH_BAR_WIDTH_PX;
+      const barH = HUD_HEALTH_BAR_HEIGHT_PX;
+      const fillW = barW * Math.max(0, healthFraction);
+
+      ctx.save();
+
+      // ── Outer danger glow at critical health (pulsing shadow) ────────────
+      if (isCritical) {
+        const pulseT = (Math.sin(nowMs * 0.008) + 1) * 0.5;  // 0..1 at ~0.76 Hz
+        ctx.shadowBlur  = 5 + 7 * pulseT;
+        ctx.shadowColor = `rgba(255,25,25,${0.55 + 0.45 * pulseT})`;
+      } else if (isDanger) {
+        ctx.shadowBlur  = 3;
+        ctx.shadowColor = 'rgba(255,140,0,0.45)';
+      }
+
+      // ── Gold outline — 1 px outside the bar bounds ────────────────────────
+      ctx.strokeStyle = '#c89820';
+      ctx.lineWidth   = 1;
+      // strokeRect draws centered on the path, so offset by 0.5 px to align
+      // precisely to the pixel grid.
+      ctx.strokeRect(barX - 1.5, barY - 1.5, barW + 3, barH + 3);
+
+      ctx.shadowBlur = 0;  // reset before fill draws
+
+      // ── Dark background ────────────────────────────────────────────────────
+      ctx.fillStyle = 'rgba(0,0,0,0.78)';
+      ctx.fillRect(barX, barY, barW, barH);
+
+      // ── Health fill — color escalates with urgency ─────────────────────────
+      let fillColor: string;
+      if (isCritical) {
+        // Pulsing between deep red and bright red for maximum urgency.
+        const pulseT = (Math.sin(nowMs * 0.008) + 1) * 0.5;
+        const rHigh  = Math.round(210 + 45 * pulseT);
+        fillColor = `rgb(${rHigh},25,25)`;
+      } else if (isDanger) {
+        fillColor = '#e07000';  // amber-orange warning
+      } else {
+        fillColor = '#00b866';  // rich green — healthy
+      }
+
+      if (fillW > 0) {
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(barX, barY, fillW, barH);
+
+        // ── Inner shine: 1 px lighter strip along the top edge ───────────────
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(barX, barY, fillW, 1);
+
+        // ── Subtle dividers at 25 / 50 / 75 % so fractions read at a glance ──
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let q = 1; q <= 3; q++) {
+          const divX = barX + barW * (q * 0.25);
+          if (divX < barX + fillW) {
+            ctx.fillRect(divX - 0.5, barY + 1, 1, barH - 1);
+          }
+        }
+      }
+
+      // ── Thin dark inner border (gives a recessed look) ────────────────────
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth   = 0.5;
+      ctx.strokeRect(barX + 0.5, barY + 0.5, barW - 1, barH - 1);
+
+      ctx.restore();
     }
   }
 
-  // ── Device-canvas overlays (touch joystick, debug control hints) ─────────
-  renderDeviceOverlay(r);
+  // ── Dust container display (top-left, below health bar) ───────────────────
+  const dustCount = getPlayerDustCount();
+  const fullContainers = Math.floor(dustCount / DUST_PARTICLES_PER_CONTAINER);
+  const partialDust = dustCount % DUST_PARTICLES_PER_CONTAINER;
+  const dustSquareSize = 8;
+  const dustPadding = 2;
+  const dustStartX = 8;
+  const dustStartY = HUD_HEALTH_BAR_Y_PX + HUD_HEALTH_BAR_HEIGHT_PX + HUD_HEALTH_DUST_GAP_PX;
 
-  // ── Teleport flash overlay ───────────────────────────────────────────────
-  // Golden flash when the player teleports back to a Lambda Anchor.
-  // Rendered on the virtual canvas; decays over ~12 frames at 60 fps.
-  if (teleportFlashAlpha > 0) {
-    renderTeleportFlash(ctx, virtualWidthPx, virtualHeightPx, teleportFlashAlpha);
-    setTeleportFlashAlpha(Math.max(0, teleportFlashAlpha - 1 / 12));
+  ctx.save();
+  for (let i = 0; i < fullContainers + (partialDust > 0 ? 1 : 0); i++) {
+    const squareX = dustStartX + i * (dustSquareSize + dustPadding);
+    const isPartial = i === fullContainers;
+    const quadrantsActive = isPartial ? partialDust : DUST_PARTICLES_PER_CONTAINER;
+
+    // Draw square background
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(squareX, dustStartY, dustSquareSize, dustSquareSize);
+
+    // Draw quadrants (2x2 grid) - direct indexing to avoid allocation
+    const halfSize = dustSquareSize / 2;
+
+    for (let q = 0; q < quadrantsActive; q++) {
+      const qx = (q % 2) * halfSize;
+      const qy = Math.floor(q / 2) * halfSize;
+      ctx.fillStyle = 'rgba(212,168,75,0.9)'; // golden dust color
+      ctx.fillRect(squareX + qx + 0.5, dustStartY + qy + 0.5, halfSize - 1, halfSize - 1);
+    }
+
+    // Draw border
+    ctx.strokeStyle = 'rgba(212,168,75,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(squareX + 0.5, dustStartY + 0.5, dustSquareSize - 1, dustSquareSize - 1);
+  }
+  ctx.restore();
+
+  // ── Health bar / combat-text event detection ──────────────────────────────
+  // Detect BLOCKED events (armor absorbed a full hit) and spawn floater text.
+  {
+    const currentBlockedTick = world.lastPlayerBlockedTick;
+    if (currentBlockedTick !== prevLastPlayerBlockedTick.value && currentBlockedTick >= 0) {
+      prevLastPlayerBlockedTick.value = currentBlockedTick;
+      const player = world.clusters[0];
+      if (player !== undefined && player.isAliveFlag === 1) {
+        combatText.spawnBlocked(player.positionXWorld, player.positionYWorld, nowMs);
+      }
+    }
   }
 
-  // Finalise the profiler — updates EMA-smoothed values used by next frame's overlay.
-  if (renderProfiler !== undefined) renderProfiler.endFrame();
+  // ── Enemy health bar display (only when damaged) ──────────────────────────
+  const healthBarDisplayTicks = Math.floor(HEALTH_BAR_DISPLAY_MS / FIXED_DT_MS);
+  // Hoist constant canvas state outside the per-enemy loop to avoid redundant
+  // state-change calls and one save/restore pair per live enemy.
+  ctx.save();
+  ctx.strokeStyle = '#a07800';
+  ctx.lineWidth   = 0.5;
+  for (let ci = 0; ci < world.clusters.length; ci++) {
+    const cluster = world.clusters[ci];
+    if (cluster.isAliveFlag === 0) continue;
+
+    const prevHealth = prevHealthMap.get(cluster.entityId) ?? cluster.maxHealthPoints;
+    const healthDelta = prevHealth - cluster.healthPoints;
+
+    // Spawn damage floater when health decreased for any cluster.
+    if (healthDelta > 0) {
+      if (cluster.isPlayerFlag === 1) {
+        // Player was damaged — spawn urgent red floater above player.
+        combatText.spawnDamage(
+          cluster.positionXWorld,
+          cluster.positionYWorld - cluster.halfHeightWorld,
+          healthDelta,
+          1,
+          nowMs,
+        );
+      } else {
+        // Enemy was damaged — spawn gold floater above the enemy.
+        combatText.spawnDamage(
+          cluster.positionXWorld,
+          cluster.positionYWorld - cluster.halfHeightWorld,
+          healthDelta,
+          0,
+          nowMs,
+        );
+      }
+    }
+
+    // Update tracked health for next frame.
+    prevHealthMap.set(cluster.entityId, cluster.healthPoints);
+
+    // Player health bar is in the HUD; skip per-character bar for player.
+    if (cluster.isPlayerFlag === 1) continue;
+
+    // Check for health changes to trigger enemy health bar display.
+    if (healthDelta > 0) {
+      healthBarDisplayUntilTick.set(cluster.entityId, world.tick + healthBarDisplayTicks);
+    }
+
+    // Only show health bar if recently damaged (tick-based).
+    const displayUntilTick = healthBarDisplayUntilTick.get(cluster.entityId) ?? 0;
+    if (world.tick > displayUntilTick) continue;
+
+    const healthFraction = cluster.healthPoints / cluster.maxHealthPoints;
+    const barWidth  = 24;
+    const barHeight = 3;
+    const barX = cluster.positionXWorld * zoom + ox - barWidth / 2;
+    const barY = (cluster.positionYWorld - cluster.halfHeightWorld - 5) * zoom + oy;
+
+    // Thin gold outline
+    ctx.strokeRect(barX - 0.5, barY - 0.5, barWidth + 1, barHeight + 1);
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(barX, barY, barWidth, barHeight);
+    // Health fill — red for enemies
+    const enemyFillW = barWidth * Math.max(0, healthFraction);
+    if (enemyFillW > 0) {
+      ctx.fillStyle = '#cc3333';
+      ctx.fillRect(barX, barY, enemyFillW, barHeight);
+      // Shine
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(barX, barY, enemyFillW, 1);
+    }
+  }
+  ctx.restore();
+
+  // ── Floating combat text (damage numbers, BLOCKED) ────────────────────────
+  combatText.render(ctx, ox, oy, zoom, nowMs);
+
+  // ── Upscale virtual canvas to device canvas ────────────────────────────
+  deviceCtx.imageSmoothingEnabled = false;
+  deviceCtx.drawImage(virtualCanvas, 0, 0, canvas.width, canvas.height);
+  // Composite WebGL particle canvas on top (also at virtual resolution)
+  if (webglRenderer.isAvailable) {
+    deviceCtx.drawImage(webglRenderer.canvas, 0, 0, canvas.width, canvas.height);
+  }
+  bloomSystem.compositeToDevice(deviceCtx, canvas.width, canvas.height);
+  drawOffensiveDustOutlineOverlay(deviceCtx, snapshot, canvas.width, canvas.height, ox, oy, zoom);
+
+  // ── Touch joystick (drawn on device canvas in screen space) ───────────
+  if (inputState.isTouchJoystickActiveFlag === 1) {
+    const bx = inputState.touchJoystickBaseXPx;
+    const by = inputState.touchJoystickBaseYPx;
+    const joystickCurrentXPx = inputState.touchJoystickCurrentXPx;
+    const joystickCurrentYPx = inputState.touchJoystickCurrentYPx;
+
+    deviceCtx.save();
+    deviceCtx.beginPath();
+    deviceCtx.arc(bx, by, JOYSTICK_OUTER_RADIUS_PX, 0, Math.PI * 2);
+    deviceCtx.strokeStyle = 'rgba(0,207,255,0.35)';
+    deviceCtx.lineWidth = 2;
+    deviceCtx.stroke();
+    deviceCtx.fillStyle = 'rgba(0,207,255,0.08)';
+    deviceCtx.fill();
+
+    const joystickDx = joystickCurrentXPx - bx;
+    const joystickDy = joystickCurrentYPx - by;
+    const dist = Math.sqrt(joystickDx * joystickDx + joystickDy * joystickDy);
+    let thumbXPx = joystickCurrentXPx;
+    let thumbYPx = joystickCurrentYPx;
+    if (dist > JOYSTICK_OUTER_RADIUS_PX) {
+      thumbXPx = bx + (joystickDx / dist) * JOYSTICK_OUTER_RADIUS_PX;
+      thumbYPx = by + (joystickDy / dist) * JOYSTICK_OUTER_RADIUS_PX;
+    }
+
+    deviceCtx.beginPath();
+    deviceCtx.arc(thumbXPx, thumbYPx, JOYSTICK_INNER_RADIUS_PX, 0, Math.PI * 2);
+    deviceCtx.fillStyle = 'rgba(0,207,255,0.45)';
+    deviceCtx.fill();
+    deviceCtx.restore();
+  }
+
+  // ── Control hints (debug only, drawn on device canvas) ──────────────────
+  if (isDebugMode) {
+    const controlHintText = IS_TOUCH_DEVICE
+      ? 'L.thumb L/R=walk  |  L.thumb up=jump  |  2nd finger tap=attack  |  2nd finger hold=block  |  TAP MENU to return'
+      : 'A/D=walk  |  W/Space/↑=jump  |  Shift=sprint  |  Click=attack  |  Hold=block  |  Hold Left Click=grapple  |  ESC=menu';
+    deviceCtx.fillStyle = 'rgba(255,255,255,0.3)';
+    deviceCtx.font = '12px monospace';
+    const hintWidthPx = deviceCtx.measureText(controlHintText).width;
+    deviceCtx.fillText(controlHintText, (canvas.width - hintWidthPx) / 2, canvas.height - 10);
+  }
 }

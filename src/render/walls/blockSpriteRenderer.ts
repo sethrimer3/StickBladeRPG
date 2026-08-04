@@ -13,78 +13,108 @@
  * assets via Vite's publicDir.  The image cache is module-level so each
  * sprite is loaded exactly once.
  *
- * Static wall content is split into 32×32-block chunks backed by small
- * offscreen canvases.  Only camera-visible chunks are blitted per frame;
- * dirty chunks (e.g. after a tile edit) are rebuilt on demand.  This avoids
- * single room-sized canvases that exceed browser memory limits for large rooms.
+ * No per-frame allocations in the hot draw path — the occupancy Set is
+ * cleared and rebuilt each call (acceptable given MAX_WALLS = 64).
  */
 
 import { WallSnapshot } from '../snapshot';
-import {
-  RoomChunkCache,
-  PrewarmChunkResult,
-  createChunkCacheOwnershipKey,
-} from './chunkRenderCache';
-import { CHUNK_SIZE_BLOCKS } from './chunkRenderCache';
-export type { ChunkCacheStats } from './chunkRenderCache';
-import {
-  getPrewarmWallLayout,
-  setPrewarmWallLayout,
-  getPrewarmWallCache,
-  getOrCreatePrewarmWallCache,
-  getPrewarmSnapshotRenderStateKey,
-  deletePrewarmEntry,
-  getPrewarmDummyCtx,
-} from './wallChunkPrewarmStore';
-import { computeRenderStateKey, type PrewarmAdoptResult, getCacheBundle } from './roomRenderCacheStore';
-// Re-export prewarm store management API so existing import paths continue to work.
-export {
-  evictPrewarmedWallChunks,
-  hasPrewarmedWallChunks,
-  listPrewarmedWallRoomIds,
-  getPrewarmWallRoomStats,
-  getPrewarmWallStats,
-} from './wallChunkPrewarmStore';
-import type { BlockTheme, LightingEffect, AmbientLightDirection, BlockSeamBlending } from '../../levels/roomDef';
+import type { BlockTheme, LightingEffect, AmbientLightDirection } from '../../levels/roomDef';
 import { indexToBlockTheme, WALL_THEME_DEFAULT_INDEX } from '../../levels/roomDef';
 import {
-  buildAmbientDarknessAlphas,
-  DEFAULT_DIRECTIONAL_BIAS,
-  DEFAULT_SIDE_EXPOSURE_STRENGTH,
-  DEFAULT_MINIMUM_WALL_LIGHT,
-  DEFAULT_FALLOFF_POWER,
-  DEFAULT_BACKGROUND_LIGHT_SPILL,
-  DEFAULT_SOLID_LIGHT_SOFTNESS,
-} from './ambientLightDepths';
-import {
-  BlockSpriteSet,
-  getBlockSpriteSet,
-  themeSupports2x2,
-  themeToProceduralMaterial,
-} from './blockSpriteSets';
-import {
-  CachedWallLayout,
-  wallTileKey,
-  getWallLayoutCache,
-  getCurrentWallLayout,
-  setPrebuiltWallLayout,
-} from './blockWallLayoutCache';
-import { renderSingleExtensionTileWithState } from './extensionTileRenderer';
-import { isFolderBasedTheme } from './folderBlockThemes';
-import {
-  type WallTilePassContext,
-  render2x2Pass,
-  render1x1Pass,
-  renderPlatformPass,
-  renderShapedWallPass,
-  renderHalfPillarPass,
-  renderSurfaceEdgeOverlayPass,
-  clearWallCellDiag,
-} from './wallTilePassRenderers';
-import { renderSeamOverlayPass } from './seamBlending';
+  getBlockSprite1x1,
+  getBlockSprite2x2,
+  getPlatformSprite1x1,
+  getRampSprite,
+} from './proceduralBlockSprite';
 
-// Re-export dark-blocker helpers so existing call-sites keep their import path.
-export { setActiveDarkAmbientBlockers, renderDarkAmbientBlockerOverlay } from './darkBlockerOverlay';
+// ── Sprite loading ──────────────────────────────────────────────────────────
+
+/** Module-level image cache — populated once, reused forever. */
+const _imageCache = new Map<string, HTMLImageElement>();
+
+function _loadImage(src: string): HTMLImageElement {
+  const cached = _imageCache.get(src);
+  if (cached !== undefined) return cached;
+  const img = new Image();
+  img.src = src;
+  _imageCache.set(src, img);
+  return img;
+}
+
+function isSpriteReady(img: HTMLImageElement): boolean {
+  return img.complete && img.naturalWidth > 0;
+}
+
+/** Sprite set for a single world theme. */
+interface BlockSpriteSet {
+  block:  HTMLImageElement;
+  single: HTMLImageElement;
+  edge:   HTMLImageElement;
+  corner: HTMLImageElement;
+  end:    HTMLImageElement;
+  vertex: HTMLImageElement;
+}
+
+// ── Block-theme sprite pre-loads ────────────────────────────────────────────
+
+// Brown Rock sprites (single flat sprite, no auto-tiling variants)
+const _brownRockSprite8 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_8x8.png');
+const _brownRockSprite16 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_16x16.png');
+const _brownRockSprite32 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_32x32.png');
+
+// Dirt sprites (edge/corner auto-tiling at 8x8)
+const _dirtBlockSprite = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8.png');
+const _dirtEdgeSprite  = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8_edge.png');
+const _dirtCornerSprite = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8_corner.png');
+const _dirtSprite16 = _loadImage('SPRITES/BLOCKS/dirt/dirt_16x16.png');
+
+/** Cache of loaded sprite sets keyed by worldNumber (for legacy world-number mode). */
+const _spriteSets = new Map<number, BlockSpriteSet>();
+
+/**
+ * Returns the sprite set for a given world number, loading on first access.
+ *
+ * W-0, W-1, W-2 use simple filenames (block.png, corner.png, …).
+ * W-3 through W-9 use prefixed filenames (world_N_block.png, …).
+ */
+function getBlockSpriteSet(worldNumber: number): BlockSpriteSet {
+  const cached = _spriteSets.get(worldNumber);
+  if (cached !== undefined) return cached;
+
+  const dir = `SPRITES/WORLDS/W-${worldNumber}/blocks`;
+  let sprites: BlockSpriteSet;
+  if (worldNumber === 0) {
+    sprites = {
+      block:  _brownRockSprite8,
+      single: _brownRockSprite8,
+      edge:   _brownRockSprite8,
+      corner: _brownRockSprite8,
+      end:    _brownRockSprite8,
+      vertex: _brownRockSprite8,
+    };
+  } else if (worldNumber <= 2) {
+    sprites = {
+      block:  _loadImage(`${dir}/block.png`),
+      single: _loadImage(`${dir}/single.png`),
+      edge:   _loadImage(`${dir}/edge.png`),
+      corner: _loadImage(`${dir}/corner.png`),
+      end:    _loadImage(`${dir}/end.png`),
+      vertex: _loadImage(`${dir}/vertex.png`),
+    };
+  } else {
+    const prefix = `world_${worldNumber}_block`;
+    sprites = {
+      block:  _loadImage(`${dir}/${prefix}.png`),
+      single: _loadImage(`${dir}/${prefix}_single.png`),
+      edge:   _loadImage(`${dir}/${prefix}_edge.png`),
+      corner: _loadImage(`${dir}/${prefix}_corner.png`),
+      end:    _loadImage(`${dir}/${prefix}_end.png`),
+      vertex: _loadImage(`${dir}/${prefix}_vertex.png`),
+    };
+  }
+  _spriteSets.set(worldNumber, sprites);
+  return sprites;
+}
 
 /** Active sprite set for world-number mode. */
 let _sprites: BlockSpriteSet = getBlockSpriteSet(0);
@@ -95,7 +125,6 @@ let _activeWorldNumber = 0;
  * world-number-based sprite selection.
  */
 let _activeBlockTheme: BlockTheme | null = null;
-
 let _activeLightingEffect: LightingEffect = 'Ambient';
 let _activeAmbientDirection: AmbientLightDirection = 'omni';
 let _activeRoomWidthBlocks = 0;
@@ -112,55 +141,11 @@ let _activeAmbientBlockerKeys: ReadonlySet<string> = new Set();
  */
 let _activeAmbientBlockerSig = '';
 
-/** Returns the canonical active blocker set without allocating a per-frame copy. */
-export function getActiveAmbientBlockerKeys(): ReadonlySet<string> {
-  return _activeAmbientBlockerKeys;
-}
-
-// ── Directional-lighting blend parameters ────────────────────────────────────
-let _activeDirectionalBias       = DEFAULT_DIRECTIONAL_BIAS;
-let _activeSideExposureStrength  = DEFAULT_SIDE_EXPOSURE_STRENGTH;
-let _activeMinimumWallLight      = DEFAULT_MINIMUM_WALL_LIGHT;
-let _activeFalloffPower          = DEFAULT_FALLOFF_POWER;
-let _activeBackgroundLightSpill  = DEFAULT_BACKGROUND_LIGHT_SPILL;
-let _activeSolidLightSoftness    = DEFAULT_SOLID_LIGHT_SOFTNESS;
-
-// ── Block seam blending ───────────────────────────────────────────────────────
-let _activeSeamBlending: BlockSeamBlending = 'off';
-let _seamBlendDebug = false;
-
-/**
- * Set the active block seam blending mode.
- * Invalidates the chunk cache so the new overlays render immediately.
- */
-export function setActiveSeamBlending(mode: BlockSeamBlending): void {
-  if (_activeSeamBlending === mode) return;
-  _activeSeamBlending = mode;
-  _invalidateBakedWallCanvas();
-}
-
-/** Returns the current seam blending mode. */
-export function getActiveSeamBlending(): BlockSeamBlending {
-  return _activeSeamBlending;
-}
-
-/**
- * Toggle debug seam visualization.
- * When enabled, seam edges are highlighted with colored 1-pixel lines
- * (green=N, orange=E, cyan=S, magenta=W) instead of organic overlays.
- */
-export function setSeamBlendingDebug(enabled: boolean): void {
-  if (_seamBlendDebug === enabled) return;
-  _seamBlendDebug = enabled;
-  _invalidateBakedWallCanvas();
-}
-
 /**
  * Set the active world number for block sprite rendering.
  * Call this when the player enters a room without an explicit blockTheme.
  */
 export function setActiveBlockSpriteWorld(worldNumber: number): void {
-  if (_activeWorldNumber === worldNumber && _activeBlockTheme === null) return;
   _activeWorldNumber = worldNumber;
   _sprites = getBlockSpriteSet(worldNumber);
   _activeBlockTheme = null;
@@ -172,45 +157,8 @@ export function setActiveBlockSpriteWorld(worldNumber: number): void {
  * Overrides world-number-based sprite selection until setActiveBlockSpriteWorld is called.
  */
 export function setActiveBlockSpriteTheme(theme: BlockTheme): void {
-  if (_activeBlockTheme === theme) return;
   _activeBlockTheme = theme;
   _invalidateBakedWallCanvas();
-}
-
-/**
- * Returns the procedural material name currently active for block rendering,
- * based on the active block theme and world number set via
- * {@link setActiveBlockSpriteTheme} / {@link setActiveBlockSpriteWorld}.
- *
- * Returns null when no procedural material applies (e.g. folder-based themes,
- * legacy brownRock, dirt, or non-zero world numbers without an explicit theme).
- *
- * Used by falling block renderers that need to match the room's block visuals.
- */
-export function getActiveProceduralMaterial(): string | null {
-  return themeToProceduralMaterial(_activeBlockTheme, _activeWorldNumber);
-}
-
-/**
- * Returns the active folder-based block theme ID (e.g. `'grayStone'`), or
- * `null` when no explicit theme is set for the room (legacy per-world sprite
- * sets) or the active theme is not folder-based.
- *
- * Used by standalone hazard renderers (e.g. spikes) that need to visually
- * match the room's block theme without going through the full wall-chunk
- * rendering pipeline.
- */
-export function getActiveFolderBlockThemeId(): string | null {
-  return (_activeBlockTheme !== null && isFolderBasedTheme(_activeBlockTheme)) ? _activeBlockTheme : null;
-}
-
-/**
- * Returns the active world number, used as the deterministic-variant seed by
- * standalone hazard renderers that need to match block-sprite variation
- * selection (e.g. spikes via `getFolderThemeBaseUrl`).
- */
-export function getActiveWorldNumberForSprites(): number {
-  return _activeWorldNumber;
 }
 
 /**
@@ -227,12 +175,6 @@ export function getActiveWorldNumberForSprites(): number {
  * @param ambientBlockers  Optional set of `"col,row"` tile keys that are
  *                         opaque to ambient-light propagation. Authored data
  *                         from {@link import('../../levels/roomDef').RoomAmbientLightBlockerDef}.
- * @param directionalBias       0 = broad ambient, 1 = strict spotlight.
- * @param sideExposureStrength  Attenuation for side/bottom air neighbours.
- * @param minimumWallLight      Brightness floor for air-adjacent tiles (0–1).
- * @param falloffPower          Exponent on the raw exposure value.
- * @param backgroundLightSpill  Optional warm-glow spill into air/background (0–1, default 0).
- * @param solidLightSoftness    Softness of per-tile darkness overlay (0 = crisp, default 0).
  */
 export function setActiveBlockLighting(
   effect: LightingEffect,
@@ -240,12 +182,6 @@ export function setActiveBlockLighting(
   roomHeightBlocks: number,
   direction?: AmbientLightDirection,
   ambientBlockers?: ReadonlySet<string>,
-  directionalBias?: number,
-  sideExposureStrength?: number,
-  minimumWallLight?: number,
-  falloffPower?: number,
-  backgroundLightSpill?: number,
-  solidLightSoftness?: number,
 ): void {
   _activeLightingEffect = effect;
   _activeRoomWidthBlocks = roomWidthBlocks;
@@ -274,32 +210,550 @@ export function setActiveBlockLighting(
     _activeAmbientBlockerSig = arr.join(';');
   }
 
-  _activeDirectionalBias      = directionalBias      ?? DEFAULT_DIRECTIONAL_BIAS;
-  _activeSideExposureStrength = sideExposureStrength  ?? DEFAULT_SIDE_EXPOSURE_STRENGTH;
-  _activeMinimumWallLight     = minimumWallLight      ?? DEFAULT_MINIMUM_WALL_LIGHT;
-  _activeFalloffPower         = falloffPower          ?? DEFAULT_FALLOFF_POWER;
-  _activeBackgroundLightSpill = backgroundLightSpill  ?? DEFAULT_BACKGROUND_LIGHT_SPILL;
-  _activeSolidLightSoftness   = solidLightSoftness    ?? DEFAULT_SOLID_LIGHT_SOFTNESS;
-
   _invalidateBakedWallCanvas();
 }
 
-/** Returns the current background-light-spill strength (used by the render pass). */
-export function getActiveBackgroundLightSpill(): number {
-  return _activeBackgroundLightSpill;
+function _getBrownRockSpriteForBlockSize(blockSizePx: number): HTMLImageElement {
+  if (blockSizePx >= 32) return _brownRockSprite32;
+  if (blockSizePx >= 16) return _brownRockSprite16;
+  return _brownRockSprite8;
 }
 
-/** Returns the current solid-light softness value (reserved for future blur pass). */
-export function getActiveSolidLightSoftness(): number {
-  return _activeSolidLightSoftness;
+function _getDirtSprite(variant: TileVariant): HTMLImageElement {
+  switch (variant) {
+    case 'edge':   return _dirtEdgeSprite;
+    case 'corner': return _dirtCornerSprite;
+    default:       return _dirtBlockSprite;
+  }
 }
-
-// ── Per-frame reusable collections (pre-allocated to avoid GC pressure) ───────
 
 /**
- * Returns the per-tile darkness-alpha map for the current lighting
- * configuration, memoised per `(roomSize × direction × blockerSet × params)` so
- * the common "camera panning, nothing changed" path costs one Map lookup.
+ * Returns the 2×2 full sprite for themes that use a single dedicated 16×16
+ * texture (brownRock, dirt).
+ */
+function _getFullSpriteFor2x2(theme: BlockTheme | null, blockSizePx: number): HTMLImageElement | null {
+  if (blockSizePx !== 8) return null;
+  if (theme === 'brownRock') return _brownRockSprite16;
+  if (theme === 'dirt') return _dirtSprite16;
+  return null;
+}
+
+/** Returns true if the active theme supports 2×2 full-sprite rendering. */
+function _themeSupports2x2(theme: BlockTheme | null, blockSizePx: number): boolean {
+  if (blockSizePx !== 8) return false;
+  return theme === 'brownRock' || theme === 'dirt' || theme === 'blackRock';
+}
+
+/**
+ * Returns the sprite image for a non-blackRock block cell (brownRock, dirt)
+ * based on the auto-tile variant.
+ */
+function _getSpriteForLegacyTheme(
+  theme: BlockTheme,
+  variant: TileVariant,
+  blockSizePx: number,
+): HTMLImageElement {
+  switch (theme) {
+    case 'brownRock':
+      return _getBrownRockSpriteForBlockSize(blockSizePx);
+    case 'dirt':
+      return _getDirtSprite(variant);
+    default:
+      return _getBrownRockSpriteForBlockSize(blockSizePx);
+  }
+}
+
+/**
+ * Maps a BlockTheme to the material name string used by the procedural sprite
+ * system.  Returns null when the theme is not supported by that system.
+ */
+function _themeToProceduralMaterial(theme: BlockTheme | null, legacyWorldNumber: number): string | null {
+  if (theme === 'blackRock') return 'blackRock';
+  if (theme === null && legacyWorldNumber === 0) return 'blackRock';
+  return null;
+}
+
+// ── Tile-spec lookup table ───────────────────────────────────────────────────
+
+type TileVariant = 'block' | 'single' | 'edge' | 'corner' | 'end';
+
+interface TileSpec {
+  readonly variant:     TileVariant;
+  /** Canvas rotation in radians applied around the tile centre. */
+  readonly rotationRad: number;
+}
+
+// Neighbor mask bit assignments: bit0=N, bit1=E, bit2=S, bit3=W
+const _N = 1;
+const _E = 2;
+const _S = 4;
+const _W = 8;
+const _HALF_PI = Math.PI * 0.5;
+const _PI      = Math.PI;
+
+/**
+ * 16-entry lookup table indexed by 4-bit neighbor mask.
+ *
+ * Sprite default orientations (rotation 0):
+ *  - end:    cap opening faces north (south neighbor is connected)
+ *  - corner: SW corner exposed (N+E solid, NE open → rotate 0 for S+W)
+ *  - edge:   south face exposed (N+E+W solid)
+ */
+const _TILE_TABLE: TileSpec[] = ((): TileSpec[] => {
+  const t: TileSpec[] = new Array(16);
+
+  const set = (mask: number, variant: TileVariant, rotationRad: number): void => {
+    t[mask] = { variant, rotationRad };
+  };
+
+  // 0 neighbors — isolated
+  set(0,                 'single', 0);
+
+  // 1 neighbor — end cap; default opening faces south (S is connected),
+  // rotate to face the connected side.
+  set(_S,                'end', 0);           // S solid → no rotation
+  set(_N,                'end', _PI);          // N solid → 180°
+  set(_E,                'end', -_HALF_PI);   // E solid → -90°
+  set(_W,                'end', _HALF_PI);    // W solid → +90°
+
+  // 2 opposite neighbors — treat as interior (tunnel)
+  set(_N | _S,           'block', 0);
+  set(_E | _W,           'block', 0);
+
+  // 2 adjacent neighbors — corner; default: S+W solid, NE exposed
+  set(_S | _W,           'corner', 0);
+  set(_N | _E,           'corner', _PI);
+  set(_S | _E,           'corner', -_HALF_PI);
+  set(_N | _W,           'corner', _HALF_PI);
+
+  // 3 neighbors — edge; default sprite faces NORTH, so we add π to orient correctly.
+  set(_N | _E | _W,      'edge', _PI);          // S exposed
+  set(_N | _E | _S,      'edge', -_HALF_PI);    // W exposed
+  set(_N | _S | _W,      'edge', _HALF_PI);     // E exposed
+  set(_E | _S | _W,      'edge', 0);            // N exposed
+
+  // 4 neighbors — fully surrounded
+  set(_N | _E | _S | _W, 'block', 0);
+
+  return t;
+})();
+
+// ── Occupancy grid ───────────────────────────────────────────────────────────
+
+interface CachedTileCoord {
+  readonly key: string;
+  readonly col: number;
+  readonly row: number;
+  /** platformEdge for platform tiles: 0=top, 1=bottom, 2=left, 3=right. Only meaningful for platformTiles. */
+  readonly platformEdge: number;
+}
+
+interface RampWallInfo {
+  readonly wallIndex: number;
+}
+
+interface HalfPillarWallInfo {
+  readonly wallIndex: number;
+}
+
+/**
+ * Unit 2-D vector associated with each {@link AmbientLightDirection} value.
+ *
+ * The vector points in the direction light TRAVELS (e.g. `'down-right'` →
+ * (+1, +1) normalised, meaning light enters the room from the upper-left
+ * and moves toward the lower-right). The `'omni'` value returns (0,0),
+ * signalling the solver to skip directional biasing.
+ */
+function _ambientDirectionVector(dir: AmbientLightDirection): { dx: number; dy: number } {
+  switch (dir) {
+    case 'omni':       return { dx:  0, dy:  0 };
+    case 'down':       return { dx:  0, dy:  1 };
+    case 'down-right': return { dx:  1, dy:  1 };
+    case 'down-left':  return { dx: -1, dy:  1 };
+    case 'up':         return { dx:  0, dy: -1 };
+    case 'up-right':   return { dx:  1, dy: -1 };
+    case 'up-left':    return { dx: -1, dy: -1 };
+    case 'left':       return { dx: -1, dy:  0 };
+    case 'right':      return { dx:  1, dy:  0 };
+  }
+}
+
+interface CachedWallLayout {
+  signature: string;
+  blockSizePx: number;
+  occupied: Set<string>;
+  platformOccupied: Set<string>;
+  occupiedTiles: CachedTileCoord[];
+  platformTiles: CachedTileCoord[];
+  /** Ramp walls (rampOrientationIndex !== 255): rendered as filled triangles. */
+  rampWalls: RampWallInfo[];
+  /** Half-pillar walls (isPillarHalfWidthFlag === 1): rendered narrow. */
+  halfPillarWalls: HalfPillarWallInfo[];
+  /** Per-tile theme: maps tile key → BlockTheme (null = use room default). */
+  tileTheme: Map<string, BlockTheme | null>;
+  /**
+   * Per-(room-size × direction × blockers) cache of computed ambient depths.
+   * Keyed by `"widthxheight|direction|blockerSig"` so a room that keeps the
+   * same wall layout but toggles ambient direction or blocker edits reuses
+   * the same outer layout cache.
+   */
+  ambientDepthsByKey: Map<string, Map<string, number>>;
+  /**
+   * Maps top-left tile key of each 2×2 solid wall to its wall theme index.
+   * Computed once per layout and reused across frames to avoid per-frame Map allocation.
+   */
+  solid2x2Map: Map<string, number>;
+}
+
+let _cachedWallLayout: CachedWallLayout | null = null;
+
+/** Returns the string key for a tile grid coordinate. */
+function _tileKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+/** Returns true if the cell at (col, row) is occupied by a solid wall block. */
+function _isOccupied(occupied: Set<string>, col: number, row: number): boolean {
+  return occupied.has(_tileKey(col, row));
+}
+
+function _isInsideActiveRoom(col: number, row: number): boolean {
+  return col >= 0 && col < _activeRoomWidthBlocks && row >= 0 && row < _activeRoomHeightBlocks;
+}
+
+/**
+ * Unified ambient-light depth solver.
+ *
+ * Two-phase algorithm that replaces the legacy split between `'DEFAULT'`
+ * (omni BFS from any air-touching solid) and `'Above'` (vertical scan only):
+ *
+ * 1. **Lit-air flood**: compute the set of in-room AIR cells that are
+ *    "connected to the sky". Seeds are air cells on a room edge that faces
+ *    the ambient-light direction (or every edge, for `'omni'`). The flood
+ *    propagates through empty cells only, skipping solids and skipping
+ *    `ambientBlockers`. When a direction is set, a cell only propagates into
+ *    neighbours whose offset dot-producted with the direction vector is
+ *    `≥ 0`, so light naturally spills in a diagonal cone instead of bending
+ *    around arbitrary corners.
+ *
+ * 2. **Solid depth BFS**: every solid cell 8-adjacent to a lit-air cell is
+ *    depth 0 ("directly exposed"). BFS outward through adjacent solids
+ *    assigns each deeper solid an incrementing depth, which drives the
+ *    exponential darkness tint in {@link _getDarknessAlphaFromAirDepth}.
+ *
+ * Air cells inside an enclosed/blocked pocket never enter the lit-air set, so
+ * solid walls adjacent to them stay at `maxFallbackDepth` (fully dark). When
+ * a breakable wall is destroyed its tile becomes empty, the wall-layout
+ * signature changes, and this function is re-run — light then spills in
+ * naturally on the next bake. See `ambientLightBlockers` docs in
+ * `roomDef.ts` for the full authoring model.
+ */
+function _buildAmbientDepths(
+  occupied: Set<string>,
+  blockers: ReadonlySet<string>,
+  direction: AmbientLightDirection,
+): Map<string, number> {
+  const depths = new Map<string, number>();
+  if (_activeRoomWidthBlocks <= 0 || _activeRoomHeightBlocks <= 0) return depths;
+
+  const { dx: directionVectorX, dy: directionVectorY } = _ambientDirectionVector(direction);
+  const isOmni = directionVectorX === 0 && directionVectorY === 0;
+
+  // ── Phase 1: flood-fill "lit air" cells ──────────────────────────────────
+  // `litAir` tracks which empty cells are connected to the sky.
+  const litAir = new Set<string>();
+  const airQueueCols: number[] = [];
+  const airQueueRows: number[] = [];
+  let airQueueIndex = 0;
+
+  const pushAirSeed = (c: number, r: number): void => {
+    if (!_isInsideActiveRoom(c, r)) return;
+    const key = _tileKey(c, r);
+    if (litAir.has(key)) return;
+    if (occupied.has(key)) return;       // solid: not a sky-seed
+    if (blockers.has(key)) return;       // authored blocker: opaque to ambient
+    litAir.add(key);
+    airQueueCols.push(c);
+    airQueueRows.push(r);
+  };
+
+  // Seed the "sky side" of the room.
+  //
+  // For `'omni'` mode we preserve the legacy `'DEFAULT'` semantics by seeding
+  // EVERY non-blocker air cell — so a fully-enclosed room with only interior
+  // air still has lit walls around the air, and authored hidden pockets are
+  // created exclusively by painting `ambientLightBlockers` over the pocket's
+  // air cells (those cells fail the `!blockers.has(key)` check and stay dark).
+  //
+  // For a directional mode, seeds come from the edges facing the sky (i.e.
+  // the sides opposite to the direction vector); the flood then propagates
+  // inward through connected air, so a hidden pocket walled off from the
+  // sky-facing edge naturally stays dark.
+  if (isOmni) {
+    for (let r = 0; r < _activeRoomHeightBlocks; r++) {
+      for (let c = 0; c < _activeRoomWidthBlocks; c++) {
+        const key = _tileKey(c, r);
+        if (occupied.has(key)) continue;
+        if (blockers.has(key)) continue;
+        litAir.add(key);
+      }
+    }
+    // Omni mode doesn't need to flood — every eligible air cell is already
+    // in `litAir` — so skip the queue-based propagation below.
+  } else {
+    const seedTop    = directionVectorY > 0;  // light moves downward ⇒ enters from top
+    const seedBottom = directionVectorY < 0;
+    const seedLeft   = directionVectorX > 0;
+    const seedRight  = directionVectorX < 0;
+
+    if (seedTop) {
+      for (let c = 0; c < _activeRoomWidthBlocks; c++) pushAirSeed(c, 0);
+    }
+    if (seedBottom) {
+      for (let c = 0; c < _activeRoomWidthBlocks; c++) pushAirSeed(c, _activeRoomHeightBlocks - 1);
+    }
+    if (seedLeft) {
+      for (let r = 0; r < _activeRoomHeightBlocks; r++) pushAirSeed(0, r);
+    }
+    if (seedRight) {
+      for (let r = 0; r < _activeRoomHeightBlocks; r++) pushAirSeed(_activeRoomWidthBlocks - 1, r);
+    }
+  }
+
+  // Flood-fill through empty cells. Directional bias: only step into a
+  // neighbour whose offset has a non-negative dot product with the direction
+  // vector (i.e. light keeps travelling generally with the direction). The
+  // check allows perpendicular spread for a natural soft cone.
+  while (airQueueIndex < airQueueCols.length) {
+    const col = airQueueCols[airQueueIndex];
+    const row = airQueueRows[airQueueIndex];
+    airQueueIndex++;
+
+    for (let ny = -1; ny <= 1; ny++) {
+      for (let nx = -1; nx <= 1; nx++) {
+        if (nx === 0 && ny === 0) continue;
+        if (!isOmni) {
+          // dot(neighbourOffset, direction) >= 0 — skip stepping "uphill"
+          const dot = nx * directionVectorX + ny * directionVectorY;
+          if (dot < 0) continue;
+        }
+        const c = col + nx;
+        const r = row + ny;
+        if (!_isInsideActiveRoom(c, r)) continue;
+        const key = _tileKey(c, r);
+        if (litAir.has(key)) continue;
+        if (occupied.has(key)) continue;
+        if (blockers.has(key)) continue;
+        litAir.add(key);
+        airQueueCols.push(c);
+        airQueueRows.push(r);
+      }
+    }
+  }
+
+  // ── Phase 2: BFS depth into solid cells from lit-air neighbours ─────────
+  const solidQueueCols: number[] = [];
+  const solidQueueRows: number[] = [];
+  const solidQueueDepths: number[] = [];
+  let qIndex = 0;
+
+  for (const key of occupied) {
+    const commaIdx = key.indexOf(',');
+    const col = parseInt(key.slice(0, commaIdx), 10);
+    const row = parseInt(key.slice(commaIdx + 1), 10);
+    if (!_isInsideActiveRoom(col, row)) continue;
+
+    // Solid cell is "exposed" if any 8-neighbour is a lit-air cell.
+    let touchesLitAir = false;
+    for (let dy = -1; dy <= 1 && !touchesLitAir; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nc = col + dx;
+        const nr = row + dy;
+        if (!_isInsideActiveRoom(nc, nr)) continue;
+        if (litAir.has(_tileKey(nc, nr))) {
+          touchesLitAir = true;
+          break;
+        }
+      }
+    }
+
+    if (touchesLitAir) {
+      depths.set(key, 0);
+      solidQueueCols.push(col);
+      solidQueueRows.push(row);
+      solidQueueDepths.push(0);
+    }
+  }
+
+  while (qIndex < solidQueueCols.length) {
+    const col = solidQueueCols[qIndex];
+    const row = solidQueueRows[qIndex];
+    const depth = solidQueueDepths[qIndex];
+    qIndex++;
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nc = col + dx;
+        const nr = row + dy;
+        if (!_isInsideActiveRoom(nc, nr) || !_isOccupied(occupied, nc, nr)) continue;
+        const neighborKey = _tileKey(nc, nr);
+        if (depths.has(neighborKey)) continue;
+        const nextDepth = depth + 1;
+        depths.set(neighborKey, nextDepth);
+        solidQueueCols.push(nc);
+        solidQueueRows.push(nr);
+        solidQueueDepths.push(nextDepth);
+      }
+    }
+  }
+
+  // Solid cells never reached by the flood are authored dark pockets
+  // (enclosed by walls or by a blocker field). Assign the maximum fallback
+  // depth so the darkness tint saturates.
+  const maxFallbackDepth = Math.max(_activeRoomWidthBlocks, _activeRoomHeightBlocks);
+  for (const key of occupied) {
+    const commaIdx = key.indexOf(',');
+    const col = parseInt(key.slice(0, commaIdx), 10);
+    const row = parseInt(key.slice(commaIdx + 1), 10);
+    if (!_isInsideActiveRoom(col, row)) continue;
+    if (!depths.has(key)) depths.set(key, maxFallbackDepth);
+  }
+
+  return depths;
+}
+
+/**
+ * Builds and caches occupancy data from wall AABBs in world-space tile coordinates.
+ *
+ * Using world-space coordinates (instead of screen-space) ensures the tile
+ * grid is stable — blocks translate smoothly with the camera offset rather
+ * than snapping to screen-aligned grid positions.
+ */
+function _buildWallLayoutCache(
+  walls: WallSnapshot,
+  blockSizePx: number,
+): CachedWallLayout {
+  let signature = `${blockSizePx}|${walls.count}`;
+  for (let wi = 0; wi < walls.count; wi++) {
+    signature += `|${walls.xWorld[wi]},${walls.yWorld[wi]},${walls.wWorld[wi]},${walls.hWorld[wi]},${walls.isPlatformFlag[wi]},${walls.platformEdge[wi]},${walls.themeIndex[wi]},${walls.isInvisibleFlag[wi]},${walls.rampOrientationIndex[wi]},${walls.isPillarHalfWidthFlag[wi]}`;
+  }
+
+  if (_cachedWallLayout !== null &&
+      _cachedWallLayout.signature === signature &&
+      _cachedWallLayout.blockSizePx === blockSizePx) {
+    return _cachedWallLayout;
+  }
+
+  const occupied = new Set<string>();
+  const platformOccupied = new Set<string>();
+  const platformEdgeByKey = new Map<string, number>();
+  const tileTheme = new Map<string, BlockTheme | null>();
+  const rampWalls: RampWallInfo[] = [];
+  const halfPillarWalls: HalfPillarWallInfo[] = [];
+
+  for (let wi = 0; wi < walls.count; wi++) {
+    // Skip invisible boundary walls
+    if (walls.isInvisibleFlag[wi] === 1) continue;
+
+    // Ramp walls render as triangles — skip them from the regular tile grid
+    if (walls.rampOrientationIndex[wi] !== 255) {
+      rampWalls.push({ wallIndex: wi });
+      continue;
+    }
+
+    const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
+    const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
+    const colCount = Math.max(1, Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - colStart);
+    const rowCount = Math.max(1, Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - rowStart);
+
+    const wallTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
+      ? indexToBlockTheme(walls.themeIndex[wi])
+      : null;
+
+    // Half-pillar walls: add to normal occupied for lighting/neighbor purposes but
+    // record for separate narrow rendering.
+    const isHalfPillar = walls.isPillarHalfWidthFlag[wi] === 1;
+    if (isHalfPillar) {
+      halfPillarWalls.push({ wallIndex: wi });
+      // Add to occupied so neighbor detection works; these tiles still block movement.
+      for (let r = 0; r < rowCount; r++) {
+        for (let c = 0; c < colCount; c++) {
+          occupied.add(_tileKey(colStart + c, rowStart + r));
+        }
+      }
+      if (wallTheme !== null) {
+        for (let r = 0; r < rowCount; r++) {
+          for (let c = 0; c < colCount; c++) {
+            tileTheme.set(_tileKey(colStart + c, rowStart + r), wallTheme);
+          }
+        }
+      }
+      continue;
+    }
+
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const col = colStart + c;
+        const row = rowStart + r;
+        const key = _tileKey(col, row);
+        if (walls.isPlatformFlag[wi] === 1) {
+          platformOccupied.add(key);
+          platformEdgeByKey.set(key, walls.platformEdge[wi]);
+        } else {
+          occupied.add(key);
+        }
+        if (wallTheme !== null) {
+          tileTheme.set(key, wallTheme);
+        }
+      }
+    }
+  }
+
+  const occupiedTiles: CachedTileCoord[] = [];
+  for (const key of occupied) {
+    const commaIdx = key.indexOf(',');
+    occupiedTiles.push({
+      key,
+      col: parseInt(key.slice(0, commaIdx), 10),
+      row: parseInt(key.slice(commaIdx + 1), 10),
+      platformEdge: 0,
+    });
+  }
+
+  const platformTiles: CachedTileCoord[] = [];
+  for (const key of platformOccupied) {
+    const commaIdx = key.indexOf(',');
+    platformTiles.push({
+      key,
+      col: parseInt(key.slice(0, commaIdx), 10),
+      row: parseInt(key.slice(commaIdx + 1), 10),
+      platformEdge: platformEdgeByKey.get(key) ?? 0,
+    });
+  }
+
+  _cachedWallLayout = {
+    signature,
+    blockSizePx,
+    occupied,
+    platformOccupied,
+    occupiedTiles,
+    platformTiles,
+    rampWalls,
+    halfPillarWalls,
+    tileTheme,
+    ambientDepthsByKey: new Map<string, Map<string, number>>(),
+    solid2x2Map: _buildSolid2x2Map(walls, blockSizePx),
+  };
+
+  return _cachedWallLayout;
+}
+
+/**
+ * Returns the per-tile ambient-light depth map for the current lighting
+ * configuration, memoised per `(roomSize × direction × blockerSet)` so the
+ * common "camera panning, nothing changed" path costs one Map lookup.
  *
  * When the layout cache itself is rebuilt (signature change — e.g. a
  * breakable wall's AABB was zeroed on destruction), this memo is discarded
@@ -307,63 +761,59 @@ export function getActiveSolidLightSoftness(): number {
  * pockets on the next frame.
  */
 function _getAmbientDepths(layout: CachedWallLayout): Map<string, number> {
-  const memoKey = `${_activeRoomWidthBlocks}x${_activeRoomHeightBlocks}|${_activeAmbientDirection}|${_activeAmbientBlockerSig}|${_activeDirectionalBias}|${_activeSideExposureStrength}|${_activeMinimumWallLight}|${_activeFalloffPower}`;
+  const memoKey = `${_activeRoomWidthBlocks}x${_activeRoomHeightBlocks}|${_activeAmbientDirection}|${_activeAmbientBlockerSig}`;
   const cached = layout.ambientDepthsByKey.get(memoKey);
   if (cached !== undefined) return cached;
 
-  const depths = buildAmbientDarknessAlphas(
-    layout.occupied,
-    _activeAmbientBlockerKeys,
-    _activeAmbientDirection,
-    _activeRoomWidthBlocks,
-    _activeRoomHeightBlocks,
-    _activeDirectionalBias,
-    _activeSideExposureStrength,
-    _activeMinimumWallLight,
-    _activeFalloffPower,
-  );
+  const depths = _buildAmbientDepths(layout.occupied, _activeAmbientBlockerKeys, _activeAmbientDirection);
   layout.ambientDepthsByKey.set(memoKey, depths);
   return depths;
 }
 
 /**
- * Feature flag for the 2×2 full-sprite wall rendering optimization.
- *
- * `render2x2Pass` draws one 16×16 sprite per eligible 2×2 group (fewer
- * drawImage calls than four separate 8×8 base sprites) instead of leaving
- * the group to `render1x1Pass`. It previously stayed disabled because it
- * baked a single coarse `openAirSidesMask2x2` for the whole group (a side
- * only counted as open when BOTH constituent cells were open), which gave
- * cells inside a 2×2 group inconsistent edge shading compared to the
- * per-cell 1×1 path.
- *
- * That is no longer how correctness works here: `renderSurfaceEdgeOverlayPass`
- * (see surfaceEdgeOverlay.ts) draws the actual exposed-edge visual for every
- * tile — 2×2-covered or not — straight from the authoritative per-cell
- * `surfaceExposureMap`, as a guaranteed overlay pass run after all base
- * sprites. `render2x2Pass` therefore renders its base sprite **unshaded**
- * (no baked edge highlight) and leaves 100% of edge/rim presentation to that
- * overlay, which is inherently per-cell and unaffected by 2×2/1×1 grouping.
+ * Converts open-air distance (in tiles) into darkness alpha.
+ * Darkness now accelerates with depth: each additional tile from open air
+ * contributes twice the darkness of the previous tile.
  */
-export const WALL_2X2_FULL_SPRITE_ENABLED = true;
+function _getDarknessAlphaFromAirDepth(airDepth: number): number {
+  if (airDepth <= 0) return 0;
+  const BASE_DARKNESS_STEP = 0.1;
+  const acceleratedAlpha = BASE_DARKNESS_STEP * (Math.pow(2, airDepth) - 1);
+  return Math.min(1, acceleratedAlpha);
+}
+
+/** Builds the 2×2 solid-wall top-left map from raw wall data. Called once per layout build. */
+function _buildSolid2x2Map(walls: WallSnapshot, blockSizePx: number): Map<string, number> {
+  const topLeftMap = new Map<string, number>();
+  if (blockSizePx !== 8) return topLeftMap;
+
+  for (let wi = 0; wi < walls.count; wi++) {
+    if (walls.isPlatformFlag[wi] === 1) continue;
+    if (walls.isInvisibleFlag[wi] === 1) continue;
+
+    const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
+    const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
+    const colCount = Math.max(1, Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - colStart);
+    const rowCount = Math.max(1, Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - rowStart);
+    if (colCount !== 2 || rowCount !== 2) continue;
+    topLeftMap.set(_tileKey(colStart, rowStart), walls.themeIndex[wi]);
+  }
+
+  return topLeftMap;
+}
+
+// ── Per-frame reusable collections (pre-allocated to avoid GC pressure) ───────
 
 /**
  * Reusable Set identifying tiles covered by a 2×2 full-sprite block.
  * Cleared and repopulated each frame from `wallLayout.solid2x2Map` —
  * avoids creating a new Set<string> every render call.
- *
- * `render1x1Pass` skips any cell present in this set (its 2×2 sprite already
- * covers that pixel area); `render2x2Pass` only adds a group's four cells
- * when the resolved theme actually supports a 2×2 sprite for the current
- * block size, so themes without one still render entirely through the 1×1
- * path.
  */
 const _coveredBy2x2Keys = new Set<string>();
 
 /**
  * Populates `_coveredBy2x2Keys` from the layout's `solid2x2Map`.
  * Must be called before the tile-draw loop each frame.
- * No-ops (leaves the set empty) while `WALL_2X2_FULL_SPRITE_ENABLED` is false.
  */
 function _populateCoveredBy2x2Keys(
   solid2x2Map: Map<string, number>,
@@ -371,653 +821,205 @@ function _populateCoveredBy2x2Keys(
   roomTheme: BlockTheme | null,
 ): void {
   _coveredBy2x2Keys.clear();
-  if (!WALL_2X2_FULL_SPRITE_ENABLED) return;
   for (const [topLeftKey, wallThemeIdx] of solid2x2Map) {
     const resolvedTheme: BlockTheme | null = wallThemeIdx !== WALL_THEME_DEFAULT_INDEX
       ? indexToBlockTheme(wallThemeIdx)
       : roomTheme;
-    if (!themeSupports2x2(resolvedTheme, blockSizePx)) continue;
+    if (!_themeSupports2x2(resolvedTheme, blockSizePx)) continue;
     const commaIdx = topLeftKey.indexOf(',');
     const col = parseInt(topLeftKey.slice(0, commaIdx), 10);
     const row = parseInt(topLeftKey.slice(commaIdx + 1), 10);
-    _coveredBy2x2Keys.add(wallTileKey(col, row));
-    _coveredBy2x2Keys.add(wallTileKey(col + 1, row));
-    _coveredBy2x2Keys.add(wallTileKey(col, row + 1));
-    _coveredBy2x2Keys.add(wallTileKey(col + 1, row + 1));
+    _coveredBy2x2Keys.add(_tileKey(col, row));
+    _coveredBy2x2Keys.add(_tileKey(col + 1, row));
+    _coveredBy2x2Keys.add(_tileKey(col, row + 1));
+    _coveredBy2x2Keys.add(_tileKey(col + 1, row + 1));
   }
 }
 
-// ── Chunk-based wall cache ────────────────────────────────────────────────────
+// ── Wall layer bake cache ─────────────────────────────────────────────────────
 
 /**
- * Chunk-based wall render cache.  Replaces the former single-canvas bake with
- * many small per-chunk canvases so:
- *   • Only camera-visible chunks are blitted each frame.
- *   • Only dirty chunks are rebuilt (e.g. one tile changed → one chunk rebuilt).
- *   • Very large rooms never require a room-sized canvas.
- *
- * Owned by this module; invalidated via _invalidateBakedWallCanvas() whenever
- * theme, lighting, or wall layout changes (same call-sites as before).
+ * Pre-rendered offscreen canvas holding the fully composited wall layer for the
+ * current room.  Built once when sprites are ready; blitted cheaply each frame.
+ * Replaced whenever `_bakedWallLayoutRef` or `_bakedWallScalePx` changes, or
+ * when `_invalidateBakedWallCanvas()` is called on room/theme/lighting updates.
  */
-const _chunkCache = new RoomChunkCache();
-
-// ── Render chunk prewarm store ────────────────────────────────────────────────
-//
-// Prewarm stores map roomId → (RoomChunkCache, CachedWallLayout) built during
-// idle callbacks for not-yet-active adjacent rooms.  On room entry,
-// adoptPrewarmedWallChunks() moves the pre-built canvases into the active
-// _chunkCache, preventing a cold-build hitch on the first render frame.
-// Prewarm store state lives in wallChunkPrewarmStore.ts.
-
+let _bakedWallCanvas: HTMLCanvasElement | null = null;
 /**
- * All rendering state required to pre-build wall chunks for a room that is
- * not currently active.  Constructed by the warm scheduler from RoomDef +
- * RoomRuntimeEntry so that blockSpriteRenderer never imports those types.
+ * Reference to the `CachedWallLayout` that was used to build `_bakedWallCanvas`.
+ * Identity comparison (`===`) in `renderWallSprites` detects wall-layout changes
+ * without rebuilding a long signature string on every fast-path frame.
  */
-export interface WallPrewarmContext {
-  /** Wall geometry adapted from RoomWallTemplate (shared typed-array views — not copied). */
-  wallSnapshot: WallSnapshot;
-  worldNumber: number;
-  renderRevision: number;
-  blockTheme: BlockTheme | null;
-  lightingEffect: LightingEffect;
-  ambientDirection: AmbientLightDirection;
-  roomWidthBlocks: number;
-  roomHeightBlocks: number;
-  /** Precomputed ambient-light blocker keys (empty Set when none). */
-  blockerKeys: ReadonlySet<string>;
-  directionalBias: number;
-  sideExposureStrength: number;
-  minimumWallLight: number;
-  falloffPower: number;
-  backgroundLightSpill: number;
-  solidLightSoftness: number;
-  seamBlending: BlockSeamBlending;
-}
-
+let _bakedWallLayoutRef: CachedWallLayout | null = null;
 /**
- * Viewport dimensions used for visible-chunk range computation.
- * Set once per frame by setRenderViewportSize() called from gameRender.ts
- * before the walls pass.  Defaults cover the standard 480×270 virtual canvas
- * so any call-site that omits the explicit setter still works correctly.
+ * The `scalePx` value used when building `_bakedWallCanvas`.
+ * Included in the validity check alongside `_bakedWallLayoutRef`.
  */
-let _vpWPx = 480;
-let _vpHPx = 270;
-
+let _bakedWallScalePx = 0;
 /**
- * Update the viewport size used for chunk visibility culling.
- * Must be called from renderFrame() before renderWalls() each frame.
+ * True when the current `_bakedWallCanvas` was rendered with at least one
+ * fallback tile (sprite still loading).  Triggers a re-bake next frame so that
+ * the canvas is refreshed once all sprites have loaded.
  */
-export function setRenderViewportSize(vpW: number, vpH: number): void {
-  _vpWPx = vpW;
-  _vpHPx = vpH;
-}
-
-/** Returns the current chunk-cache diagnostic counters for the debug overlay. */
-export function getChunkCacheStats(): import('./chunkRenderCache').ChunkCacheStats {
-  return _chunkCache.stats;
-}
-
-/** Diagnostic counts of wall chunks currently marked hadFallbacksFlag / builtWithGameplayFallbackFlag. */
-export function getWallChunkFallbackCounts(): { hadFallbacksCount: number; gameplayFallbackCount: number } {
-  return _chunkCache.getFallbackDiagnosticCounts();
-}
-
+let _bakedWallHadFallbacks = false;
 /**
- * Atomically assigns the active wall cache to one room/render state/scale.
- * A changed owner clears all prior-room canvases before partial prewarm
- * adoption or lazy gameplay rebuilding can begin.
+ * Tracks whether the current bake pass used any fallback tiles.
+ * Set to false at the start of each `_doRenderWallTilesDirect` call; set to
+ * true by any code path that falls back to placeholder drawing.
  */
-export function activateWallChunkCacheOwnership(
-  roomId: string,
-  renderStateKey: string,
-  scalePx: number,
-): void {
-  _chunkCache.activateContentOwnership(
-    createChunkCacheOwnershipKey(roomId, renderStateKey, scalePx),
-    true,
-  );
-}
+let _bakePassHadFallbacks = false;
 
-/**
- * Marks every wall chunk currently built with the gameplay unshaded fallback
- * as dirty, so it rebuilds with real shading the next time it renders. Call
- * this at the start of any visual-refresh phase where baking is known to be
- * allowed again (entry warm, editor entry, loading) — see
- * `RoomChunkCache.retryGameplayFallbackChunksNow()` for the full rationale.
- */
-export function retryWallGameplayFallbackChunksNow(): void {
-  _chunkCache.retryGameplayFallbackChunksNow();
-}
-
-/**
- * Set the maximum memory budget for the wall chunk render cache.
- * Call this when graphics quality changes to cap GPU/CPU canvas memory usage.
- *
- * Suggested values:
- *   Low:    4096 KB
- *   Medium: 8192 KB
- *   High:  16384 KB
- */
-export function setWallChunkCacheMemoryKB(kb: number): void {
-  _chunkCache.setMaxMemoryKB(kb);
-}
-
-/**
- * Marks every chunk overlapping the given tile rectangle dirty so only those
- * chunks are rebuilt the next time they are visible.
- * Useful for targeted invalidation when the editor changes a small tile region.
- */
-export function invalidateChunkRect(
-  colMin: number,
-  rowMin: number,
-  colMax: number,
-  rowMax: number,
-): void {
-  _chunkCache.invalidateBlockRect(colMin, rowMin, colMax, rowMax);
-}
-
-/** Invalidates the chunk cache so all chunks are rebuilt on the next render. */
+/** Invalidates the baked wall canvas so it will be rebuilt on the next render. */
 function _invalidateBakedWallCanvas(): void {
-  _chunkCache.invalidateAll();
+  _bakedWallCanvas = null;
+  _bakedWallLayoutRef = null;
+  _bakedWallScalePx = 0;
+  _bakedWallHadFallbacks = false;
 }
 
-// ── Render chunk prewarm API ──────────────────────────────────────────────────
+// ── Solid-colour fallback ─────────────────────────────────────────────────────
+
+/** Draws a single tile as a solid-colour rectangle (used when sprites are loading). */
+function _drawFallbackTile(
+  ctx:         CanvasRenderingContext2D,
+  tileX:       number,
+  tileY:       number,
+  tileSizePx:  number,
+): void {
+  const rx = Math.round(tileX);
+  const ry = Math.round(tileY);
+  const roundedSizePx = Math.round(tileSizePx);
+  ctx.fillStyle = '#1a2535';
+  ctx.fillRect(rx, ry, roundedSizePx, roundedSizePx);
+
+  ctx.fillStyle = 'rgba(80,120,180,0.18)';
+  ctx.fillRect(rx, ry, roundedSizePx, 2);
+  ctx.fillRect(rx, ry, 2, roundedSizePx);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(rx, ry + roundedSizePx - 2, roundedSizePx, 2);
+  ctx.fillRect(rx + roundedSizePx - 2, ry, 2, roundedSizePx);
+}
+
+// ── Vertex overlay ────────────────────────────────────────────────────────────
 
 /**
- * Pre-builds wall chunks for a room that is not currently active.
- *
- * Saves all module-level rendering state, temporarily sets it up for the
- * target room, renders up to `maxChunks` new chunks into a dedicated prewarm
- * cache, then restores the original state.  The active room's chunks are not
- * touched.
- *
- * Safe to call multiple times for the same `roomId` — the prewarm cache
- * persists between calls so subsequent calls expand coverage outward.
- *
- * @param roomId       Unique identifier for the target room.
- * @param ctx          All rendering parameters for the target room.
- * @param offsetXPx    Camera X offset for the entrance viewport (virtual px).
- * @param offsetYPx    Camera Y offset for the entrance viewport (virtual px).
- * @param vpWPx        Viewport width in virtual pixels.
- * @param vpHPx        Viewport height in virtual pixels.
- * @param scalePx      Camera zoom scale (world units → virtual pixels).
- * @param blockSizePx  Block size in world units.
- * @param maxChunks    Maximum NEW chunks to build this call.
- * @returns Number of new chunks actually built.
+ * Draws the vertex overlay sprite at each concave inner corner of a corner
+ * tile.  A concave inner corner exists at a diagonal position when both
+ * sharing cardinal neighbours are solid but the diagonal cell itself is air.
  */
-export function prewarmWallChunksForRoom(
-  roomId: string,
-  ctx: WallPrewarmContext,
-  offsetXPx: number,
-  offsetYPx: number,
-  vpWPx: number,
-  vpHPx: number,
-  scalePx: number,
-  blockSizePx: number,
-  maxChunks: number,
-): PrewarmChunkResult {
-  // ── Compute render-state key before save/restore (uses only ctx fields) ────
-  const renderStateKey = computeRenderStateKey(
-    ctx.blockTheme,
-    ctx.worldNumber,
-    ctx.lightingEffect,
-    ctx.ambientDirection,
-    ctx.seamBlending,
-    ctx.blockerKeys,
-    ctx.roomWidthBlocks,
-    ctx.roomHeightBlocks,
-    ctx.directionalBias,
-    ctx.sideExposureStrength,
-    ctx.minimumWallLight,
-    ctx.falloffPower,
-    ctx.backgroundLightSpill,
-    ctx.solidLightSoftness,
-  );
+function _drawVertexOverlays(
+  ctx:         CanvasRenderingContext2D,
+  occupied:    Set<string>,
+  col:         number,
+  row:         number,
+  tileX:       number,
+  tileY:       number,
+  tileSizePx:  number,
+  northSolid:  boolean,
+  eastSolid:   boolean,
+  southSolid:  boolean,
+  westSolid:   boolean,
+): void {
+  const vertexImg = _sprites.vertex;
+  if (!isSpriteReady(vertexImg)) return;
 
-  // ── Save active room state ────────────────────────────────────────────────
-  const savedSprites             = _sprites;
-  const savedWorldNumber         = _activeWorldNumber;
-  const savedBlockTheme          = _activeBlockTheme;
-  const savedLightingEffect      = _activeLightingEffect;
-  const savedAmbientDirection    = _activeAmbientDirection;
-  const savedRoomWidthBlocks     = _activeRoomWidthBlocks;
-  const savedRoomHeightBlocks    = _activeRoomHeightBlocks;
-  const savedAmbientBlockerKeys  = _activeAmbientBlockerKeys;
-  const savedAmbientBlockerSig   = _activeAmbientBlockerSig;
-  const savedDirectionalBias     = _activeDirectionalBias;
-  const savedSideExposureStrength = _activeSideExposureStrength;
-  const savedMinimumWallLight    = _activeMinimumWallLight;
-  const savedFalloffPower        = _activeFalloffPower;
-  const savedBackgroundLightSpill = _activeBackgroundLightSpill;
-  const savedSolidLightSoftness  = _activeSolidLightSoftness;
-  const savedSeamBlending        = _activeSeamBlending;
-  const savedSeamBlendDebug      = _seamBlendDebug;
-  const savedVpWPx               = _vpWPx;
-  const savedVpHPx               = _vpHPx;
-  const savedLayout              = getCurrentWallLayout();
+  const qSizePx  = tileSizePx * 0.5;
 
-  try {
-    // ── Set up state for target room (direct assignment, no setters) ────────
-    // Bypass the public setters to avoid calling _invalidateBakedWallCanvas(),
-    // which would trash the active room's chunk cache.
-    if (ctx.blockTheme !== null) {
-      _activeBlockTheme  = ctx.blockTheme;
-      // _sprites is irrelevant when blockTheme overrides world-based rendering.
-    } else {
-      _activeWorldNumber = ctx.worldNumber;
-      _sprites           = getBlockSpriteSet(ctx.worldNumber);
-      _activeBlockTheme  = null;
-    }
-    _activeLightingEffect      = ctx.lightingEffect;
-    _activeAmbientDirection    = ctx.ambientDirection;
-    _activeRoomWidthBlocks     = ctx.roomWidthBlocks;
-    _activeRoomHeightBlocks    = ctx.roomHeightBlocks;
-    _activeAmbientBlockerKeys  = ctx.blockerKeys;
-    // Build a stable blocker signature (same logic as setActiveBlockLighting).
-    if (ctx.blockerKeys.size === 0) {
-      _activeAmbientBlockerSig = '';
-    } else {
-      const arr: string[] = [];
-      for (const k of ctx.blockerKeys) arr.push(k);
-      arr.sort();
-      _activeAmbientBlockerSig = arr.join(';');
-    }
-    _activeDirectionalBias      = ctx.directionalBias;
-    _activeSideExposureStrength = ctx.sideExposureStrength;
-    _activeMinimumWallLight     = ctx.minimumWallLight;
-    _activeFalloffPower         = ctx.falloffPower;
-    _activeBackgroundLightSpill = ctx.backgroundLightSpill;
-    _activeSolidLightSoftness   = ctx.solidLightSoftness;
-    _activeSeamBlending         = ctx.seamBlending;
-    _seamBlendDebug             = false;
-    _vpWPx = vpWPx;
-    _vpHPx = vpHPx;
-
-    // ── Get or create the prewarm chunk cache for this room ─────────────────
-    // Must come BEFORE reading or writing the wall layout so that:
-    //   (a) the snapshot exists when setPrewarmWallLayout writes into it, and
-    //   (b) any stale renderStateKey is evicted before we read the old layout
-    //       — preventing an outdated layout from being restored.
-    const tempCache = getOrCreatePrewarmWallCache(roomId, renderStateKey, ctx.renderRevision, scalePx);
-    tempCache.activateContentOwnership(
-      createChunkCacheOwnershipKey(roomId, renderStateKey, scalePx),
-    );
-    tempCache.setMaxChunksPerFrame(maxChunks);
-
-    // ── Build / restore wall layout for target room ─────────────────────────
-    const existingLayout = getPrewarmWallLayout(roomId);
-    if (existingLayout !== undefined) {
-      // Restore the layout built on a prior prewarm pass so the layout-change
-      // identity check in renderVisibleChunks does not invalidate prior chunks.
-      setPrebuiltWallLayout(existingLayout);
-    }
-    const wallLayout = getWallLayoutCache(ctx.wallSnapshot, blockSizePx, ctx.roomWidthBlocks, ctx.roomHeightBlocks);
-    setPrewarmWallLayout(roomId, wallLayout);
-
-    // ── Compute ambient depths and populate 2×2 covered keys ────────────────
-    _populateCoveredBy2x2Keys(wallLayout.solid2x2Map, blockSizePx, _activeBlockTheme);
-    const ambientDepths = (_activeLightingEffect !== 'DarkRoom' && _activeLightingEffect !== 'FullyLit')
-      ? _getAmbientDepths(wallLayout)
-      : null;
-
-    const walls = ctx.wallSnapshot;
-    const dummyCtx = getPrewarmDummyCtx();
-
-    // ── Render chunks into the prewarm cache ─────────────────────────────────
-    tempCache.renderVisibleChunks(
-      dummyCtx,
-      wallLayout,
-      offsetXPx,
-      offsetYPx,
-      scalePx,
-      blockSizePx,
-      vpWPx,
-      vpHPx,
-      (chunkCtx, chunkOffX, chunkOffY, s, bsz, colMin, rowMin, colMax, rowMax) =>
-        _doRenderWallTilesDirect(
-          chunkCtx,
-          walls,
-          wallLayout,
-          ambientDepths,
-          chunkOffX,
-          chunkOffY,
-          s,
-          bsz,
-          colMin,
-          colMax,
-          rowMin,
-          rowMax,
-        ),
-    );
-
-    return {
-      rebuilt:     tempCache.stats.rebuiltThisFrame,
-      skipped:     tempCache.stats.skippedThisFrame,
-      totalChunks: tempCache.stats.totalChunkCount,
-      dirtyChunks: tempCache.stats.dirtyChunkCount,
-    };
-  } finally {
-    // ── Restore active room state ─────────────────────────────────────────────
-    _sprites               = savedSprites;
-    _activeWorldNumber     = savedWorldNumber;
-    _activeBlockTheme      = savedBlockTheme;
-    _activeLightingEffect  = savedLightingEffect;
-    _activeAmbientDirection = savedAmbientDirection;
-    _activeRoomWidthBlocks = savedRoomWidthBlocks;
-    _activeRoomHeightBlocks = savedRoomHeightBlocks;
-    _activeAmbientBlockerKeys = savedAmbientBlockerKeys;
-    _activeAmbientBlockerSig  = savedAmbientBlockerSig;
-    _activeDirectionalBias    = savedDirectionalBias;
-    _activeSideExposureStrength = savedSideExposureStrength;
-    _activeMinimumWallLight   = savedMinimumWallLight;
-    _activeFalloffPower       = savedFalloffPower;
-    _activeBackgroundLightSpill = savedBackgroundLightSpill;
-    _activeSolidLightSoftness = savedSolidLightSoftness;
-    _activeSeamBlending       = savedSeamBlending;
-    _seamBlendDebug           = savedSeamBlendDebug;
-    _vpWPx                    = savedVpWPx;
-    _vpHPx                    = savedVpHPx;
-    // Restore active room's layout so next render does not trigger a rebuild.
-    if (savedLayout !== null) setPrebuiltWallLayout(savedLayout);
+  // Each diagonal corner: draw vertex overlay when both adjacent cardinals
+  // are solid but the diagonal cell is air (concave inner corner).
+  if (northSolid && eastSolid && !_isOccupied(occupied, col + 1, row - 1)) {
+    ctx.save();
+    ctx.translate(Math.round(tileX + tileSizePx), Math.round(tileY));
+    ctx.rotate(_HALF_PI);
+    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
+    ctx.restore();
   }
-}
-
-/**
- * Non-destructively draws a NON-ACTIVE room's wall chunks into `ctx` at a given
- * screen offset, clipped to `clip*`. Used by the render-only "Render Adjacent
- * Rooms" view to draw radius-1 neighbours WITHOUT disturbing the active room's
- * chunk cache or module state.
- *
- * Mirrors `prewarmWallChunksForRoom`'s save/restore discipline exactly, but
- * renders visible chunks into the real `ctx` (inside a clip rect) instead of the
- * off-screen prewarm dummy context. It reuses the SAME per-room prewarm cache
- * keyed by room id + render-state key + scale, so warmed chunks are shared with
- * the prewarm scheduler and never rebuilt merely to draw a neighbour. The active
- * `_chunkCache` singleton is never touched.
- *
- * Callers must set up their own camera offset so all room origins derive from a
- * single camera offset (no independent rounding → no one-pixel seams).
- */
-export function drawRoomWallChunksAt(
-  ctx: CanvasRenderingContext2D,
-  roomId: string,
-  pctx: WallPrewarmContext,
-  offsetXPx: number,
-  offsetYPx: number,
-  clipXPx: number,
-  clipYPx: number,
-  clipWPx: number,
-  clipHPx: number,
-  vpWPx: number,
-  vpHPx: number,
-  scalePx: number,
-  blockSizePx: number,
-  maxChunks: number,
-): PrewarmChunkResult {
-  const renderStateKey = computeRenderStateKey(
-    pctx.blockTheme,
-    pctx.worldNumber,
-    pctx.lightingEffect,
-    pctx.ambientDirection,
-    pctx.seamBlending,
-    pctx.blockerKeys,
-    pctx.roomWidthBlocks,
-    pctx.roomHeightBlocks,
-    pctx.directionalBias,
-    pctx.sideExposureStrength,
-    pctx.minimumWallLight,
-    pctx.falloffPower,
-    pctx.backgroundLightSpill,
-    pctx.solidLightSoftness,
-  );
-
-  // Save active room state (identical set to prewarmWallChunksForRoom).
-  const savedSprites             = _sprites;
-  const savedWorldNumber         = _activeWorldNumber;
-  const savedBlockTheme          = _activeBlockTheme;
-  const savedLightingEffect      = _activeLightingEffect;
-  const savedAmbientDirection    = _activeAmbientDirection;
-  const savedRoomWidthBlocks     = _activeRoomWidthBlocks;
-  const savedRoomHeightBlocks    = _activeRoomHeightBlocks;
-  const savedAmbientBlockerKeys  = _activeAmbientBlockerKeys;
-  const savedAmbientBlockerSig   = _activeAmbientBlockerSig;
-  const savedDirectionalBias     = _activeDirectionalBias;
-  const savedSideExposureStrength = _activeSideExposureStrength;
-  const savedMinimumWallLight    = _activeMinimumWallLight;
-  const savedFalloffPower        = _activeFalloffPower;
-  const savedBackgroundLightSpill = _activeBackgroundLightSpill;
-  const savedSolidLightSoftness  = _activeSolidLightSoftness;
-  const savedSeamBlending        = _activeSeamBlending;
-  const savedSeamBlendDebug      = _seamBlendDebug;
-  const savedVpWPx               = _vpWPx;
-  const savedVpHPx               = _vpHPx;
-  const savedLayout              = getCurrentWallLayout();
-
-  ctx.save();
-  try {
-    ctx.beginPath();
-    ctx.rect(clipXPx, clipYPx, clipWPx, clipHPx);
-    ctx.clip();
-
-    if (pctx.blockTheme !== null) {
-      _activeBlockTheme  = pctx.blockTheme;
-    } else {
-      _activeWorldNumber = pctx.worldNumber;
-      _sprites           = getBlockSpriteSet(pctx.worldNumber);
-      _activeBlockTheme  = null;
-    }
-    _activeLightingEffect      = pctx.lightingEffect;
-    _activeAmbientDirection    = pctx.ambientDirection;
-    _activeRoomWidthBlocks     = pctx.roomWidthBlocks;
-    _activeRoomHeightBlocks    = pctx.roomHeightBlocks;
-    _activeAmbientBlockerKeys  = pctx.blockerKeys;
-    if (pctx.blockerKeys.size === 0) {
-      _activeAmbientBlockerSig = '';
-    } else {
-      const arr: string[] = [];
-      for (const k of pctx.blockerKeys) arr.push(k);
-      arr.sort();
-      _activeAmbientBlockerSig = arr.join(';');
-    }
-    _activeDirectionalBias      = pctx.directionalBias;
-    _activeSideExposureStrength = pctx.sideExposureStrength;
-    _activeMinimumWallLight     = pctx.minimumWallLight;
-    _activeFalloffPower         = pctx.falloffPower;
-    _activeBackgroundLightSpill = pctx.backgroundLightSpill;
-    _activeSolidLightSoftness   = pctx.solidLightSoftness;
-    _activeSeamBlending         = pctx.seamBlending;
-    _seamBlendDebug             = false;
-    _vpWPx = vpWPx;
-    _vpHPx = vpHPx;
-
-    const tempCache = getOrCreatePrewarmWallCache(roomId, renderStateKey, pctx.renderRevision, scalePx);
-    tempCache.activateContentOwnership(
-      createChunkCacheOwnershipKey(roomId, renderStateKey, scalePx),
-    );
-    tempCache.setMaxChunksPerFrame(maxChunks);
-
-    const existingLayout = getPrewarmWallLayout(roomId);
-    if (existingLayout !== undefined) {
-      setPrebuiltWallLayout(existingLayout);
-    }
-    const wallLayout = getWallLayoutCache(pctx.wallSnapshot, blockSizePx, pctx.roomWidthBlocks, pctx.roomHeightBlocks);
-    setPrewarmWallLayout(roomId, wallLayout);
-
-    _populateCoveredBy2x2Keys(wallLayout.solid2x2Map, blockSizePx, _activeBlockTheme);
-    const ambientDepths = (_activeLightingEffect !== 'DarkRoom' && _activeLightingEffect !== 'FullyLit')
-      ? _getAmbientDepths(wallLayout)
-      : null;
-
-    const walls = pctx.wallSnapshot;
-
-    // Render visible chunks into the REAL ctx at the neighbour's screen offset.
-    tempCache.renderVisibleChunks(
-      ctx,
-      wallLayout,
-      offsetXPx,
-      offsetYPx,
-      scalePx,
-      blockSizePx,
-      vpWPx,
-      vpHPx,
-      (chunkCtx, chunkOffX, chunkOffY, s, bsz, colMin, rowMin, colMax, rowMax) =>
-        _doRenderWallTilesDirect(
-          chunkCtx,
-          walls,
-          wallLayout,
-          ambientDepths,
-          chunkOffX,
-          chunkOffY,
-          s,
-          bsz,
-          colMin,
-          colMax,
-          rowMin,
-          rowMax,
-        ),
-    );
-
-    return {
-      rebuilt:     tempCache.stats.rebuiltThisFrame,
-      skipped:     tempCache.stats.skippedThisFrame,
-      totalChunks: tempCache.stats.totalChunkCount,
-      dirtyChunks: tempCache.stats.dirtyChunkCount,
-    };
-  } finally {
-    _sprites               = savedSprites;
-    _activeWorldNumber     = savedWorldNumber;
-    _activeBlockTheme      = savedBlockTheme;
-    _activeLightingEffect  = savedLightingEffect;
-    _activeAmbientDirection = savedAmbientDirection;
-    _activeRoomWidthBlocks = savedRoomWidthBlocks;
-    _activeRoomHeightBlocks = savedRoomHeightBlocks;
-    _activeAmbientBlockerKeys = savedAmbientBlockerKeys;
-    _activeAmbientBlockerSig  = savedAmbientBlockerSig;
-    _activeDirectionalBias    = savedDirectionalBias;
-    _activeSideExposureStrength = savedSideExposureStrength;
-    _activeMinimumWallLight   = savedMinimumWallLight;
-    _activeFalloffPower       = savedFalloffPower;
-    _activeBackgroundLightSpill = savedBackgroundLightSpill;
-    _activeSolidLightSoftness = savedSolidLightSoftness;
-    _activeSeamBlending       = savedSeamBlending;
-    _seamBlendDebug           = savedSeamBlendDebug;
-    _vpWPx                    = savedVpWPx;
-    _vpHPx                    = savedVpHPx;
-    if (savedLayout !== null) setPrebuiltWallLayout(savedLayout);
+  if (southSolid && eastSolid && !_isOccupied(occupied, col + 1, row + 1)) {
+    ctx.save();
+    ctx.translate(Math.round(tileX + tileSizePx), Math.round(tileY + tileSizePx));
+    ctx.rotate(_PI);
+    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
+    ctx.restore();
+  }
+  if (southSolid && westSolid && !_isOccupied(occupied, col - 1, row + 1)) {
+    ctx.save();
+    ctx.translate(Math.round(tileX), Math.round(tileY + tileSizePx));
+    ctx.rotate(-_HALF_PI);
+    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
+    ctx.restore();
+  }
+  if (northSolid && westSolid && !_isOccupied(occupied, col - 1, row - 1)) {
+    ctx.save();
+    ctx.translate(Math.round(tileX), Math.round(tileY));
+    ctx.rotate(0);
+    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
     ctx.restore();
   }
 }
 
-/**
- * Adopts pre-warmed wall chunks for a room the player is about to enter.
- *
- * Installs the pre-built `CachedWallLayout` into the module-level layout
- * cache slot and injects the pre-built canvases into the active `_chunkCache`.
- * The first `renderWallSprites` call after adoption will skip building these
- * chunks, eliminating the first-frame hitch.
- *
- * Must be called after the active wall state (theme, lighting, etc.) is set
- * up for the new room but BEFORE the first render frame.
- *
- * @param roomId              Identifier of the room being entered.
- * @param scalePx             The camera zoom scale that will be used in the first render.
- * @param currentRenderStateKey  Snapshot key must match or adoption is refused.
- * @returns Structured `PrewarmAdoptResult` describing the outcome.
- */
-export function adoptPrewarmedWallChunks(
-  roomId: string,
+// ── Platform and ramp draw helpers ───────────────────────────────────────────
+
+/** Draws a 3-pixel thick solid-color platform line at the specified edge. */
+function _drawPlatformLine(
+  ctx: CanvasRenderingContext2D,
+  tileX: number, tileY: number,
+  tileSizeScreen: number,
+  platformEdge: number,
   scalePx: number,
-  currentRenderStateKey: string,
-): PrewarmAdoptResult {
-  // Adoption-time stale-key guard: refuse chunks built for a different render state.
-  {
-    const snapKey = getPrewarmSnapshotRenderStateKey(roomId);
-    if (snapKey !== undefined && snapKey !== currentRenderStateKey) {
-      if (import.meta.env.DEV) {
-        console.warn(
-          `[adoptPrewarmedWallChunks] stale renderStateKey for ${roomId} — discarding prewarm data.` +
-          `\n  snapshot: ${snapKey}\n  current:  ${currentRenderStateKey}`,
-        );
-      }
-      deletePrewarmEntry(roomId);
-      return { status: 'staleRenderState', snapshotKey: snapKey, currentKey: currentRenderStateKey };
-    }
+): void {
+  const LINE_PX = Math.max(1, Math.round(3 * scalePx));
+  switch (platformEdge) {
+    case 0: ctx.fillRect(tileX, tileY, tileSizeScreen, LINE_PX); break;
+    case 1: ctx.fillRect(tileX, tileY + tileSizeScreen - LINE_PX, tileSizeScreen, LINE_PX); break;
+    case 2: ctx.fillRect(tileX, tileY, LINE_PX, tileSizeScreen); break;
+    case 3: ctx.fillRect(tileX + tileSizeScreen - LINE_PX, tileY, LINE_PX, tileSizeScreen); break;
   }
-
-  const tempCache = getPrewarmWallCache(roomId);
-  const layout    = getPrewarmWallLayout(roomId);
-
-  if (import.meta.env.DEV && tempCache !== undefined && layout === undefined) {
-    // This state means adoption cannot work: chunks were built but the layout
-    // was never stored.  Most likely caused by calling setPrewarmWallLayout
-    // before the snapshot existed (ordering bug).
-    console.warn(
-      `[adoptPrewarmedWallChunks] DEV invariant: wall cache exists without layout for room ${roomId}` +
-      ' — adoption cannot succeed.  Check prewarmWallChunksForRoom call ordering.',
-    );
-  }
-
-  if (tempCache === undefined || layout === undefined) return { status: 'missing' };
-
-  // Install the pre-built layout so the identity check in renderVisibleChunks
-  // sees the same object we used during prewarming.
-  setPrebuiltWallLayout(layout);
-
-  // Extract non-dirty canvases and inject into the active cache.
-  const chunks = tempCache.extractCleanChunks();
-  if (chunks.size > 0) {
-    _chunkCache.injectWarmedChunks(
-      chunks,
-      layout,
-      scalePx,
-      createChunkCacheOwnershipKey(roomId, currentRenderStateKey, scalePx),
-    );
-  }
-
-  const bundle = getCacheBundle(roomId);
-  deletePrewarmEntry(roomId);
-
-  return chunks.size > 0 && bundle ? { status: 'adopted', bundle } : { status: 'empty' };
 }
 
 /**
- * Cheap read-only check: returns `true` when every chunk grid cell in the
- * given viewport — including the `CHUNK_MARGIN` safety ring — is already
- * present, clean, and had no fallbacks in the **active** wall chunk cache.
- *
- * Returns `false` if the zoom has changed, or if any visible-plus-margin chunk
- * is missing, dirty, or has pending fallback sprites.  Does **not** build any
- * canvases.
+ * Draws a ramp as a solid-color filled triangle with a hypotenuse edge stroke.
+ * Used as fallback for non-blackRock themes and while procedural sprites load.
  */
-export function isWallActiveViewportCovered(
-  offsetXPx: number,
-  offsetYPx: number,
-  vpWPx: number,
-  vpHPx: number,
+function _drawRampTriangle(
+  ctx: CanvasRenderingContext2D,
+  wxPx: number, wyPx: number,
+  wwPx: number, whPx: number,
+  ori: number,
+  fillColor: string,
+  edgeColor: string,
   scalePx: number,
-  blockSizePx: number,
-): boolean {
-  return _chunkCache.isViewportCovered(offsetXPx, offsetYPx, vpWPx, vpHPx, scalePx, blockSizePx);
+): void {
+  const x0 = wxPx;        const y0 = wyPx;         // TL
+  const x1 = wxPx + wwPx; const y1 = wyPx;         // TR
+  const x2 = wxPx;        const y2 = wyPx + whPx;  // BL
+  const x3 = wxPx + wwPx; const y3 = wyPx + whPx;  // BR
+
+  ctx.fillStyle = fillColor;
+  ctx.beginPath();
+  switch (ori) {
+    case 0: ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.lineTo(x1, y1); break; // /
+    case 1: ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.lineTo(x0, y0); break; // \
+    case 2: ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); break; // ⌐
+    case 3: ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x3, y3); break; // ¬
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = edgeColor;
+  ctx.lineWidth = Math.max(1, scalePx);
+  ctx.beginPath();
+  switch (ori) {
+    case 0: ctx.moveTo(x2, y2); ctx.lineTo(x1, y1); break;
+    case 1: ctx.moveTo(x3, y3); ctx.lineTo(x0, y0); break;
+    case 2: ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); break;
+    case 3: ctx.moveTo(x0, y0); ctx.lineTo(x3, y3); break;
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
 }
 
-/**
- * Like `isWallActiveViewportCovered` but checks only the **core** visible
- * range (no margin).  Intended for DEV diagnostics only — always use
- * `isWallActiveViewportCovered` for production readiness decisions.
- */
-export function isWallCoreViewportCovered(
-  offsetXPx: number,
-  offsetYPx: number,
-  vpWPx: number,
-  vpHPx: number,
-  scalePx: number,
-  blockSizePx: number,
-): boolean {
-  return _chunkCache.isViewportCoreCovered(offsetXPx, offsetYPx, vpWPx, vpHPx, scalePx, blockSizePx);
-}
-
-
+// ── Public render function ────────────────────────────────────────────────────
 
 /**
  * Renders all walls using context-sensitive (auto-tiling) block sprites.
@@ -1044,9 +1046,7 @@ export function renderWallSprites(
   const walls = snapshot.walls;
   if (walls.count === 0) return;
 
-  if (import.meta.env?.DEV) clearWallCellDiag();
-
-  const wallLayout = getWallLayoutCache(walls, blockSizePx, _activeRoomWidthBlocks, _activeRoomHeightBlocks);
+  const wallLayout = _buildWallLayoutCache(walls, blockSizePx);
 
   // Populate module-level coveredBy2x2Keys from the cached solid2x2Map —
   // avoids allocating a new Set<string> every frame.
@@ -1059,52 +1059,76 @@ export function renderWallSprites(
     ? _getAmbientDepths(wallLayout)
     : null;
 
-  // Render visible chunks via the chunk cache.
-  // Each dirty chunk is built by calling _doRenderWallTilesDirect with that
-  // chunk's tile-range filter and per-chunk canvas offset.  Clean chunks are
-  // blitted cheaply with a single drawImage call.
-  _chunkCache.renderVisibleChunks(
-    ctx,
-    wallLayout,   // identity used for layout-change detection
-    offsetXPx,
-    offsetYPx,
-    scalePx,
-    blockSizePx,
-    _vpWPx,
-    _vpHPx,
-    (chunkCtx, chunkOffX, chunkOffY, s, bsz, colMin, rowMin, colMax, rowMax) =>
-      _doRenderWallTilesDirect(
-        chunkCtx,
-        walls,
-        wallLayout,
-        ambientDepths,
-        chunkOffX,
-        chunkOffY,
-        s,
-        bsz,
-        colMin,
-        colMax,
-        rowMin,
-        rowMax,
-      ),
-  );
+  // Fast path: blit the pre-rendered canvas when the layout, scale, and
+  // rendering configuration are all unchanged and no sprite fallbacks remain.
+  // Uses object-reference comparison for the layout (no string allocation) since
+  // `_buildWallLayoutCache` returns the same object when the signature is stable.
+  // Theme/lighting/world changes are detected via `_invalidateBakedWallCanvas()`
+  // which nulls `_bakedWallCanvas` before we reach this check.
+  const bakeCurrentMatch =
+    _bakedWallCanvas !== null &&
+    _bakedWallLayoutRef === wallLayout &&
+    _bakedWallScalePx === scalePx;
+
+  if (bakeCurrentMatch && !_bakedWallHadFallbacks) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(_bakedWallCanvas!, Math.round(offsetXPx), Math.round(offsetYPx));
+    ctx.restore();
+    return;
+  }
+
+  // Determine or create the offscreen bake canvas.
+  // When the match is current but had fallbacks we reuse the existing canvas
+  // (same size) and re-render into it this frame.
+  let bakeCanvas: HTMLCanvasElement;
+  if (bakeCurrentMatch) {
+    bakeCanvas = _bakedWallCanvas!;
+  } else {
+    // Layout or scale changed — allocate a fresh canvas sized to the room
+    // bounds in virtual pixels (scalePx ≈ 1.0 always).
+    const roomW = Math.max(1, Math.ceil(_activeRoomWidthBlocks * blockSizePx * scalePx));
+    const roomH = Math.max(1, Math.ceil(_activeRoomHeightBlocks * blockSizePx * scalePx));
+    bakeCanvas = document.createElement('canvas');
+    bakeCanvas.width = roomW;
+    bakeCanvas.height = roomH;
+  }
+
+  const bakeCtx = bakeCanvas.getContext('2d');
+  if (bakeCtx === null) {
+    // Context unavailable — render directly without baking.
+    _doRenderWallTilesDirect(ctx, walls, wallLayout, ambientDepths, offsetXPx, offsetYPx, scalePx, blockSizePx);
+    return;
+  }
+
+  // Render all tiles into the bake canvas at world origin (offset = 0, 0).
+  bakeCtx.clearRect(0, 0, bakeCanvas.width, bakeCanvas.height);
+  _doRenderWallTilesDirect(bakeCtx, walls, wallLayout, ambientDepths, 0, 0, scalePx, blockSizePx);
+
+  // Commit the bake (even if fallbacks were used — they'll be corrected on the
+  // next frame once the sprites finish loading).
+  _bakedWallCanvas = bakeCanvas;
+  _bakedWallLayoutRef = wallLayout;
+  _bakedWallScalePx = scalePx;
+  _bakedWallHadFallbacks = _bakePassHadFallbacks;
+
+  // Blit the freshly-baked canvas to the target context.
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bakeCanvas, Math.round(offsetXPx), Math.round(offsetYPx));
+  ctx.restore();
 }
 
 /**
- * Draws wall tiles, platforms, ramps, and half-pillars into `ctx`.
+ * Draws all wall tiles, platforms, ramps, and half-pillars into `ctx`.
  *
- * `offsetXPx` / `offsetYPx` are applied to every tile position.  When called
- * from the chunk cache the offsets are set so that tiles at (colMin, rowMin)
- * land at canvas origin (0, 0).
+ * `offsetXPx` / `offsetYPx` are applied to every tile position, allowing the
+ * function to render either directly to the virtual canvas (with camera offset)
+ * or to the bake canvas at origin (offset = 0, 0).
  *
- * The optional `filterCol/RowMin/Max` parameters limit rendering to the tile
- * range covered by one chunk.  Elements whose entire AABB falls outside the
- * range are skipped (O(tiles_in_chunk) cost after filtering).  Elements that
- * straddle a chunk boundary are included in every chunk they overlap; the
- * chunk canvas auto-clips any overhang, so no artefact results.
- *
- * Returns `true` when any sprite was still loading and a placeholder was
- * drawn; the chunk cache uses this to schedule a rebuild on the next frame.
+ * Sets `_bakePassHadFallbacks = true` whenever a sprite is not yet loaded and
+ * a placeholder tile is drawn instead.  The caller uses this to decide whether
+ * to re-bake on the next frame.
  */
 function _doRenderWallTilesDirect(
   ctx:                   CanvasRenderingContext2D,
@@ -1115,121 +1139,324 @@ function _doRenderWallTilesDirect(
   offsetYPx:             number,
   scalePx:               number,
   blockSizePx:           number,
-  filterColMinBlocks          = 0,
-  filterColMaxBlocks          = 0x7FFFFFFF,
-  filterRowMinBlocks          = 0,
-  filterRowMaxBlocks          = 0x7FFFFFFF,
-): boolean {
+): void {
+  _bakePassHadFallbacks = false;
+
   const tileSizeScreen = blockSizePx * scalePx;
+
+  // Determine rendering mode: room-level default theme
   const roomTheme = _activeBlockTheme;
+  // In world-number mode, world 0 uses blackRock sprites (legacy behaviour)
   const isLegacyBlackRock = (roomTheme === null) && (_activeWorldNumber === 0);
+  // World-number mode for worlds 1+ uses the world-specific sprite set
   const isWorldMode = (roomTheme === null) && !isLegacyBlackRock;
+
+  // Per-tile block tinting is skipped for:
+  //   - 'DarkRoom':  a full-screen darkness overlay handles it globally.
+  //   - 'FullyLit':  intentionally no ambient shading at all (metroidvania-
+  //                  style straightforward lighting, §7 of the spec).
   const isBlockTintEnabled =
     _activeLightingEffect !== 'DarkRoom' && _activeLightingEffect !== 'FullyLit';
-
-  // Derive the chunk key when called from the chunk cache (filterColMax is finite).
-  // This allows the five render passes to use pre-bucketed per-chunk tile lists
-  // instead of scanning the full room arrays (O(chunk-items) vs O(all-tiles)).
-  const chunkKey: string | null = filterColMaxBlocks < 0x7FFFFFFF
-    ? `${(filterColMinBlocks / CHUNK_SIZE_BLOCKS) | 0},${(filterRowMinBlocks / CHUNK_SIZE_BLOCKS) | 0}`
-    : null;
-
-  const pctx: WallTilePassContext = {
-    walls, wallLayout, ambientDepths,
-    offsetXPx, offsetYPx, scalePx, blockSizePx,
-    filterColMinBlocks, filterColMaxBlocks, filterRowMinBlocks, filterRowMaxBlocks,
-    tileSizeScreen, roomTheme, isWorldMode, isBlockTintEnabled,
-    activeWorldNumber: _activeWorldNumber,
-    sprites: _sprites,
-    coveredBy2x2Keys: _coveredBy2x2Keys,
-    chunkKey,
-  };
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
 
-  let hadFallbacks = false;
-  hadFallbacks = render2x2Pass(ctx, pctx)      || hadFallbacks;
-  hadFallbacks = render1x1Pass(ctx, pctx)      || hadFallbacks;
-  hadFallbacks = renderPlatformPass(ctx, pctx) || hadFallbacks;
-  hadFallbacks = renderShapedWallPass(ctx, pctx) || hadFallbacks;
-  hadFallbacks = renderHalfPillarPass(ctx, pctx) || hadFallbacks;
+  // Draw 2×2 full sprites.
+  // blackRock: procedural sprite from 2×2 base pool + 2×2 block template.
+  // brownRock / dirt: single dedicated 16×16 flat sprite (legacy).
+  if (_coveredBy2x2Keys.size > 0) {
+    const drawSize = tileSizeScreen * 2;
+    for (const [topLeftKey, wallThemeIdx] of wallLayout.solid2x2Map) {
+      const resolvedTheme: BlockTheme | null = wallThemeIdx !== WALL_THEME_DEFAULT_INDEX
+        ? indexToBlockTheme(wallThemeIdx)
+        : roomTheme;
+      if (!_themeSupports2x2(resolvedTheme, blockSizePx)) continue;
 
-  // Guaranteed surface-edge overlay: drawn from the authoritative
-  // surfaceExposureMap after all base wall sprites (and their per-tile
-  // darkness fill) so every exposed tile side gets the edge distinction
-  // regardless of sprite-bake fallback state or 2×2/1×1 grouping. See
-  // renderSurfaceEdgeOverlayPass in wallTilePassRenderers.ts.
-  renderSurfaceEdgeOverlayPass(ctx, pctx);
+      const commaIdx = topLeftKey.indexOf(',');
+      const col = parseInt(topLeftKey.slice(0, commaIdx), 10);
+      const row = parseInt(topLeftKey.slice(commaIdx + 1), 10);
+      const tileX = Math.round(col * blockSizePx * scalePx + offsetXPx);
+      const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
 
-  // Pass 6: seam transition overlays (or debug seam visualization).
-  if (_activeSeamBlending !== 'off' || _seamBlendDebug) {
-    renderSeamOverlayPass(
-      ctx, wallLayout, roomTheme,
-      offsetXPx, offsetYPx, scalePx, blockSizePx,
-      chunkKey, _activeSeamBlending, _seamBlendDebug,
-    );
+      const material = _themeToProceduralMaterial(resolvedTheme, _activeWorldNumber);
+      if (material !== null) {
+        // Procedural path: base sprite cut with 2×2 block template.
+        const procSprite = getBlockSprite2x2(col, row, material, blockSizePx, _activeWorldNumber);
+        if (procSprite !== null) {
+          ctx.drawImage(procSprite, tileX, tileY, drawSize, drawSize);
+        } else {
+          _bakePassHadFallbacks = true;
+          _drawFallbackTile(ctx, tileX, tileY, drawSize);
+        }
+      } else {
+        // Legacy flat-sprite path (brownRock, dirt).
+        const sprite = _getFullSpriteFor2x2(resolvedTheme, blockSizePx);
+        if (sprite !== null && isSpriteReady(sprite)) {
+          ctx.drawImage(sprite, tileX, tileY, drawSize, drawSize);
+        } else {
+          _bakePassHadFallbacks = true;
+          _drawFallbackTile(ctx, tileX, tileY, drawSize);
+        }
+      }
+    }
+  }
+
+  for (let ti = 0; ti < wallLayout.occupiedTiles.length; ti++) {
+    const tile = wallLayout.occupiedTiles[ti];
+    const key = tile.key;
+    const col = tile.col;
+    const row = tile.row;
+
+    const northSolid = _isOccupied(wallLayout.occupied, col,     row - 1);
+    const eastSolid  = _isOccupied(wallLayout.occupied, col + 1, row    );
+    const southSolid = _isOccupied(wallLayout.occupied, col,     row + 1);
+    const westSolid  = _isOccupied(wallLayout.occupied, col - 1, row    );
+
+    const mask =
+      (northSolid ? _N : 0) |
+      (eastSolid  ? _E : 0) |
+      (southSolid ? _S : 0) |
+      (westSolid  ? _W : 0);
+
+    const spec = _TILE_TABLE[mask];
+
+    // Convert world-space tile position to screen space for smooth scrolling
+    const tileX  = Math.round(col * blockSizePx * scalePx + offsetXPx);
+    const tileY  = Math.round(row * blockSizePx * scalePx + offsetYPx);
+    const tileKey = key;
+
+    if (_coveredBy2x2Keys.has(tileKey)) {
+      if (isBlockTintEnabled) {
+        const airDepth = (ambientDepths?.get(tileKey) ?? 0);
+        const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+        if (darknessAlpha > 0) {
+          ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+          ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+        }
+      }
+      continue;
+    }
+
+    // Resolve per-tile theme: use tile-level override if present, else room default
+    const tileTheme: BlockTheme | null = wallLayout.tileTheme.get(tileKey) ?? roomTheme;
+    const tileIsLegacyBlackRock = (tileTheme === null) && (_activeWorldNumber === 0);
+
+    const material = _themeToProceduralMaterial(tileTheme, _activeWorldNumber);
+
+    if (material !== null) {
+      // Procedural path (blackRock): base sprite cut with 1×1 block template.
+      const procSprite = getBlockSprite1x1(col, row, material, blockSizePx, _activeWorldNumber);
+      if (procSprite !== null) {
+        ctx.drawImage(procSprite, tileX, tileY, tileSizeScreen, tileSizeScreen);
+      } else {
+        _bakePassHadFallbacks = true;
+        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+      }
+    } else if (!tileIsLegacyBlackRock && tileTheme !== null) {
+      // Legacy flat-sprite / auto-tiling path (brownRock, dirt).
+      const img = _getSpriteForLegacyTheme(tileTheme, spec.variant, blockSizePx);
+      if (isSpriteReady(img)) {
+        if (tileTheme === 'brownRock' || spec.rotationRad === 0) {
+          ctx.drawImage(img, tileX, tileY, tileSizeScreen, tileSizeScreen);
+        } else {
+          const halfSz = Math.round(tileSizeScreen * 0.5);
+          const cx     = Math.round(tileX + tileSizeScreen * 0.5);
+          const cy     = Math.round(tileY + tileSizeScreen * 0.5);
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(spec.rotationRad);
+          ctx.drawImage(img, -halfSz, -halfSz, tileSizeScreen, tileSizeScreen);
+          ctx.restore();
+        }
+      } else {
+        _bakePassHadFallbacks = true;
+        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+      }
+    } else {
+      // World 1+ legacy: world-specific auto-tiling sprites.
+      const img = _sprites[spec.variant];
+      if (isSpriteReady(img)) {
+        if (spec.rotationRad === 0) {
+          ctx.drawImage(img, tileX, tileY, tileSizeScreen, tileSizeScreen);
+        } else {
+          const halfSz = Math.round(tileSizeScreen * 0.5);
+          const cx     = Math.round(tileX + tileSizeScreen * 0.5);
+          const cy     = Math.round(tileY + tileSizeScreen * 0.5);
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(spec.rotationRad);
+          ctx.drawImage(img, -halfSz, -halfSz, tileSizeScreen, tileSizeScreen);
+          ctx.restore();
+        }
+      } else {
+        _bakePassHadFallbacks = true;
+        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+      }
+    }
+
+    if (isBlockTintEnabled) {
+      const airDepth = (ambientDepths?.get(tileKey) ?? 0);
+      const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+      if (darknessAlpha > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+        ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+      }
+    }
+
+    // Draw vertex overlays only in world 1+ legacy mode (those worlds have vertex.png).
+    // Theme-based modes and world-0 blackRock do not use vertex overlays.
+    if (isWorldMode && spec.variant === 'corner') {
+      if (!isSpriteReady(_sprites.vertex)) {
+        _bakePassHadFallbacks = true;
+      } else {
+        _drawVertexOverlays(
+          ctx, wallLayout.occupied, col, row, tileX, tileY, tileSizeScreen,
+          northSolid, eastSolid, southSolid, westSolid,
+        );
+      }
+    }
+  }
+
+  for (let ti = 0; ti < wallLayout.platformTiles.length; ti++) {
+    const tile = wallLayout.platformTiles[ti];
+    const key = tile.key;
+    const col = tile.col;
+    const row = tile.row;
+
+    const tileX = Math.round(col * blockSizePx * scalePx + offsetXPx);
+    const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
+
+    // platformEdge is stored in the tile from the cache building pass (no per-draw wall scan).
+    const platformEdgeForTile = tile.platformEdge;
+
+    // Resolve theme for this platform tile.
+    const platTheme: BlockTheme | null = wallLayout.tileTheme.get(key) ?? roomTheme;
+    const platMaterial = _themeToProceduralMaterial(platTheme, _activeWorldNumber);
+
+    if (platMaterial !== null) {
+      // Procedural path (blackRock): base sprite cut with platform template.
+      const procSprite = getPlatformSprite1x1(col, row, platMaterial, blockSizePx, platformEdgeForTile, _activeWorldNumber);
+      if (procSprite !== null) {
+        ctx.drawImage(procSprite, tileX, tileY, tileSizeScreen, tileSizeScreen);
+      } else {
+        // Fallback: thin solid-color line while sprites are loading.
+        _bakePassHadFallbacks = true;
+        ctx.fillStyle = '#8899aa';
+        _drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
+      }
+    } else {
+      // Legacy flat-color line (brownRock, dirt, world 1+).
+      const isLegacyBlackRockPlatform = (platTheme === null) && (_activeWorldNumber === 0);
+      let lineColor: string;
+      if (platTheme === 'dirt') {
+        lineColor = '#8b6914';
+      } else if (platTheme === 'brownRock' || (platTheme === null && !isLegacyBlackRockPlatform)) {
+        lineColor = '#8a7050';
+      } else {
+        lineColor = '#8899aa';
+      }
+      ctx.fillStyle = lineColor;
+      _drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
+    }
+
+    const tileKey = key;
+    if (isBlockTintEnabled) {
+      const airDepth = (ambientDepths?.get(tileKey) ?? 0);
+      const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+      if (darknessAlpha > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+        ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+      }
+    }
+  }
+
+  // ── Ramp rendering ────────────────────────────────────────────────────────
+  // blackRock: procedural sprite from base pool + ramp template.
+  // Other themes: filled solid-color triangle with edge highlight (legacy).
+  for (let ri = 0; ri < wallLayout.rampWalls.length; ri++) {
+    const wi = wallLayout.rampWalls[ri].wallIndex;
+    const ori = walls.rampOrientationIndex[wi];
+    const wxPx = walls.xWorld[wi] * scalePx + offsetXPx;
+    const wyPx = walls.yWorld[wi] * scalePx + offsetYPx;
+    const wwPx = walls.wWorld[wi] * scalePx;
+    const whPx = walls.hWorld[wi] * scalePx;
+
+    // Resolve theme for this ramp wall.
+    const rampTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
+      ? indexToBlockTheme(walls.themeIndex[wi])
+      : roomTheme;
+    const rampMaterial = _themeToProceduralMaterial(rampTheme, _activeWorldNumber);
+
+    if (rampMaterial !== null) {
+      // Procedural path (blackRock): base sprite cut with ramp template.
+      const col = Math.floor(walls.xWorld[wi] / blockSizePx);
+      const row = Math.floor(walls.yWorld[wi] / blockSizePx);
+      const widthBlocks  = Math.max(1, Math.round(walls.wWorld[wi] / blockSizePx));
+      const heightBlocks = Math.max(1, Math.round(walls.hWorld[wi] / blockSizePx));
+      const procSprite = getRampSprite(col, row, widthBlocks, heightBlocks, ori, rampMaterial, blockSizePx, _activeWorldNumber);
+      if (procSprite !== null) {
+        ctx.drawImage(procSprite, Math.round(wxPx), Math.round(wyPx), Math.round(wwPx), Math.round(whPx));
+      } else {
+        // Fallback: solid triangle while sprites are loading.
+        _bakePassHadFallbacks = true;
+        _drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, '#1a2535', '#5080b0', scalePx);
+      }
+    } else {
+      // Legacy solid-color triangle path (brownRock, dirt, world 1+).
+      const isLegacyBR = (rampTheme === null) && (_activeWorldNumber === 0);
+      let fillColor: string;
+      if (rampTheme === 'dirt') {
+        fillColor = '#5a3e1b';
+      } else if (rampTheme === 'brownRock' || (rampTheme === null && !isLegacyBR)) {
+        fillColor = '#4a3828';
+      } else {
+        fillColor = '#1a2535';
+      }
+      let edgeColor: string;
+      if (rampTheme === 'dirt') {
+        edgeColor = '#8b6914';
+      } else if (rampTheme === 'brownRock' || (rampTheme === null && !isLegacyBR)) {
+        edgeColor = '#7a5840';
+      } else {
+        edgeColor = '#5080b0';
+      }
+      _drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, fillColor, edgeColor, scalePx);
+    }
+  }
+
+  // ── Half-pillar walls ─────────────────────────────────────────────────────
+  // Draw half-width pillars as centered narrow rectangles.
+  for (let pi = 0; pi < wallLayout.halfPillarWalls.length; pi++) {
+    const wi = wallLayout.halfPillarWalls[pi].wallIndex;
+    const wxPx = walls.xWorld[wi] * scalePx + offsetXPx;
+    const wyPx = walls.yWorld[wi] * scalePx + offsetYPx;
+    const wwPx = walls.wWorld[wi] * scalePx;
+    const whPx = walls.hWorld[wi] * scalePx;
+
+    // Resolve theme color
+    const pillarTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
+      ? indexToBlockTheme(walls.themeIndex[wi])
+      : roomTheme;
+    const isLegacyBR2 = (pillarTheme === null) && (_activeWorldNumber === 0);
+    let pillarFill: string;
+    let pillarEdge: string;
+    if (pillarTheme === 'dirt') {
+      pillarFill = '#5a3e1b'; pillarEdge = '#8b6914';
+    } else if (pillarTheme === 'brownRock' || (pillarTheme === null && !isLegacyBR2)) {
+      pillarFill = '#4a3828'; pillarEdge = '#7a5840';
+    } else {
+      pillarFill = '#1a2535'; pillarEdge = '#5080b0';
+    }
+
+    // Draw the pillar centered horizontally within its AABB
+    const pillarWidthPx = wwPx; // width already 4 px (half BLOCK_SIZE_MEDIUM)
+    ctx.fillStyle = pillarFill;
+    ctx.fillRect(Math.round(wxPx), Math.round(wyPx), Math.round(pillarWidthPx), Math.round(whPx));
+    ctx.strokeStyle = pillarEdge;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(wxPx) + 0.5, Math.round(wyPx) + 0.5,
+      Math.round(pillarWidthPx) - 1, Math.round(whPx) - 1);
   }
 
   ctx.restore();
-  return hadFallbacks;
-}
-
-// ── Extension tile sprite renderer ────────────────────────────────────────────
-
-/**
- * Renders a single extension tile using the same sprite selection logic as
- * the main wall tile renderer, but without requiring a full WallSnapshot or
- * CachedWallLayout.
- *
- * The caller supplies:
- *  - `occupancy`     — a set of "col,row" keys for all tiles that should be
- *                      treated as solid for neighbour-mask computation.  Must
- *                      include the solid extension tiles AND the adjacent room
- *                      edge cells (provided via {@link EdgeExtensionCache.occupancySet}).
- *  - `theme`         — per-tile theme override; null means "use room default"
- *                      (resolved via the module-level `_activeBlockTheme`).
- *  - `darknessAlpha` — 0–1 overlay applied after the sprite draw.  Pass 0 to
- *                      skip the tint.
- *
- * Called by {@link renderEdgeExtension} for every solid extension tile.
- *
- * @param ctx           Virtual canvas 2D context.
- * @param col           Tile column (may be outside room bounds).
- * @param row           Tile row (may be outside room bounds).
- * @param theme         Per-tile theme override (null = room default).
- * @param occupancy     Solid-tile occupancy set for neighbour lookups.
- * @param ox            Camera X offset (world-to-screen, virtual pixels).
- * @param oy            Camera Y offset (world-to-screen, virtual pixels).
- * @param scale         Zoom factor (world units → virtual pixels).
- * @param blockSizePx   Block size in world units (e.g. BLOCK_SIZE_SMALL = 8).
- * @param darknessAlpha Darkness overlay alpha (0 = none, 1 = fully black).
- */
-export function renderSingleExtensionTile(
-  ctx:          CanvasRenderingContext2D,
-  col:          number,
-  row:          number,
-  theme:        string | null,
-  occupancy:    ReadonlySet<string>,
-  ox:           number,
-  oy:           number,
-  scale:        number,
-  blockSizePx:  number,
-  darknessAlpha: number,
-): void {
-  renderSingleExtensionTileWithState(
-    ctx,
-    _activeBlockTheme,
-    _activeWorldNumber,
-    _sprites,
-    col,
-    row,
-    theme,
-    occupancy,
-    ox,
-    oy,
-    scale,
-    blockSizePx,
-    darknessAlpha,
-  );
 }

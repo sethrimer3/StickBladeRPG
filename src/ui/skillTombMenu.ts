@@ -26,126 +26,12 @@ export interface SkillTombMenuCallbacks {
 
 const PANEL_BG = 'rgba(10,8,6,0.95)';
 
-// ── Shared overlay / close-button helpers ─────────────────────────────────────
-
-function createOverlay(): HTMLElement {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: ${PANEL_BG};
-    z-index: 1500;
-    display: flex; flex-direction: column;
-    font-family: 'Cinzel', serif; font-weight: 400; color: #eee;
-  `;
-  return overlay;
-}
-
-function createCloseButton(onClick: () => void): HTMLButtonElement {
-  const closeBtn = document.createElement('button');
-  closeBtn.textContent = '✕';
-  closeBtn.style.cssText = `
-    background: transparent; border: 1px solid ${GOLD_DIM};
-    color: ${GOLD}; font-size: 1.3rem; width: 36px; height: 36px;
-    cursor: pointer; border-radius: 4px; font-family: 'Cinzel', serif;
-    font-weight: 400; line-height: 1;
-    transition: all 0.15s;
-  `;
-  closeBtn.addEventListener('mouseenter', () => {
-    closeBtn.style.background = 'rgba(212,168,75,0.15)';
-    closeBtn.style.borderColor = GOLD;
-  });
-  closeBtn.addEventListener('mouseleave', () => {
-    closeBtn.style.background = 'transparent';
-    closeBtn.style.borderColor = GOLD_DIM;
-  });
-  closeBtn.addEventListener('click', onClick);
-  return closeBtn;
-}
-
-// ── Map-only modal (accessible via M key from anywhere) ───────────────────────
-
-export interface MapOnlyModalCallbacks {
-  onClose: () => void;
-}
-
-/**
- * Shows a read-only world map modal.  The player can pan and zoom the map but
- * cannot edit their loadout.  Used when the player presses M outside a save tomb.
- */
-export function showMapOnlyModal(
-  root: HTMLElement,
-  progress: PlayerProgress,
-  currentRoomId: string,
-  playerXWorld: number,
-  playerYWorld: number,
-  callbacks: MapOnlyModalCallbacks,
-): () => void {
-  let mapCleanup: (() => void) | null = null;
-
-  const overlay = createOverlay();
-
-  // ── Top bar ──────────────────────────────────────────────────────────────
-  const topBar = document.createElement('div');
-  topBar.style.cssText = `
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 20px; border-bottom: 1px solid rgba(212,168,75,0.25);
-    flex-shrink: 0;
-  `;
-
-  const title = document.createElement('span');
-  title.textContent = 'Map';
-  title.style.cssText = `
-    font-size: 1.1rem; color: ${GOLD}; letter-spacing: 0.05em;
-  `;
-  topBar.appendChild(title);
-
-  const closeBtn = createCloseButton(() => { destroy(); callbacks.onClose(); });
-  topBar.appendChild(closeBtn);
-  overlay.appendChild(topBar);
-
-  // ── Content area ─────────────────────────────────────────────────────────
-  const contentArea = document.createElement('div');
-  contentArea.style.cssText = `
-    flex: 1; overflow-y: auto; overflow-x: hidden;
-    padding: 16px 20px;
-  `;
-  overlay.appendChild(contentArea);
-
-  // ── ESC key handler ──────────────────────────────────────────────────────
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' || e.key === 'm' || e.key === 'M') {
-      e.preventDefault();
-      e.stopPropagation();
-      destroy();
-      callbacks.onClose();
-    }
-  }
-  window.addEventListener('keydown', onKey, true);
-
-  // ── Mount and render ─────────────────────────────────────────────────────
-  root.appendChild(overlay);
-  mapCleanup = buildMapTab(contentArea, currentRoomId, progress.exploredRoomIds, playerXWorld, playerYWorld);
-
-  // ── Cleanup ─────────────────────────────────────────────────────────────
-  function destroy(): void {
-    window.removeEventListener('keydown', onKey, true);
-    if (mapCleanup) mapCleanup();
-    if (overlay.parentElement) overlay.parentElement.removeChild(overlay);
-  }
-
-  return destroy;
-}
-
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function showSkillTombMenu(
   root: HTMLElement,
   progress: PlayerProgress,
   currentRoomId: string,
-  playerXWorld: number,
-  playerYWorld: number,
-  playerHp: number,
-  playerMaxHp: number,
   callbacks: SkillTombMenuCallbacks,
 ): () => void {
   let weaveLoadout: PlayerWeaveLoadout = {
@@ -154,10 +40,16 @@ export function showSkillTombMenu(
   };
   let activeTab: 'loadout' | 'map' = 'loadout';
   let mapCleanup: (() => void) | null = null;
-  let loadoutCleanup: (() => void) | null = null;
 
   // ── Overlay ──────────────────────────────────────────────────────────────
-  const overlay = createOverlay();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: ${PANEL_BG};
+    z-index: 1500;
+    display: flex; flex-direction: column;
+    font-family: 'Cinzel', serif; font-weight: 400; color: #eee;
+  `;
 
   // ── Top bar ──────────────────────────────────────────────────────────────
   const topBar = document.createElement('div');
@@ -189,13 +81,30 @@ export function showSkillTombMenu(
   }
 
   const loadoutTabBtn = createTabBtn('Loadout', 'loadout');
-  const mapTabBtn = createTabBtn('Map', 'map');
+  const mapTabBtn = createTabBtn('World Map', 'map');
   tabRow.appendChild(loadoutTabBtn);
   tabRow.appendChild(mapTabBtn);
   topBar.appendChild(tabRow);
 
   // X close button
-  const closeBtn = createCloseButton(() => {
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = `
+    background: transparent; border: 1px solid ${GOLD_DIM};
+    color: ${GOLD}; font-size: 1.3rem; width: 36px; height: 36px;
+    cursor: pointer; border-radius: 4px; font-family: 'Cinzel', serif;
+    font-weight: 400; line-height: 1;
+    transition: all 0.15s;
+  `;
+  closeBtn.addEventListener('mouseenter', () => {
+    closeBtn.style.background = 'rgba(212,168,75,0.15)';
+    closeBtn.style.borderColor = GOLD;
+  });
+  closeBtn.addEventListener('mouseleave', () => {
+    closeBtn.style.background = 'transparent';
+    closeBtn.style.borderColor = GOLD_DIM;
+  });
+  closeBtn.addEventListener('click', () => {
     destroy();
     const loadout = getAllBoundDust(weaveLoadout);
     callbacks.onClose(loadout.slice(), weaveLoadout);
@@ -222,30 +131,19 @@ export function showSkillTombMenu(
     mapTabBtn.style.background = !isLoadout ? 'rgba(212,168,75,0.2)' : 'transparent';
     mapTabBtn.style.borderBottomColor = !isLoadout ? GOLD : 'transparent';
 
-    // Clean up previous tab listeners before clearing content
+    // Clean up previous map listeners before clearing content
     if (mapCleanup) {
       mapCleanup();
       mapCleanup = null;
-    }
-    if (loadoutCleanup) {
-      loadoutCleanup();
-      loadoutCleanup = null;
     }
 
     contentArea.innerHTML = '';
     if (activeTab === 'loadout') {
       // The callback keeps our local weaveLoadout in sync; the final
       // value is read when the menu closes via onClose / ESC.
-      loadoutCleanup = buildLoadoutTab(
-        contentArea,
-        weaveLoadout,
-        (updated) => { weaveLoadout = updated; },
-        progress,
-        playerHp,
-        playerMaxHp,
-      );
+      buildLoadoutTab(contentArea, weaveLoadout, (updated) => { weaveLoadout = updated; });
     } else {
-      mapCleanup = buildMapTab(contentArea, currentRoomId, progress.exploredRoomIds, playerXWorld, playerYWorld);
+      mapCleanup = buildMapTab(contentArea, currentRoomId, progress.exploredRoomIds);
     }
   }
 
@@ -269,7 +167,6 @@ export function showSkillTombMenu(
   function destroy(): void {
     window.removeEventListener('keydown', onKey, true);
     if (mapCleanup) mapCleanup();
-    if (loadoutCleanup) loadoutCleanup();
     if (overlay.parentElement) overlay.parentElement.removeChild(overlay);
   }
 

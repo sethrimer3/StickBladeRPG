@@ -6,13 +6,6 @@
 
 import { debugSpeedOverrides } from '../sim/clusters/movement';
 import { debugCloakOverrides } from '../render/clusters/cloakConstants';
-import {
-  type DebugPanelId,
-  debugPanelVisibility,
-  toggleDebugPanel,
-  hideAllDebugPanels,
-} from './debugPanelManager';
-import { isDevModeEnabled, setDevModeEnabled } from './devMode';
 
 const PANEL_BG = 'rgba(15,15,20,0.92)';
 const PANEL_BORDER = 'rgba(0,200,100,0.4)';
@@ -38,19 +31,18 @@ interface CloakFieldDef {
  * constants are module-private and cannot be imported.
  */
 const FIELDS: readonly FieldDef[] = [
-  { key: 'walkSpeedWorld',     label: 'Walk Speed',      defaultValue: 160.0 },
+  { key: 'walkSpeedWorld',     label: 'Walk Speed',      defaultValue: 105.0 },
   { key: 'jumpSpeedWorld',     label: 'Jump Speed',      defaultValue: 300.0 },
   { key: 'gravityWorld',       label: 'Gravity',         defaultValue: 900.0 },
-  { key: 'normalFallCapWorld', label: 'Normal Fall Cap', defaultValue: 180.0 },
+  { key: 'normalFallCapWorld', label: 'Normal Fall Cap', defaultValue: 160.5 },
   { key: 'fastFallCapWorld',   label: 'Fast Fall Cap',   defaultValue: 240.0 },
+  { key: 'sprintMultiplier',   label: 'Sprint Mult',     defaultValue: 1.5 },
   { key: 'groundAccelWorld',   label: 'Ground Accel',    defaultValue: 800.0 },
   { key: 'groundDecelWorld',   label: 'Ground Decel',    defaultValue: 1000.0 },
   { key: 'airAccelWorld',      label: 'Air Accel',       defaultValue: 520.0 },
   { key: 'airDecelWorld',      label: 'Air Decel',       defaultValue: 600.0 },
-  { key: 'wallJumpXWorld',     label: 'Wall Jump X',     defaultValue: 150.0 },
+  { key: 'wallJumpXWorld',     label: 'Wall Jump X',     defaultValue: 147.0 },
   { key: 'wallJumpYWorld',     label: 'Wall Jump Y',     defaultValue: 147.0 },
-  { key: 'grappleSuperJumpMultiplier', label: 'Grapple Super Mult', defaultValue: 1.331 },
-  { key: 'wallJumpAirAccelMultiplier', label: 'WJ Air Accel Mult',  defaultValue: 2.0 },
 ];
 
 const CLOAK_FIELDS: readonly CloakFieldDef[] = [
@@ -70,6 +62,7 @@ const CLOAK_FIELDS: readonly CloakFieldDef[] = [
   { key: 'fastFallVelocityThresholdWorld', label: 'FastFall Threshold', defaultValue: 180.0 },
   { key: 'spreadIdle', label: 'Spread Idle', defaultValue: 0.15 },
   { key: 'spreadRunning', label: 'Spread Running', defaultValue: 0.3 },
+  { key: 'spreadSprinting', label: 'Spread Sprint', defaultValue: 0.4 },
   { key: 'spreadJumping', label: 'Spread Jump', defaultValue: 0.2 },
   { key: 'spreadFalling', label: 'Spread Fall', defaultValue: 0.5 },
   { key: 'spreadFastFall', label: 'Spread FastFall', defaultValue: 0.9 },
@@ -86,27 +79,6 @@ const CLOAK_FIELDS: readonly CloakFieldDef[] = [
   { key: 'backCompressionAmount', label: 'Back Compress', defaultValue: 0.5 },
 ];
 
-/** Debug panel toggle button definitions (shown below Cloak Tuning). */
-interface DebugPanelDef {
-  readonly id: DebugPanelId;
-  readonly label: string;
-}
-
-const DEBUG_PANEL_DEFS: readonly DebugPanelDef[] = [
-  { id: 'movement',    label: 'Movement Debug' },
-  { id: 'grapple',     label: 'Grapple / Zip Debug' },
-  { id: 'water',       label: 'Water / Liquid Debug' },
-  { id: 'performance', label: 'Performance Debug' },
-  { id: 'chunks',      label: 'Rendering / Chunks Debug' },
-  { id: 'prewarm',     label: 'Prewarm Debug' },
-  { id: 'freeze',      label: 'Freeze Profiler' },
-  { id: 'particles',   label: 'Particles / Dust Debug' },
-  { id: 'room',        label: 'Room / Editor Debug' },
-  { id: 'resident',    label: 'Resident Room Debug' },
-  { id: 'iceMoteAura', label: 'Ice Mote Aura Debug' },
-  { id: 'speedGraph',  label: 'Speed Graph' },
-];
-
 export interface DebugPanel {
   container: HTMLDivElement;
   destroy: () => void;
@@ -116,42 +88,12 @@ export function createDebugPanel(root: HTMLElement): DebugPanel {
   const container = document.createElement('div');
   container.id = 'debug-speed-panel';
   container.style.cssText = `
-    position: absolute; top: 74px; right: 16px; width: 190px;
+    position: absolute; top: 74px; right: 16px; width: 220px;
     background: ${PANEL_BG}; border: 1px solid ${PANEL_BORDER};
     color: ${TEXT_COLOR}; font-family: monospace; font-size: 10px;
     padding: 6px; box-sizing: border-box; z-index: 850;
     pointer-events: auto; border-radius: 6px;
-    opacity: 0.3; transition: opacity 140ms ease-out;
   `;
-  container.addEventListener('mouseenter', () => {
-    container.style.opacity = '1';
-  });
-  container.addEventListener('mouseleave', () => {
-    container.style.opacity = '0.3';
-  });
-
-  // ── Dev Mode toggle (gates debug-only UI elements in other menus) ────────
-  const devModeBtn = document.createElement('button');
-  devModeBtn.type = 'button';
-  devModeBtn.style.cssText = `
-    width: 100%; margin-bottom: 6px; padding: 4px 8px; font-size: 9px;
-    background: rgba(0,0,0,0.35); border: 1px solid ${PANEL_BORDER};
-    color: ${TEXT_COLOR}; font-family: monospace; cursor: pointer;
-    border-radius: 3px; text-align: left; box-sizing: border-box;
-  `;
-  const refreshDevModeBtn = (): void => {
-    const enabled = isDevModeEnabled();
-    devModeBtn.textContent = enabled ? '☑ Dev Mode' : '☐ Dev Mode';
-    devModeBtn.style.borderColor = enabled ? GREEN : PANEL_BORDER;
-    devModeBtn.style.color = enabled ? GREEN : TEXT_COLOR;
-  };
-  devModeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setDevModeEnabled(!isDevModeEnabled());
-    refreshDevModeBtn();
-  });
-  refreshDevModeBtn();
-  container.appendChild(devModeBtn);
 
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
@@ -333,65 +275,6 @@ export function createDebugPanel(root: HTMLElement): DebugPanel {
   container.appendChild(cloakBody);
   refreshToggleText();
   refreshCloakToggleText();
-
-  // ── Debug Panel toggle buttons (below Cloak Tuning) ──────────────────────
-
-  const panelSeparator = document.createElement('div');
-  panelSeparator.style.cssText = `
-    margin: 8px 0 4px; border-top: 1px solid ${PANEL_BORDER};
-    font-size: 9px; color: ${LABEL_COLOR}; text-align: center; padding-top: 4px;
-  `;
-  panelSeparator.textContent = '── Debug Panels ──';
-  container.appendChild(panelSeparator);
-
-  const panelButtonCss = `
-    width: 100%; margin-bottom: 2px; padding: 4px 8px; font-size: 9px;
-    background: rgba(0,0,0,0.35); border: 1px solid ${PANEL_BORDER};
-    color: ${TEXT_COLOR}; font-family: monospace; cursor: pointer;
-    border-radius: 3px; text-align: left; box-sizing: border-box;
-  `;
-
-  // Keep update callbacks so "Hide All" can refresh all buttons at once.
-  const updatePanelBtnFns: Array<() => void> = [];
-
-  for (const def of DEBUG_PANEL_DEFS) {
-    const panelBtn = document.createElement('button');
-    panelBtn.type = 'button';
-    panelBtn.style.cssText = panelButtonCss;
-
-    const updatePanelBtn = (): void => {
-      const isOpen = debugPanelVisibility[def.id];
-      panelBtn.textContent = isOpen ? `▾ ${def.label}` : `▸ ${def.label}`;
-      panelBtn.style.borderColor = isOpen ? GREEN : PANEL_BORDER;
-      panelBtn.style.color = isOpen ? GREEN : TEXT_COLOR;
-    };
-    panelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleDebugPanel(def.id);
-      updatePanelBtn();
-    });
-    updatePanelBtn();
-    updatePanelBtnFns.push(updatePanelBtn);
-    container.appendChild(panelBtn);
-  }
-
-  // "Hide All Debug Panels" convenience button
-  const hideAllBtn = document.createElement('button');
-  hideAllBtn.type = 'button';
-  hideAllBtn.textContent = '✕ Hide All Debug Panels';
-  hideAllBtn.style.cssText = `
-    width: 100%; margin-top: 4px; padding: 4px 8px; font-size: 9px;
-    background: rgba(0,0,0,0.4); border: 1px solid rgba(255,80,60,0.5);
-    color: rgba(255,150,130,0.9); font-family: monospace; cursor: pointer;
-    border-radius: 3px; box-sizing: border-box;
-  `;
-  hideAllBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    hideAllDebugPanels();
-    for (const fn of updatePanelBtnFns) fn();
-  });
-  container.appendChild(hideAllBtn);
-
   root.appendChild(container);
 
   return {

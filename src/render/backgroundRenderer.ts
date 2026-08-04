@@ -10,22 +10,14 @@
  */
 
 import type { BackgroundId } from '../levels/roomDef';
-import { loadImg, isSpriteReady, isSpriteDecodeReady, decodeImg, hasImageFailed } from './imageCache';
-import { backgroundIdToImageUrl, backgroundIdToBlurUrl } from './backgroundCatalogue';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Parallax factor: 0 = fully fixed, 1 = moves with foreground. */
 const PARALLAX_FACTOR = 0.2;
 
-/** Standard tile size in world units (8×8 virtual px at zoom 1). */
-const TILE_SIZE_WORLD = 8;
-
-/** Room dimension threshold above which parallax factor is damped (100 tiles). */
-const LARGE_ROOM_WORLD_THRESHOLD = 100 * TILE_SIZE_WORLD; // 800 world units
-
 /** Vite base URL for public assets. */
-const BASE = import.meta.env?.BASE_URL ?? '/';
+const BASE = import.meta.env.BASE_URL;
 
 /** Path for world background images (relative to publicDir). */
 function worldBgImagePath(worldNumber: number): string {
@@ -39,12 +31,23 @@ function worldBgImagePath(worldNumber: number): string {
  * Returns the image path for a named BackgroundId, or null for procedural
  * backgrounds (e.g. crystallineCracks) that have no static image.
  */
-function backgroundIdToImagePath(id: BackgroundId, useBlur?: boolean): string | null {
-  if (useBlur) {
-    const blurUrl = backgroundIdToBlurUrl(id);
-    if (blurUrl !== null) return blurUrl;
+function backgroundIdToImagePath(id: BackgroundId): string | null {
+  switch (id) {
+    case 'brownRock':        return `${BASE}SPRITES/BACKGROUNDS/brownRock_background_1.png`;
+    case 'world1':           return `${BASE}SPRITES/WORLDS/W-1/background/background.png`;
+    case 'world2':           return `${BASE}SPRITES/WORLDS/W-2/background/background.png`;
+    case 'world3':           return `${BASE}SPRITES/WORLDS/W-3/background/background.png`;
+    case 'crystallineCracks':
+    case 'thero_prologue':
+    case 'thero_ch1':
+    case 'thero_ch2':
+    case 'thero_ch3':
+    case 'thero_ch4':
+    case 'thero_ch5':
+    case 'thero_ch6':
+      return null;  // procedural background effect
+    default:                 return null;
   }
-  return backgroundIdToImageUrl(id);
 }
 
 /** Solid fallback colour per world (shown while the image is loading). */
@@ -58,215 +61,45 @@ function worldFallbackColor(worldNumber: number): string {
   }
 }
 
-// ─── Background image stats ───────────────────────────────────────────────────
+// ─── Image cache ─────────────────────────────────────────────────────────────
+
+/** Caches loaded background images per image URL. */
+const _bgImageCache = new Map<string, HTMLImageElement>();
+
+/** Tracks which URLs have started loading. */
+const _bgLoadStarted = new Set<string>();
 
 /**
- * Per-frame background image draw-call result counters.
- * All three values are reset at the start of each `renderWorldBackground` call
- * so they reflect the most recent frame only.
- */
-let _bgDrawReady      = 0;   // draw calls where a decoded image was available
-let _bgDrawNotReady   = 0;   // draw calls where the image was not yet decoded
-let _bgFallbacksThisFrame = 0; // draw calls that fell back to solid fill
-
-/** Returns per-frame background image draw-call result counters. */
-export function getBgImageStats(): {
-  drawReady: number;
-  drawNotReady: number;
-  fallbacksThisFrame: number;
-} {
-  return {
-    drawReady:          _bgDrawReady,
-    drawNotReady:       _bgDrawNotReady,
-    fallbacksThisFrame: _bgFallbacksThisFrame,
-  };
-}
-
-// ─── Image access via shared cache ───────────────────────────────────────────
-
-/**
- * Returns the cached background image for the given URL when it is decoded
- * and draw-ready, or `null` otherwise.
- *
- * Uses the shared `imageCache.loadImg` singleton so the same
- * HTMLImageElement is returned regardless of which module loaded it first.
- * If the image has been through `decodeImg()` (e.g. via
- * `preloadBackgroundImageDecoded()`), `isSpriteDecodeReady()` returns `true`
- * immediately even before `img.complete` is stable on all browsers.
- *
- * A `loadImg()` call is always made so the background image starts loading
- * the first time `renderWorldBackground()` is called for a new URL, even if
- * `preloadBackgroundImageDecoded()` was never called.
+ * Returns the cached background image for the given URL, or null if not
+ * yet loaded.  Triggers an async load on the first call for each URL.
  */
 function _getBgImageByUrl(url: string): HTMLImageElement | null {
-  const img = loadImg(url);   // idempotent — same element on repeat calls
-  if (isSpriteDecodeReady(img)) {
-    _bgDrawReady++;
-    return img;
+  const cached = _bgImageCache.get(url);
+  if (cached !== undefined && cached.complete && cached.naturalWidth > 0) {
+    return cached;
   }
-  // Not yet decoded: kick off a background decode if not already in flight.
-  void decodeImg(url);
-  _bgDrawNotReady++;
-  // Treat plain-loaded images as ready for drawing (avoids a blank frame when
-  // decode() is unavailable or the call races with the first render).
-  if (isSpriteReady(img)) return img;
+
+  if (!_bgLoadStarted.has(url)) {
+    _bgLoadStarted.add(url);
+    const img = new Image();
+    img.src = url;
+    img.onload = () => {
+      _bgImageCache.set(url, img);
+    };
+  }
+
   return null;
 }
 
-export interface BackgroundParallaxLayout {
-  effectiveParallaxX: number;
-  effectiveParallaxY: number;
-  requiredOverscanX: number;
-  requiredOverscanY: number;
-  targetWidthPx: number;
-  targetHeightPx: number;
-  coverScale: number;
-  bgWidthPx: number;
-  bgHeightPx: number;
-  drawX: number;
-  drawY: number;
-}
-
 /**
- * Computes viewport-cover scaling and parallax offsets for a static background image.
- *
- * Sizing rules:
- *  - Sized primarily to cover the viewport with only modest overscan for parallax displacement.
- *  - Never scales to cover the entire room at once.
- *  - Preserves the aspect ratio of the loaded texture via uniform "cover" scaling (cropped at edges, never stretched or distorted).
- *  - For rooms over 100 tiles wide or tall, scales down the parallax factor inversely with room dimensions so movement remains subtle and overscan is bounded.
+ * Wraps an offset into the range [-tileSize, 0) so that tiling starts
+ * just off-screen to the left/top and seamlessly covers the viewport.
  */
-export function computeBackgroundParallaxLayout(
-  viewportWidthPx: number,
-  viewportHeightPx: number,
-  cameraOffsetXPx: number,
-  cameraOffsetYPx: number,
-  roomWidthWorld: number,
-  roomHeightWorld: number,
-  zoom: number,
-  imgWidthPx: number,
-  imgHeightPx: number,
-): BackgroundParallaxLayout {
-  const safeRoomW = Math.max(1, roomWidthWorld);
-  const safeRoomH = Math.max(1, roomHeightWorld);
-
-  // Damp parallax factor in very large rooms (> 100 tiles) to prevent rapid sliding or massive overscan.
-  const effectiveParallaxX = PARALLAX_FACTOR * Math.min(1.0, LARGE_ROOM_WORLD_THRESHOLD / safeRoomW);
-  const effectiveParallaxY = PARALLAX_FACTOR * Math.min(1.0, LARGE_ROOM_WORLD_THRESHOLD / safeRoomH);
-
-  // Maximum camera offset displacement from room center across all valid positions (edges/corners).
-  const maxCamDispX = Math.max(0, safeRoomW * 0.5 * zoom);
-  const maxCamDispY = Math.max(0, safeRoomH * 0.5 * zoom);
-
-  // Maximum parallax shift in screen pixels in either direction.
-  const maxParallaxShiftX = maxCamDispX * effectiveParallaxX;
-  const maxParallaxShiftY = maxCamDispY * effectiveParallaxY;
-
-  // Required overscan to cover extreme displacements in both directions without revealing empty edges.
-  const requiredOverscanX = 2 * maxParallaxShiftX;
-  const requiredOverscanY = 2 * maxParallaxShiftY;
-
-  const targetWidthPx = viewportWidthPx + requiredOverscanX;
-  const targetHeightPx = viewportHeightPx + requiredOverscanY;
-
-  // Uniform "cover" scaling to preserve aspect ratio without stretching or distorting.
-  const scaleX = targetWidthPx / Math.max(1, imgWidthPx);
-  const scaleY = targetHeightPx / Math.max(1, imgHeightPx);
-  const coverScale = Math.max(scaleX, scaleY);
-
-  const bgWidthPx = imgWidthPx * coverScale;
-  const bgHeightPx = imgHeightPx * coverScale;
-
-  // Relative camera offset from room center.
-  const roomCenterOffsetXPx = viewportWidthPx * 0.5 - safeRoomW * 0.5 * zoom;
-  const roomCenterOffsetYPx = viewportHeightPx * 0.5 - safeRoomH * 0.5 * zoom;
-  const relCameraOffsetXPx = cameraOffsetXPx - roomCenterOffsetXPx;
-  const relCameraOffsetYPx = cameraOffsetYPx - roomCenterOffsetYPx;
-
-  const centeredOriginXPx = (viewportWidthPx - bgWidthPx) * 0.5;
-  const centeredOriginYPx = (viewportHeightPx - bgHeightPx) * 0.5;
-
-  const rawShiftX = relCameraOffsetXPx * effectiveParallaxX;
-  const rawShiftY = relCameraOffsetYPx * effectiveParallaxY;
-
-  // Clamp shift so out-of-bounds panning or transitions never reveal empty edges.
-  const shiftX = Math.max(-maxParallaxShiftX, Math.min(maxParallaxShiftX, rawShiftX));
-  const shiftY = Math.max(-maxParallaxShiftY, Math.min(maxParallaxShiftY, rawShiftY));
-
-  const drawX = centeredOriginXPx + shiftX;
-  const drawY = centeredOriginYPx + shiftY;
-
-  return {
-    effectiveParallaxX,
-    effectiveParallaxY,
-    requiredOverscanX,
-    requiredOverscanY,
-    targetWidthPx,
-    targetHeightPx,
-    coverScale,
-    bgWidthPx,
-    bgHeightPx,
-    drawX,
-    drawY,
-  };
+function wrapToTileStart(offset: number, tileSize: number): number {
+  return -((((-offset) % tileSize) + tileSize) % tileSize);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
-
-/**
- * Triggers HTMLImageElement.decode() for the static background image
- * associated with `id`, ensuring the GPU has rasterized the texture before
- * the first drawImage call.
- *
- * Fire-and-forget — returns immediately for procedural backgrounds (those
- * with no static image URL).  Safe to call multiple times; decodeImg() is
- * idempotent for already-decoded URLs.
- */
-export function preloadBackgroundImageDecoded(id: BackgroundId, useBlur?: boolean): void {
-  const url = backgroundIdToImagePath(id, useBlur);
-  if (url !== null) void decodeImg(url);
-}
-
-/**
- * Triggers HTMLImageElement.decode() for the background image that
- * `renderWorldBackground()` will actually render for the given room parameters.
- *
- * Uses the same URL-selection logic as `renderWorldBackground()`:
- *   - If `backgroundId` is provided, decodes its image (or no-ops for procedural ones).
- *   - Otherwise decodes the world-number image (`worldBgImagePath(worldNumber)`).
- *   - World 99 (Thero showcase) uses solid black — nothing to decode.
- *
- * Fire-and-forget.  Safe to call multiple times — decodeImg() is idempotent.
- */
-export function preloadRoomBackgroundDecoded(worldNumber: number, backgroundId?: BackgroundId, useBlur?: boolean): void {
-  if (worldNumber === 99) return;
-  const url = backgroundId != null
-    ? backgroundIdToImagePath(backgroundId, useBlur)
-    : worldBgImagePath(worldNumber);
-  if (url !== null) void decodeImg(url);
-}
-
-/**
- * Returns `true` once the background image for the given room parameters has
- * been fully decoded and is ready to render without any blocking decode step.
- *
- * Mirrors the URL-selection logic of `preloadRoomBackgroundDecoded`:
- *   - World 99 (solid black) is always considered ready.
- *   - Procedural backgrounds (no image URL) are always considered ready.
- *   - Otherwise waits for `isSpriteDecodeReady()` on the selected image.
- *
- * Use this alongside `areRoomSpritesReady()` in the loading-overlay tick so the
- * player is only unblocked once the background image is actually decoded.
- */
-export function isRoomBackgroundDecodeReady(worldNumber: number, backgroundId?: BackgroundId, useBlur?: boolean): boolean {
-  if (worldNumber === 99) return true;
-  const url = backgroundId != null
-    ? backgroundIdToImagePath(backgroundId, useBlur)
-    : worldBgImagePath(worldNumber);
-  if (url === null) return true; // procedural background — no image needed
-  const img = loadImg(url);
-  return isSpriteDecodeReady(img);
-}
 
 /**
  * Renders the room background for the current world with parallax scrolling.
@@ -297,12 +130,7 @@ export function renderWorldBackground(
   roomHeightWorld: number,
   zoom: number,
   backgroundId?: BackgroundId,
-  useBlur?: boolean,
 ): void {
-  _bgDrawReady = 0;
-  _bgDrawNotReady = 0;
-  _bgFallbacksThisFrame = 0;
-
   // Thero showcase rooms and Crystalline Cracks use solid black — no parallax image.
   if (
     worldNumber === 99 ||
@@ -322,7 +150,7 @@ export function renderWorldBackground(
 
   // Determine the image URL to use
   const imgUrl = backgroundId != null
-    ? backgroundIdToImagePath(backgroundId, useBlur)
+    ? backgroundIdToImagePath(backgroundId)
     : worldBgImagePath(worldNumber);
 
   if (imgUrl === null) {
@@ -332,52 +160,40 @@ export function renderWorldBackground(
     return;
   }
 
-  if (hasImageFailed(imgUrl)) {
-    // Image failed to load (e.g. missing asset) — draw solid black rather than
-    // retrying forever or showing the per-world tint (which implies "still loading").
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
-    _bgFallbacksThisFrame++;
-    return;
-  }
-
   const img = _getBgImageByUrl(imgUrl);
 
   if (img === null) {
     // Image not loaded yet — draw solid fallback colour
     ctx.fillStyle = worldFallbackColor(worldNumber);
     ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
-    _bgFallbacksThisFrame++;
     return;
   }
 
   const tw = img.naturalWidth;
   const th = img.naturalHeight;
-  if (tw === 0 || th === 0) {
-    // Degenerate image dimensions (decode race, corrupt asset): fall back to
-    // a solid fill so the room never shows a raw/undefined canvas region.
-    ctx.fillStyle = worldFallbackColor(worldNumber);
-    ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
-    _bgFallbacksThisFrame++;
-    return;
+  if (tw === 0 || th === 0) return;
+
+  // Anchor background to room centre, then apply relative camera parallax.
+  const roomCenterOffsetXPx = viewportWidthPx * 0.5 - (roomWidthWorld * 0.5 * zoom);
+  const roomCenterOffsetYPx = viewportHeightPx * 0.5 - (roomHeightWorld * 0.5 * zoom);
+  const relCameraOffsetXPx = cameraOffsetXPx - roomCenterOffsetXPx;
+  const relCameraOffsetYPx = cameraOffsetYPx - roomCenterOffsetYPx;
+
+  // Keep a centred tiled origin so the room centre maps to image centre.
+  const centeredOriginXPx = (viewportWidthPx - tw) * 0.5;
+  const centeredOriginYPx = (viewportHeightPx - th) * 0.5;
+  const pxOff = centeredOriginXPx + relCameraOffsetXPx * PARALLAX_FACTOR;
+  const pyOff = centeredOriginYPx + relCameraOffsetYPx * PARALLAX_FACTOR;
+
+  // Compute starting tile position so tiles seamlessly cover the viewport.
+  const startX = wrapToTileStart(pxOff, tw);
+  const startY = wrapToTileStart(pyOff, th);
+
+  ctx.save();
+  for (let y = startY; y < viewportHeightPx; y += th) {
+    for (let x = startX; x < viewportWidthPx; x += tw) {
+      ctx.drawImage(img, x, y);
+    }
   }
-
-  // Safe fallback fill behind the image: in case of sub-pixel rendering seams
-  // from float rounding on some browsers, guarantees no gap ever shows raw black.
-  ctx.fillStyle = worldFallbackColor(worldNumber);
-  ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
-
-  const layout = computeBackgroundParallaxLayout(
-    viewportWidthPx,
-    viewportHeightPx,
-    cameraOffsetXPx,
-    cameraOffsetYPx,
-    roomWidthWorld,
-    roomHeightWorld,
-    zoom,
-    tw,
-    th,
-  );
-
-  ctx.drawImage(img, layout.drawX, layout.drawY, layout.bgWidthPx, layout.bgHeightPx);
+  ctx.restore();
 }

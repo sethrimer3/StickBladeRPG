@@ -1,69 +1,73 @@
 /** Each kind has a distinct motion signature driven by its ElementProfile. */
 export enum ParticleKind {
-  // ── Stable serialized particle kinds (player roster is EQUIPPABLE_KINDS) ───
-  Golden    = 0,   // Golden Dust — retains the legacy "Physical" numeric value
-  Fire      = 1,   // Internal fire particles
-  Ice       = 2,   // Ice Dust — frozen crystals
-  Lightning = 3,   // Internal lightning particles
-  Poison    = 4,   // Internal poison particles
-  Arcane    = 5,   // Internal arcane particles
-  Wind      = 6,   // Internal wind particles
-  Holy      = 7,   // Internal holy particles
-  Shadow    = 8,   // Internal shadow particles
-  Metal     = 9,   // Internal metal particles
-  Earth     = 10,  // Internal earth particles
-  Nature    = 11,  // Nature Dust — living spores
-  Crystal   = 12,  // Internal crystal particles
-  Void      = 13,  // Void Dust — unstable matter from beyond
-  // Background / environmental (not collectible by players)
+  /** Gold Dust — the player's only equippable dust type. */
+  Physical  = 0,
+  // ── Legacy kinds (removed from player equipment, kept for backward compat) ──
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Fire      = 1,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Ice       = 2,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Lightning = 3,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Poison    = 4,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Arcane    = 5,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Wind      = 6,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Holy      = 7,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Shadow    = 8,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Metal     = 9,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Earth     = 10,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Nature    = 11,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Crystal   = 12,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Void      = 13,
+  // Background / environmental (not equippable by players)
   Fluid     = 14,  // Background fluid particle — invisible until disturbed
-  Water     = 15,  // Internal water particles
-  Lava      = 16,  // Internal lava particles
-  Stone     = 17,  // Internal stone particles
-  // Special / ability particles
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Water     = 15,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Lava      = 16,
+  /** @deprecated Removed from player equipment. Enemies may still use. */
+  Stone     = 17,
+  // Special / ability particles (not equippable)
   Gold      = 18,  // Grappling hook chain — bright golden diamond sparkles
-  Light     = 19,  // Boss light chains and collectible Light Dust share this value
-  // ── New equippable mote kinds appended after the stable legacy block ───────
-  FireDust  = 20,  // Fire Dust — collectible/equippable ember mote (distinct from
-                   // the internal `Fire` = 1 lava/ember VFX kind, which is untouched)
+  Light     = 19,  // Boss light chains — radiant white-gold glow
 }
 
 /** Total number of defined kinds — keep in sync with the enum above. */
-export const PARTICLE_KIND_COUNT = 21;
+export const PARTICLE_KIND_COUNT = 20;
 
 /**
- * Ordered list of particle kinds that players can collect and equip.
- * Internal particle kinds retain their serialized values but are deliberately
- * excluded from this player-facing roster.
+ * Ordered list of particle kinds that players can equip.
+ * Only Gold Dust (Physical) is equippable; all other kinds have been removed
+ * from player equipment (enemies may still use them).
  */
 export const EQUIPPABLE_KINDS: readonly ParticleKind[] = [
-  ParticleKind.Golden,
-  ParticleKind.Ice,
-  ParticleKind.Nature,
-  ParticleKind.Void,
-  ParticleKind.Light,
-  ParticleKind.FireDust,
+  ParticleKind.Physical,
 ];
 
 /**
  * Number of kinds that players can equip.
  * Equals EQUIPPABLE_KINDS.length; use this for iteration counts.
  */
-export const EQUIPPABLE_PARTICLE_KIND_COUNT = EQUIPPABLE_KINDS.length; // 6
-
-/** True only for dust kinds that may appear in player progression/loadouts. */
-export function isEquippableParticleKind(kind: unknown): kind is ParticleKind {
-  return typeof kind === 'number' && EQUIPPABLE_KINDS.includes(kind as ParticleKind);
-}
+export const EQUIPPABLE_PARTICLE_KIND_COUNT = EQUIPPABLE_KINDS.length; // 1
 
 /**
  * Particle shape enum — controls how each particle kind is rendered.
- * Golden uses a square; other kinds use their material-specific shapes.
+ * Physical uses Circle; all other kinds use non-circle polygons.
  */
 export enum ParticleShape {
   Circle   = 0,  // Nature, Fluid, Water, Light
   Diamond  = 1,  // Lightning, Wind, Gold
-  Square   = 2,  // Golden, Shadow, Metal
+  Square   = 2,  // Physical, Shadow, Metal
   Triangle = 3,  // Fire, Earth
   Hexagon  = 4,  // Ice, Crystal
   Cross    = 5,  // Holy
@@ -73,7 +77,7 @@ export enum ParticleShape {
 
 /** Maps each ParticleKind to its rendered shape. */
 export const KIND_SHAPE: ParticleShape[] = [
-  ParticleShape.Square,   // Golden — square gold dust mote
+  ParticleShape.Square,   // Physical — square gold dust mote
   ParticleShape.Triangle, // Fire
   ParticleShape.Hexagon,  // Ice
   ParticleShape.Diamond,  // Lightning
@@ -93,7 +97,6 @@ export const KIND_SHAPE: ParticleShape[] = [
   ParticleShape.Triangle, // Stone — jagged triangle fragment
   ParticleShape.Diamond,  // Gold  — bright sparkle diamond
   ParticleShape.Circle,   // Light — radiant boss glow
-  ParticleShape.Triangle, // FireDust — equippable fire mote, flickering triangle
 ];
 
 /** Returns the rendered shape for the given kind index, defaulting to Circle. */

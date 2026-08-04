@@ -7,7 +7,7 @@
  * appends it to `parent`.
  */
 
-import { PANEL_BORDER, TEXT_COLOR, ACCENT_GOLD } from './editorStyles';
+import { PANEL_BORDER, TEXT_COLOR, GREEN } from './editorStyles';
 
 // ── Widget builders ──────────────────────────────────────────────────────────
 
@@ -16,19 +16,19 @@ export function addField(
   onChange: (v: string) => void,
 ): void {
   const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px; min-width: 0;';
+  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px;';
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = value;
   input.style.cssText = `
-    flex: 1; min-width: 0; width: 0; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
+    flex: 1; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
     color: ${TEXT_COLOR}; padding: 3px 5px; font-size: 11px; font-family: monospace;
-    border-radius: 2px; box-sizing: border-box;
+    border-radius: 2px;
   `;
   input.addEventListener('change', () => onChange(input.value));
   input.addEventListener('click', (e) => e.stopPropagation());
@@ -45,16 +45,16 @@ export function addSelect(
   onChange: (v: string) => void,
 ): void {
   const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px; min-width: 0;';
+  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px;';
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const sel = document.createElement('select');
   sel.style.cssText = `
-    flex: 1; min-width: 0; width: 0; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
-    color: ${TEXT_COLOR}; padding: 3px; font-size: 11px; font-family: monospace; box-sizing: border-box;
+    flex: 1; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
+    color: ${TEXT_COLOR}; padding: 3px; font-size: 11px; font-family: monospace;
   `;
   for (const opt of options) {
     const o = document.createElement('option');
@@ -80,12 +80,12 @@ export function addCheckbox(
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.checked = checked;
-  cb.style.cssText = `accent-color: ${ACCENT_GOLD};`;
+  cb.style.cssText = `accent-color: ${GREEN};`;
   cb.addEventListener('change', () => onChange(cb.checked));
   cb.addEventListener('click', (e) => e.stopPropagation());
 
@@ -99,20 +99,20 @@ export function addDimField(
   onChange: (v: number) => void,
 ): HTMLInputElement {
   const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px; min-width: 0;';
+  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px;';
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 100px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 100px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const input = document.createElement('input');
   input.type = 'number';
   input.value = String(value);
   input.min = '10';
   input.style.cssText = `
-    flex: 1; min-width: 0; width: 0; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
+    flex: 1; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
     color: ${TEXT_COLOR}; padding: 3px 5px; font-size: 11px; font-family: monospace;
-    border-radius: 2px; box-sizing: border-box;
+    border-radius: 2px;
   `;
   input.addEventListener('change', () => {
     const v = parseInt(input.value, 10);
@@ -131,11 +131,11 @@ export function addNumberField(
   onChange: (v: number) => void,
 ): void {
   const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px; min-width: 0;';
+  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px;';
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const input = document.createElement('input');
   input.type = 'number';
@@ -144,9 +144,9 @@ export function addNumberField(
   input.max = String(max);
   input.step = '1';
   input.style.cssText = `
-    flex: 1; min-width: 0; width: 0; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
+    flex: 1; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
     color: ${TEXT_COLOR}; padding: 3px 5px; font-size: 11px; font-family: monospace;
-    border-radius: 2px; box-sizing: border-box;
+    border-radius: 2px;
   `;
   input.addEventListener('change', () => {
     const v = parseInt(input.value, 10);
@@ -159,71 +159,6 @@ export function addNumberField(
   parent.appendChild(row);
 }
 
-export function addColorPickerField(
-  parent: HTMLElement, label: string, value: string,
-  onChange: (v: string) => void,
-): void {
-  const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px; min-width: 0;';
-
-  const lbl = document.createElement('span');
-  lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
-
-  const input = document.createElement('input');
-  input.type = 'color';
-  input.value = value;
-  input.style.cssText = `
-    flex: 1; min-width: 0; height: 22px; background: rgba(0,0,0,0.4); border: 1px solid ${PANEL_BORDER};
-    padding: 1px 2px; border-radius: 2px; box-sizing: border-box; cursor: pointer;
-  `;
-  input.addEventListener('input', () => onChange(input.value));
-  input.addEventListener('click', (e) => e.stopPropagation());
-
-  row.appendChild(lbl);
-  row.appendChild(input);
-  parent.appendChild(row);
-}
-
-/** Percent-labelled 0-100 slider that reports a normalized 0..1 value. */
-export function addOpacityField(
-  parent: HTMLElement, label: string, value: number,
-  onChange: (v: number) => void,
-): void {
-  const row = document.createElement('div');
-  row.style.cssText = 'display: flex; align-items: center; margin-bottom: 4px; gap: 6px;';
-
-  const lbl = document.createElement('span');
-  lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
-
-  const percentValue = Math.round(Math.max(0, Math.min(1, value)) * 100);
-
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.value = String(percentValue);
-  slider.min = '0';
-  slider.max = '100';
-  slider.step = '1';
-  slider.style.cssText = `flex: 1; accent-color: ${ACCENT_GOLD};`;
-
-  const valueDisplay = document.createElement('span');
-  valueDisplay.textContent = `${percentValue}%`;
-  valueDisplay.style.cssText = `min-width: 34px; font-size: 11px; color: ${TEXT_COLOR}; text-align: right;`;
-
-  slider.addEventListener('input', () => {
-    const v = parseInt(slider.value, 10);
-    valueDisplay.textContent = `${v}%`;
-    onChange(v / 100);
-  });
-  slider.addEventListener('click', (e) => e.stopPropagation());
-
-  row.appendChild(lbl);
-  row.appendChild(slider);
-  row.appendChild(valueDisplay);
-  parent.appendChild(row);
-}
-
 export function addSliderField(
   parent: HTMLElement, label: string, value: number, min: number, max: number,
   onChange: (v: number) => void,
@@ -233,7 +168,7 @@ export function addSliderField(
 
   const lbl = document.createElement('span');
   lbl.textContent = label;
-  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(241,231,203,0.7);`;
+  lbl.style.cssText = `min-width: 90px; font-size: 11px; color: rgba(200,255,200,0.7);`;
 
   const slider = document.createElement('input');
   slider.type = 'range';
@@ -241,7 +176,7 @@ export function addSliderField(
   slider.min = String(min);
   slider.max = String(max);
   slider.step = '1';
-  slider.style.cssText = `flex: 1; accent-color: ${ACCENT_GOLD};`;
+  slider.style.cssText = `flex: 1; accent-color: ${GREEN};`;
 
   const valueDisplay = document.createElement('span');
   valueDisplay.textContent = String(value);
@@ -266,7 +201,7 @@ export function addColorSliders(
 ): void {
   const heading = document.createElement('div');
   heading.textContent = label;
-  heading.style.cssText = `font-size: 11px; color: rgba(241,231,203,0.7); margin-top: 6px; margin-bottom: 4px;`;
+  heading.style.cssText = `font-size: 11px; color: rgba(200,255,200,0.7); margin-top: 6px; margin-bottom: 4px;`;
   parent.appendChild(heading);
 
   let currentR = r;
@@ -281,7 +216,7 @@ export function addColorSliders(
 
     const lbl = document.createElement('span');
     lbl.textContent = channelLabel;
-    lbl.style.cssText = `min-width: 20px; font-size: 10px; color: rgba(241,231,203,0.6);`;
+    lbl.style.cssText = `min-width: 20px; font-size: 10px; color: rgba(200,255,200,0.6);`;
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -289,7 +224,7 @@ export function addColorSliders(
     slider.min = '0';
     slider.max = '255';
     slider.step = '1';
-    slider.style.cssText = `flex: 1; accent-color: ${ACCENT_GOLD};`;
+    slider.style.cssText = `flex: 1; accent-color: ${GREEN};`;
 
     const valueDisplay = document.createElement('span');
     valueDisplay.textContent = String(initialValue);

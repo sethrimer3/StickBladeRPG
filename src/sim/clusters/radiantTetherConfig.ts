@@ -1,8 +1,9 @@
 /**
  * Radiant Tether — tunable configuration for the first boss.
  *
- * A floating spherical entity that uses chains of light anchored to walls.
- * The boss moves by changing chain lengths (winch behavior) and gains more
+ * A floating spherical entity made of light that uses rotating laser
+ * telegraphs followed by chains of light anchored to walls.  The boss
+ * moves by changing chain lengths (winch behavior) and gains more
  * simultaneous chains as health drops.
  *
  * All timing values are in ticks (60 ticks/sec) unless noted.
@@ -11,8 +12,11 @@
 
 // ── Attack-loop phase durations ─────────────────────────────────────────────
 
-// RT_TELEGRAPH_DURATION_TICKS removed — replaced by beam-grow attack system.
-// RT_LOCK_DURATION_TICKS removed — replaced by branch-grow phase.
+/** Ticks the telegraph laser lines rotate before locking. */
+export const RT_TELEGRAPH_DURATION_TICKS = 90; // 1.5 s
+
+/** Ticks the lasers stay fixed so the player can react. */
+export const RT_LOCK_DURATION_TICKS = 30; // 0.5 s
 
 /** Ticks it takes for chains to reach their anchor after firing. */
 export const RT_FIRE_DURATION_TICKS = 6; // ~0.1 s (near-instant)
@@ -20,27 +24,19 @@ export const RT_FIRE_DURATION_TICKS = 6; // ~0.1 s (near-instant)
 /** Ticks the boss moves via chain winching before retracting. */
 export const RT_MOVEMENT_DURATION_TICKS = 300; // 5 s
 
-/** Ticks of pause between movement end and the next beam attack cycle. */
+/** Ticks of pause between movement end and the next telegraph cycle. */
 export const RT_RESET_DURATION_TICKS = 30; // 0.5 s
 
-// ── Telegraph / laser rotation — REMOVED ──────────────────────────────────
-// RT_TELEGRAPH_ROTATION_SPEED_RAD removed.
-// RT_TELEGRAPH_LINE_WIDTH_PX removed.
-// RT_TELEGRAPH_MAX_RANGE_WORLD removed.
+// ── Telegraph / laser rotation ──────────────────────────────────────────────
 
-/** Distance at which the boss activates (world units). */
-export const RT_ACTIVATION_RANGE_WORLD = 250.0;
+/** Angular speed of telegraph lasers (radians/tick). */
+export const RT_TELEGRAPH_ROTATION_SPEED_RAD = 0.035;
 
-// ── Wall repulsion ──────────────────────────────────────────────────────────
+/** Visual width of telegraph laser line (screen px). */
+export const RT_TELEGRAPH_LINE_WIDTH_PX = 1.5;
 
-/** Distance at which wall repulsion begins (world units). */
-export const RT_WALL_REPEL_DIST_WORLD = 35.0;
-
-/** Per-tick impulse strength at zero distance (world units/tick). */
-export const RT_WALL_REPEL_ACCEL_WORLD = 0.15;
-
-/** Maximum repulsion-induced speed (world units/tick). */
-export const RT_WALL_REPEL_MAX_SPEED_WORLD = 4.0;
+/** Maximum draw length of telegraph laser (world units). */
+export const RT_TELEGRAPH_MAX_RANGE_WORLD = 400.0;
 
 // ── Chain anchoring ─────────────────────────────────────────────────────────
 

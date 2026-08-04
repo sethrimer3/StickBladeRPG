@@ -35,10 +35,6 @@ import {
   RT_CHAIN_DAMAGE,
   RT_CHAIN_HITBOX_HALF_WIDTH_WORLD,
   RT_CHAIN_IFRAMES_TICKS,
-  RT_WALL_REPEL_DIST_WORLD,
-  RT_WALL_REPEL_ACCEL_WORLD,
-  RT_WALL_REPEL_MAX_SPEED_WORLD,
-  RT_BODY_RADIUS_WORLD,
 } from './radiantTetherConfig';
 import { applyPlayerDamageWithKnockback } from '../playerDamage';
 import { closestPointOnSegment } from '../physics/collision';
@@ -91,6 +87,12 @@ export interface RadiantTetherChainState {
   brokenChains: BrokenChain[];
   /** Player invulnerability ticks remaining from chain damage. */
   playerChainIframeTicks: number;
+  /** Entity id of the active Radiant Tether boss in the room. */
+  bossEntityId: number;
+  /** Last recorded boss HP to detect first-damage transition deterministically. */
+  bossLastHealthPoints: number;
+  /** Set once the boss has taken damage and should release attack spores. */
+  hasBossTakenDamageFlag: 0 | 1;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -104,11 +106,13 @@ export function createRadiantTetherChainState(): RadiantTetherChainState {
   for (let i = 0; i < RT_MAX_BROKEN_CHAINS; i++) {
     brokenChains.push(createInactiveBrokenChain());
   }
-
   return {
     chains,
     brokenChains,
     playerChainIframeTicks: 0,
+    bossEntityId: -1,
+    bossLastHealthPoints: 0,
+    hasBossTakenDamageFlag: 0,
   };
 }
 
@@ -236,7 +240,6 @@ export function assignReelDirections(cs: RadiantTetherChainState, rng: RngState)
 
 export function tickChains(
   cs: RadiantTetherChainState,
-  world: WorldState,
   bossXWorld: number, bossYWorld: number,
   bossVelXWorld: number, bossVelYWorld: number,
 ): { newVelX: number; newVelY: number; newPosX: number; newPosY: number } {
@@ -273,48 +276,8 @@ export function tickChains(
     }
   }
 
-  let vx = (bossVelXWorld + forceX) * RT_BOSS_DRAG;
-  let vy = (bossVelYWorld + forceY) * RT_BOSS_DRAG;
-
-  // Wall repulsion — applied as direct velocity impulses after drag to avoid
-  // drag dampening, giving a smooth magnetic repel feel.
-  const bossHalf = RT_BODY_RADIUS_WORLD;
-  for (let wi = 0; wi < world.wallCount; wi++) {
-    const wx = world.wallXWorld[wi];
-    const wy = world.wallYWorld[wi];
-    const ww = world.wallWWorld[wi];
-    const wh = world.wallHWorld[wi];
-
-    const distToLeftWallEdgeWorld = bossXWorld - wx;
-    if (distToLeftWallEdgeWorld >= 0 && distToLeftWallEdgeWorld < RT_WALL_REPEL_DIST_WORLD &&
-        bossYWorld >= wy - bossHalf && bossYWorld <= wy + wh + bossHalf) {
-      vx -= RT_WALL_REPEL_ACCEL_WORLD * (1.0 - distToLeftWallEdgeWorld / RT_WALL_REPEL_DIST_WORLD);
-    }
-    const distToRightWallEdgeWorld = wx + ww - bossXWorld;
-    if (distToRightWallEdgeWorld >= 0 && distToRightWallEdgeWorld < RT_WALL_REPEL_DIST_WORLD &&
-        bossYWorld >= wy - bossHalf && bossYWorld <= wy + wh + bossHalf) {
-      vx += RT_WALL_REPEL_ACCEL_WORLD * (1.0 - distToRightWallEdgeWorld / RT_WALL_REPEL_DIST_WORLD);
-    }
-    const distToTopWallEdgeWorld = bossYWorld - wy;
-    if (distToTopWallEdgeWorld >= 0 && distToTopWallEdgeWorld < RT_WALL_REPEL_DIST_WORLD &&
-        bossXWorld >= wx - bossHalf && bossXWorld <= wx + ww + bossHalf) {
-      vy -= RT_WALL_REPEL_ACCEL_WORLD * (1.0 - distToTopWallEdgeWorld / RT_WALL_REPEL_DIST_WORLD);
-    }
-    const distToBottomWallEdgeWorld = wy + wh - bossYWorld;
-    if (distToBottomWallEdgeWorld >= 0 && distToBottomWallEdgeWorld < RT_WALL_REPEL_DIST_WORLD &&
-        bossXWorld >= wx - bossHalf && bossXWorld <= wx + ww + bossHalf) {
-      vy += RT_WALL_REPEL_ACCEL_WORLD * (1.0 - distToBottomWallEdgeWorld / RT_WALL_REPEL_DIST_WORLD);
-    }
-  }
-
-  // Clamp speed to wall-repel max
-  const speed = Math.sqrt(vx * vx + vy * vy);
-  if (speed > RT_WALL_REPEL_MAX_SPEED_WORLD && speed > 0) {
-    const scale = RT_WALL_REPEL_MAX_SPEED_WORLD / speed;
-    vx *= scale;
-    vy *= scale;
-  }
-
+  const vx = (bossVelXWorld + forceX) * RT_BOSS_DRAG;
+  const vy = (bossVelYWorld + forceY) * RT_BOSS_DRAG;
   const px = bossXWorld + vx;
   const py = bossYWorld + vy;
 

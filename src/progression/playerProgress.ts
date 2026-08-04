@@ -2,18 +2,17 @@
  * Player progression state — level, dust slots, loadout, and world progress.
  *
  * Cleanly separates:
- *   - Legacy passive-technique flags retained only for save compatibility
- *   - Player dust types (Golden, Ice, Nature, Void, Light) — unlocked independently
+ *   - Passive techniques (e.g., Cycle) — always active once unlocked
+ *   - Dust types (e.g., Golden Dust, Fire Dust) — unlocked independently
  *   - Active weaves (e.g., Spire, Aegis) — bound to LMB/RMB
  *   - Dust containers — each grants 4 capacity; different dust types cost different amounts
  */
 
-import { ParticleKind, isEquippableParticleKind } from '../sim/particles/kinds';
+import { ParticleKind } from '../sim/particles/kinds';
 import { getSlotCost, totalSlotCost } from '../sim/particles/slotCost';
 import { PlayerWeaveLoadout, createDefaultWeaveLoadout } from '../sim/weaves/playerLoadout';
 import { PassiveTechniqueId } from './passiveTechniques';
 import { WeaveId } from '../sim/weaves/weaveDefinition';
-import { getUnlockedDustKindsInCanonicalOrder } from '../sim/weaves/dustWheelOptions';
 
 export { getSlotCost, totalSlotCost };
 
@@ -67,69 +66,21 @@ export interface PlayerProgress {
   unlockedDustKinds: ParticleKind[];
   /** Developer override: allow equipping all dust kinds in loadout UI. */
   isDevModeDustUnlocked: boolean;
-  /**
-   * The single dust type every ordinary player mote currently uses, chosen via
-   * the dust selection wheel. `null` means no valid selection yet (e.g. the
-   * player has nothing unlocked). Always validated against
-   * `unlockedDustKinds`/equippability — see `sanitizePlayerDustProgress`.
-   */
-  selectedDustKind: ParticleKind | null;
 
   // ---- Progression system fields (added for early-game rework) ----
 
-  /**
-   * Deprecated passive-technique IDs retained only so older saves can be read
-   * without a destructive migration. New progression code never grants them.
-   */
+  /** Passive techniques the player has unlocked (e.g., 'cycle'). */
   unlockedPassiveTechniques: PassiveTechniqueId[];
   /** Active weave IDs the player has unlocked and can equip. */
   unlockedActiveWeaves: WeaveId[];
   /** Number of dust containers the player owns. Total capacity = dustContainerCount × 4. */
   dustContainerCount: number;
-  /** Dust container pieces collected; 4 pieces forge 1 container. */
-  dustContainerPieces: number;
-  /** WeaveIds of passive weaves the player has manually disabled. */
-  disabledPassiveWeaves: string[];
   /**
    * Whether the early auto-assignment step has been completed.
    * When Golden Dust + 2 containers are first unlocked, they are auto-configured.
    * This flag prevents re-triggering the auto-assignment on subsequent loads.
    */
   hasCompletedEarlyAutoAssignment: boolean;
-  /**
-   * Keys of dust swarms the player has permanently collected, in the format
-   * `${roomId}:dustswarm:${index}`. Persisted so swarms do not reappear after
-   * save/load or game restart.
-   */
-  collectedDustSwarmKeys: string[];
-  /**
-   * Keys of dust containers and dust container shards the player has
-   * permanently collected, in the formats
-   * `${roomId}:container:${index}` and `${roomId}:containerShard:${index}`.
-   * Persisted so containers/shards cannot be re-collected after room reload,
-   * save/load, or game restart.
-   */
-  collectedDustContainerKeys: string[];
-  /**
-   * Keys of skill-tomb books (Sword/Shield/Bow Weave Skill Books, etc.) the
-   * player has permanently collected, in the format
-   * `${roomId}:${xBlock}:${yBlock}`. Persisted so a collected book stays
-   * consumed (does not reappear or re-grant its weave) after save/load or
-   * game restart. Collecting the weave itself is idempotent via
-   * `unlockedActiveWeaves`; this set only governs the visible/consumed
-   * state of the book.
-   */
-  collectedSkillTombKeys: string[];
-  /** Permanently opened gates keyed by campaign, room, and stable gate UID. */
-  permanentlyOpenGateKeys: string[];
-  /**
-   * Optional starting dust-mote count for the campaign. This configured value also
-   * defines the campaign's baseline mote capacity (with PLAYER_INITIAL_HEALTH / 10 as
-   * the default fallback when undefined). Respawns after death restore the player to
-   * full maximum capacity derived from this baseline plus any owned dust containers.
-   * Note: The wire field name `startingHealth` is preserved for save compatibility.
-   */
-  startingHealth?: number;
 }
 
 // ---- Factory / helpers ---------------------------------------------------
@@ -141,28 +92,13 @@ export interface PlayerProgress {
  *   - 0 dust containers (0 total capacity)
  *   - No unlocked dust types
  *   - No unlocked active weaves
- *   - No legacy passive-technique flags
+ *   - No unlocked passive techniques
  *   - No active weave assignments (LMB/RMB both empty)
  *   - No loadout choices
  *
  * The early progression sequence will unlock things step by step.
  */
 export function createDefaultProgress(): PlayerProgress {
-  return createProgressWithCharacter('knight');
-}
-
-/**
- * Creates progress for a brand-new official-campaign save. The official
- * campaign auto-selects Outcast and skips the character-select screen
- * (see game.ts), so the very first persisted record must already say
- * 'outcast' — otherwise a save that closes before its next checkpoint
- * write is stuck showing the stale Knight sprite on reload.
- */
-export function createOfficialNewProfileProgress(): PlayerProgress {
-  return createProgressWithCharacter('outcast');
-}
-
-function createProgressWithCharacter(characterId: string): PlayerProgress {
   const level = 1;
   const weaveLoadout = createDefaultWeaveLoadout();
   return {
@@ -175,84 +111,15 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     exploredRoomIds: [],
     lastSaveRoomId: null,
     lastSaveSpawnBlock: null,
-    characterId,
+    characterId: 'knight',
     unlockedDustKinds: [],
     isDevModeDustUnlocked: false,
-    selectedDustKind: null,
-    // Legacy compatibility field; new progression never adds entries.
+    // New profile starts with nothing unlocked
     unlockedPassiveTechniques: [],
     unlockedActiveWeaves: [],
     dustContainerCount: 0,
-    dustContainerPieces: 0,
-    disabledPassiveWeaves: [],
     hasCompletedEarlyAutoAssignment: false,
-    collectedDustSwarmKeys: [],
-    collectedDustContainerKeys: [],
-    collectedSkillTombKeys: [],
-    permanentlyOpenGateKeys: [],
   };
-}
-
-/**
- * Migrates player-owned dust state without changing internal/environmental particles.
- * Numeric kind 0 already maps to Golden, so legacy numeric saves need no count conversion.
- */
-export function sanitizePlayerDustProgress(progress: PlayerProgress): void {
-  const sanitize = (value: unknown): ParticleKind[] => {
-    if (!Array.isArray(value)) return [];
-    const result: ParticleKind[] = [];
-    for (const kind of value) {
-      if (isEquippableParticleKind(kind) && !result.includes(kind)) result.push(kind);
-    }
-    return result;
-  };
-
-  progress.unlockedDustKinds = sanitize(progress.unlockedDustKinds);
-  progress.loadout = sanitize(progress.loadout);
-  const primary = progress.weaveLoadout?.primary;
-  const secondary = progress.weaveLoadout?.secondary;
-  if (primary) primary.boundDust = sanitize(primary.boundDust);
-  if (secondary) secondary.boundDust = sanitize(secondary.boundDust);
-
-  // Reconcile the selected dust kind against the (now-sanitized) unlocked set.
-  // Falls back to the first unlocked kind in canonical order; never unlocks a
-  // kind just because it was selected in old/malformed data.
-  const isSelectedValid = progress.isDevModeDustUnlocked === true
-    ? isEquippableParticleKind(progress.selectedDustKind)
-    : progress.selectedDustKind !== null
-      && isEquippableParticleKind(progress.selectedDustKind)
-      && progress.unlockedDustKinds.includes(progress.selectedDustKind);
-  if (!isSelectedValid) {
-    const canonicalUnlocked = getUnlockedDustKindsInCanonicalOrder(progress);
-    progress.selectedDustKind = canonicalUnlocked.length > 0 ? canonicalUnlocked[0] : null;
-  }
-}
-
-/** The dust kit the official campaign granted new players before Fire Dust existed. */
-const PRE_FIRE_STARTER_DUST_KIT: readonly ParticleKind[] = [
-  ParticleKind.Golden,
-  ParticleKind.Ice,
-  ParticleKind.Nature,
-  ParticleKind.Void,
-  ParticleKind.Light,
-];
-
-/**
- * Backfills Fire Dust for existing saves that already hold the rest of the
- * pre-Fire starter kit. `applyCampaignStartingOptions` (campaignStartingOptions.ts)
- * only (re-)applies `startingDustTypes` to saves that have never explored a
- * room, so a save created before Fire Dust was added to that list would
- * otherwise never receive it even after the campaign is updated. Idempotent —
- * no-ops once Fire Dust is unlocked, and never removes anything.
- */
-export function migrateStarterFireDustUnlock(progress: PlayerProgress): void {
-  if (progress.unlockedDustKinds.includes(ParticleKind.FireDust)) return;
-  const hasFullPreFireStarterKit = PRE_FIRE_STARTER_DUST_KIT.every(
-    kind => progress.unlockedDustKinds.includes(kind),
-  );
-  if (hasFullPreFireStarterKit) {
-    progress.unlockedDustKinds.push(ParticleKind.FireDust);
-  }
 }
 
 /**

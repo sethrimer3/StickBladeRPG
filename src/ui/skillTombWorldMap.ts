@@ -1,26 +1,14 @@
 /**
  * World Map tab for the Skill Tomb menu.
  *
- * Renders a canvas-based world map using the authored mapX/mapY positions
- * stored in each RoomDef (set via the visual map editor), zoom / pan,
+ * Renders a canvas-based world map with BFS-placed rooms, zoom / pan,
  * and mouse interaction.  Returns a cleanup function that removes
  * window-level event listeners.
  */
 
 import { ROOM_REGISTRY } from '../levels/rooms';
 import type { RoomDef } from '../levels/roomDef';
-import { BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
 import { GOLD } from './skillTombShared';
-import { drawRoomSketch, drawRoomSketchOpenAir, smoothstep, ZOOM_SKETCH_FULL, ZOOM_DETAIL_FULL } from './mapSketchRenderer';
-import { isDevModeEnabled } from './devMode';
-import { isLegacyMapSketchEnabled, setLegacyMapSketchEnabled } from './mapSketchPreference';
-
-/**
- * Set to true to draw a debug overlay on the world map showing each room's
- * computed map bounds (blue), padded sketch bounds (orange), and tile
- * dimensions (label).  Disable before shipping.
- */
-const shouldDebugMapBounds = false;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,8 +24,6 @@ export function buildMapTab(
   contentArea: HTMLElement,
   currentRoomId: string,
   exploredRoomIds: ReadonlyArray<string>,
-  playerXWorld?: number,
-  playerYWorld?: number,
 ): () => void {
   const mapContainer = document.createElement('div');
   mapContainer.style.cssText = `
@@ -52,35 +38,6 @@ export function buildMapTab(
 
   const mapCtx = mapCanvas.getContext('2d')!;
 
-  // ── Dev-only "Legacy Map Sketch" checkbox ────────────────────────────────
-  // Total vertical space (in canvas px) reserved for the legend, measured
-  // from the canvas bottom. Kept large enough that the "= You" row's marker
-  // and label never get clipped by the canvas edge.
-  const LEGEND_RESERVED_HEIGHT_PX = 80;
-  const showLegacySketchToggle = isDevModeEnabled();
-  let useLegacySketch = isLegacyMapSketchEnabled();
-
-  if (showLegacySketchToggle) {
-    const toggleLabel = document.createElement('label');
-    toggleLabel.style.cssText = `
-      position: absolute; left: 16px; display: flex; align-items: center; gap: 6px;
-      bottom: ${LEGEND_RESERVED_HEIGHT_PX + 8}px;
-      font-family: 'Cinzel', serif; font-size: 11px; color: #aaa;
-      user-select: none; cursor: pointer; z-index: 1;
-    `;
-    const toggleInput = document.createElement('input');
-    toggleInput.type = 'checkbox';
-    toggleInput.checked = useLegacySketch;
-    toggleInput.addEventListener('change', () => {
-      useLegacySketch = toggleInput.checked;
-      setLegacyMapSketchEnabled(useLegacySketch);
-      renderMap();
-    });
-    toggleLabel.appendChild(toggleInput);
-    toggleLabel.appendChild(document.createTextNode('Legacy Map Sketch'));
-    mapContainer.appendChild(toggleLabel);
-  }
-
   // Gather explored rooms
   const exploredRooms: RoomDef[] = [];
   const exploredSet = new Set(exploredRoomIds);
@@ -90,12 +47,46 @@ export function buildMapTab(
     }
   });
 
-  // Build room placements from the authored mapX/mapY positions stored in each RoomDef.
-  // These are the same block-unit coordinates used by the visual map editor, so
-  // dragging rooms in the editor directly controls where they appear here.
+  // Compute room positions via BFS from lobby
   const placements = new Map<string, RoomPlacement>();
-  for (const room of exploredRooms) {
-    placements.set(room.id, { room, mapXBlock: room.mapX, mapYBlock: room.mapY });
+
+  if (exploredRooms.length > 0) {
+    const startRoom = exploredRooms.find(r => r.id === 'lobby') ?? exploredRooms[0];
+    placements.set(startRoom.id, { room: startRoom, mapXBlock: 0, mapYBlock: 0 });
+
+    const queue = [startRoom];
+    const visited = new Set<string>([startRoom.id]);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentPlacement = placements.get(current.id)!;
+
+      for (const transition of current.transitions) {
+        if (visited.has(transition.targetRoomId)) continue;
+        const targetRoom = ROOM_REGISTRY.get(transition.targetRoomId);
+        if (!targetRoom || !exploredSet.has(targetRoom.id)) continue;
+
+        let offsetX = 0;
+        let offsetY = 0;
+        if (transition.direction === 'right') {
+          offsetX = current.widthBlocks + 4;
+        } else if (transition.direction === 'left') {
+          offsetX = -(targetRoom.widthBlocks + 4);
+        } else if (transition.direction === 'down') {
+          offsetY = current.heightBlocks + 4;
+        } else if (transition.direction === 'up') {
+          offsetY = -(targetRoom.heightBlocks + 4);
+        }
+
+        placements.set(targetRoom.id, {
+          room: targetRoom,
+          mapXBlock: currentPlacement.mapXBlock + offsetX,
+          mapYBlock: currentPlacement.mapYBlock + offsetY,
+        });
+        visited.add(targetRoom.id);
+        queue.push(targetRoom);
+      }
+    }
   }
 
   // ── Map view state ──────────────────────────────────────────────────────
@@ -126,82 +117,39 @@ export function buildMapTab(
     const centerY = ch / 2 + panYPx;
     const cellSize = mapZoom;
 
-    // LOD blend: smoothly transition between detail blocks and sketch silhouettes.
-    // detailAlpha = 1 when zoomed in (≥ ZOOM_DETAIL_FULL), 0 when zoomed out (≤ ZOOM_SKETCH_FULL).
-    const detailAlpha = smoothstep(ZOOM_SKETCH_FULL, ZOOM_DETAIL_FULL, mapZoom);
-    const sketchAlpha = 1 - detailAlpha;
-    const showDetail = detailAlpha > 0.01;
-    const showSketch = sketchAlpha > 0.01;
-
     // Draw each explored room
     placements.forEach((placement) => {
       const { room, mapXBlock, mapYBlock } = placement;
       const isCurrentRoom = room.id === currentRoomId;
 
-      // ── Sketch layer: silhouette with organic jitter ──────────────────────
-      if (showSketch) {
-        const drawSketch = useLegacySketch ? drawRoomSketch : drawRoomSketchOpenAir;
-        drawSketch(
-          mapCtx, room, mapXBlock, mapYBlock,
-          centerX, centerY, cellSize,
-          sketchAlpha, isCurrentRoom,
-        );
-      }
+      // Draw blocks (walls)
+      for (const wall of room.walls) {
+        for (let bx = 0; bx < wall.wBlock; bx++) {
+          for (let by = 0; by < wall.hBlock; by++) {
+            const worldBx = mapXBlock + wall.xBlock + bx;
+            const worldBy = mapYBlock + wall.yBlock + by;
+            const screenX = centerX + worldBx * cellSize;
+            const screenY = centerY + worldBy * cellSize;
 
-      // ── Detail layer: individual block tiles ──────────────────────────────
-      if (showDetail) {
-        mapCtx.save();
-        mapCtx.globalAlpha = detailAlpha;
-        for (const wall of room.walls) {
-          for (let bx = 0; bx < wall.wBlock; bx++) {
-            for (let by = 0; by < wall.hBlock; by++) {
-              const worldBx = mapXBlock + wall.xBlock + bx;
-              const worldBy = mapYBlock + wall.yBlock + by;
-              const screenX = centerX + worldBx * cellSize;
-              const screenY = centerY + worldBy * cellSize;
-
-              mapCtx.fillStyle = isCurrentRoom ? 'rgba(212,168,75,0.6)' : 'rgba(150,140,120,0.4)';
-              mapCtx.fillRect(screenX, screenY, cellSize, cellSize);
-            }
+            mapCtx.fillStyle = isCurrentRoom ? 'rgba(212,168,75,0.6)' : 'rgba(150,140,120,0.4)';
+            mapCtx.fillRect(screenX, screenY, cellSize, cellSize);
           }
         }
-        // Dark ambient light blockers — treated as solid on the map to conceal secrets.
-        for (const blocker of (room.ambientLightBlockers ?? [])) {
-          if (!blocker.isDark) continue;
-          const worldBx = mapXBlock + blocker.xBlock;
-          const worldBy = mapYBlock + blocker.yBlock;
-          const screenX = centerX + worldBx * cellSize;
-          const screenY = centerY + worldBy * cellSize;
-          mapCtx.fillStyle = isCurrentRoom ? 'rgba(212,168,75,0.6)' : 'rgba(150,140,120,0.4)';
-          mapCtx.fillRect(screenX, screenY, cellSize, cellSize);
-        }
-        mapCtx.restore();
       }
 
-      // ── Markers: always at full opacity (doors, tombs, labels) ───────────
-      // Doorways — shown in both modes so connections remain readable.
+      // Draw doorways (transitions)
       for (const t of room.transitions) {
+        const openTop = t.positionBlock;
         const openSize = t.openingSizeBlocks;
 
         mapCtx.fillStyle = 'rgba(100,200,255,0.5)';
         for (let d = 0; d < openSize; d++) {
           let bx = 0;
-          let by = 0;
-          const isHoriz = t.direction === 'left' || t.direction === 'right';
-          const xB = t.xBlock !== undefined ? t.xBlock : (isHoriz ? 0 : t.positionBlock);
-          const yB = t.yBlock !== undefined ? t.yBlock : (isHoriz ? t.positionBlock : 0);
+          const by = openTop + d;
           if (t.direction === 'left') {
-            bx = xB;
-            by = yB + d;
+            bx = 0;
           } else if (t.direction === 'right') {
-            bx = xB;
-            by = yB + d;
-          } else if (t.direction === 'up') {
-            bx = xB + d;
-            by = yB;
-          } else if (t.direction === 'down') {
-            bx = xB + d;
-            by = yB;
+            bx = room.widthBlocks - 1;
           }
           const screenX = centerX + (mapXBlock + bx) * cellSize;
           const screenY = centerY + (mapYBlock + by) * cellSize;
@@ -209,7 +157,7 @@ export function buildMapTab(
         }
       }
 
-      // Save tombs — diamond markers remain crisp at all zoom levels.
+      // Draw save tombs (save points shown on map)
       for (const tomb of room.saveTombs) {
         const screenX = centerX + (mapXBlock + tomb.xBlock) * cellSize;
         const screenY = centerY + (mapYBlock + tomb.yBlock) * cellSize;
@@ -230,78 +178,19 @@ export function buildMapTab(
         mapCtx.fill();
       }
 
-      // Room name label.
+      // Draw room name label
       const roomCenterX = centerX + (mapXBlock + room.widthBlocks / 2) * cellSize;
       const roomTopY = centerY + mapYBlock * cellSize;
       mapCtx.fillStyle = isCurrentRoom ? GOLD : 'rgba(200,190,170,0.6)';
       mapCtx.font = `${Math.max(10, cellSize * 2.5)}px 'Cinzel', serif`;
       mapCtx.textAlign = 'center';
       mapCtx.fillText(room.name, roomCenterX, roomTopY - cellSize * 1.5);
-
-      // Player position marker — shown only in the current room.
-      if (isCurrentRoom && playerXWorld !== undefined && playerYWorld !== undefined) {
-        const playerMapX = centerX + (mapXBlock + playerXWorld / BLOCK_SIZE_MEDIUM) * cellSize;
-        const playerMapY = centerY + (mapYBlock + playerYWorld / BLOCK_SIZE_MEDIUM) * cellSize;
-        const markerRadius = Math.max(3, cellSize * 1.0);
-        mapCtx.save();
-        mapCtx.beginPath();
-        mapCtx.arc(playerMapX, playerMapY, markerRadius, 0, Math.PI * 2);
-        mapCtx.fillStyle = '#00ffcc';
-        mapCtx.shadowColor = '#00ffcc';
-        mapCtx.shadowBlur = markerRadius * 2;
-        mapCtx.fill();
-        mapCtx.restore();
-      }
     });
-
-    // ── Debug overlay: map bounds per room ────────────────────────────────
-    // Enable by setting DEBUG_MAP_BOUNDS = true at the top of this file.
-    if (shouldDebugMapBounds) {
-      // Max sketch jitter in canvas pixels (mirrors JITTER_PX in mapSketchRenderer).
-      const SKETCH_JITTER_CANVAS_PX = 3.5;
-      placements.forEach(({ room, mapXBlock, mapYBlock }) => {
-        // Map bounds: the tight tile-grid rectangle for this room.
-        const mapLeft   = centerX + mapXBlock * cellSize;
-        const mapTop    = centerY + mapYBlock * cellSize;
-        const mapRight  = mapLeft  + room.widthBlocks  * cellSize;
-        const mapBottom = mapTop   + room.heightBlocks * cellSize;
-
-        // Padded sketch bounds: map bounds expanded by max jitter.
-        const padPx     = SKETCH_JITTER_CANVAS_PX;
-        const padLeft   = mapLeft   - padPx;
-        const padTop    = mapTop    - padPx;
-        const padRight  = mapRight  + padPx;
-        const padBottom = mapBottom + padPx;
-
-        // Draw padded bounds in orange (dashed).
-        mapCtx.save();
-        mapCtx.strokeStyle = 'rgba(255,140,0,0.7)';
-        mapCtx.lineWidth = 1;
-        mapCtx.setLineDash([4, 3]);
-        mapCtx.strokeRect(padLeft, padTop, padRight - padLeft, padBottom - padTop);
-
-        // Draw tight map bounds in blue (solid).
-        mapCtx.strokeStyle = 'rgba(80,160,255,0.8)';
-        mapCtx.setLineDash([]);
-        mapCtx.strokeRect(mapLeft, mapTop, mapRight - mapLeft, mapBottom - mapTop);
-
-        // Label: room id + block dimensions.
-        mapCtx.fillStyle = 'rgba(80,200,255,0.9)';
-        mapCtx.font = '9px monospace';
-        mapCtx.textAlign = 'left';
-        mapCtx.fillText(
-          `${room.id} ${room.widthBlocks}×${room.heightBlocks}`,
-          mapLeft + 2,
-          mapTop + 10,
-        );
-        mapCtx.restore();
-      });
-    }
 
     // Legend
     mapCtx.textAlign = 'left';
     mapCtx.font = "12px 'Cinzel', serif";
-    const legendY = ch - LEGEND_RESERVED_HEIGHT_PX;
+    const legendY = ch - 60;
     const legendX = 16;
     mapCtx.fillStyle = 'rgba(212,168,75,0.6)';
     mapCtx.fillRect(legendX, legendY, 10, 10);
@@ -317,35 +206,13 @@ export function buildMapTab(
     mapCtx.fillRect(legendX, legendY + 36, 10, 10);
     mapCtx.fillStyle = '#aaa';
     mapCtx.fillText('= Skill Tomb', legendX + 16, legendY + 45);
-
-    mapCtx.fillStyle = '#00ffcc';
-    mapCtx.beginPath();
-    mapCtx.arc(legendX + 5, legendY + 59, 5, 0, Math.PI * 2);
-    mapCtx.fill();
-    mapCtx.fillStyle = '#aaa';
-    mapCtx.fillText('= You', legendX + 16, legendY + 63);
   }
 
   // ── Zoom (mouse wheel) ──────────────────────────────────────────────────
   function onWheel(e: WheelEvent): void {
     e.preventDefault();
-    const rect = mapCanvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const cw = mapCanvas.width;
-    const ch = mapCanvas.height;
-
-    // World coordinate under the mouse cursor before zoom changes.
-    const worldX = (mx - cw / 2 - panXPx) / mapZoom;
-    const worldY = (my - ch / 2 - panYPx) / mapZoom;
-
     const delta = e.deltaY > 0 ? -0.5 : 0.5;
     mapZoom = Math.max(1, Math.min(12, mapZoom + delta));
-
-    // Adjust pan so the world point under the cursor stays fixed after zoom.
-    panXPx = mx - cw / 2 - worldX * mapZoom;
-    panYPx = my - ch / 2 - worldY * mapZoom;
-
     renderMap();
   }
 

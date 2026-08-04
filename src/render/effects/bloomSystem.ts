@@ -1,7 +1,5 @@
 import type { BloomConfig } from './bloomConfig';
 import { GlowPass } from './glowPass';
-import * as FP from '../../debug/perfFreezeProfiler';
-import { resetCanvasPass, resizeCanvasBackingStore } from '../canvasViewport';
 
 /**
  * Owns reusable render targets for selective bloom and exposes a tiny API:
@@ -46,31 +44,20 @@ export class BloomSystem {
     this.widthPx = Math.max(1, widthPx);
     this.heightPx = Math.max(1, heightPx);
 
-    resizeCanvasBackingStore(this.glowCanvas, this.widthPx, this.heightPx);
+    this.glowCanvas.width = this.widthPx;
+    this.glowCanvas.height = this.heightPx;
 
     const scaledWidthPx = Math.max(1, Math.round(this.widthPx * this.config.glowTargetScale));
     const scaledHeightPx = Math.max(1, Math.round(this.heightPx * this.config.glowTargetScale));
 
-    resizeCanvasBackingStore(this.blurPingCanvas, scaledWidthPx, scaledHeightPx);
-    resizeCanvasBackingStore(this.blurPongCanvas, scaledWidthPx, scaledHeightPx);
+    this.blurPingCanvas.width = scaledWidthPx;
+    this.blurPingCanvas.height = scaledHeightPx;
+    this.blurPongCanvas.width = scaledWidthPx;
+    this.blurPongCanvas.height = scaledHeightPx;
 
     this.glowCtx.imageSmoothingEnabled = false;
     this.blurPingCtx.imageSmoothingEnabled = true;
     this.blurPongCtx.imageSmoothingEnabled = true;
-  }
-
-  /** Update the quality-dependent bloom parameters without triggering a resize.
-   *  Call this once per frame before beginFrame() to apply the current quality tier.
-   *
-   *  @param isEnabled    Whether the bloom pass runs at all.  When false,
-   *                      beginFrame() and compositeToDevice() are no-ops.
-   *  @param intensity    Additive-blend alpha for the composited bloom layer (0–1).
-   *  @param blurRadiusPx CSS blur radius applied to the downscale canvas (px).
-   */
-  setQualityParams(isEnabled: boolean, intensity: number, blurRadiusPx: number): void {
-    this.config.enabled      = isEnabled;
-    this.config.intensity    = intensity;
-    this.config.blurRadiusPx = blurRadiusPx;
   }
 
   beginFrame(): void {
@@ -81,26 +68,21 @@ export class BloomSystem {
   compositeToDevice(deviceCtx: CanvasRenderingContext2D, deviceWidthPx: number, deviceHeightPx: number): void {
     if (!this.config.enabled) return;
 
-    // Skip the entire blur + composite pass when nothing was drawn to the glow
-    // canvas this frame — saves canvas filter + drawImage cost for frames
-    // without any glow sources (e.g. rooms with no bloom-emitting elements).
-    if (!this.glowPass.hasGlow) {
-      FP.recordBloomSkippedNoGlow();
-      return;
-    }
-
     const blurRadius = Math.max(0, this.config.blurRadiusPx);
 
-    resetCanvasPass(this.blurPingCtx, this.blurPingCanvas.width, this.blurPingCanvas.height, true);
+    this.blurPingCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.blurPingCtx.clearRect(0, 0, this.blurPingCanvas.width, this.blurPingCanvas.height);
     this.blurPingCtx.drawImage(this.glowCanvas, 0, 0, this.blurPingCanvas.width, this.blurPingCanvas.height);
 
     if (blurRadius > 0) {
-      resetCanvasPass(this.blurPongCtx, this.blurPongCanvas.width, this.blurPongCanvas.height, true);
+      this.blurPongCtx.setTransform(1, 0, 0, 1, 0, 0);
+      this.blurPongCtx.clearRect(0, 0, this.blurPongCanvas.width, this.blurPongCanvas.height);
       this.blurPongCtx.filter = `blur(${blurRadius}px)`;
       this.blurPongCtx.drawImage(this.blurPingCanvas, 0, 0);
       this.blurPongCtx.filter = 'none';
     } else {
-      resetCanvasPass(this.blurPongCtx, this.blurPongCanvas.width, this.blurPongCanvas.height, true);
+      this.blurPongCtx.setTransform(1, 0, 0, 1, 0, 0);
+      this.blurPongCtx.clearRect(0, 0, this.blurPongCanvas.width, this.blurPongCanvas.height);
       this.blurPongCtx.drawImage(this.blurPingCanvas, 0, 0);
     }
 
