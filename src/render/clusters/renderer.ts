@@ -1,103 +1,48 @@
-import { WorldSnapshot } from '../snapshot';
+import { WorldSnapshot, ClusterSnapshot } from '../snapshot';
 import { DASH_RECHARGE_ANIM_TICKS } from '../../sim/clusters/dashConstants';
 import { renderWallSprites } from '../walls/blockSpriteRenderer';
-import { BLOCK_SIZE_WORLD } from '../../levels/roomDef';
-import { ParticleKind } from '../../sim/particles/kinds';
+import { BLOCK_SIZE_MEDIUM, PLAYER_HALF_WIDTH_WORLD } from '../../levels/roomDef';
+import type { PlayerCloak } from './playerCloak';
+import type { PhantomCloakExtension } from './phantomCloak';
+import { loadImg, isSpriteReady } from '../imageCache';
+import {
+  getCharacterSprites,
+  getOrCreateOuterOutlineMask,
+  getPlayerSprite,
+  PLAYER_OUTLINE_THICKNESS_WORLD,
+  PLAYER_SPRITE_WIDTH_WORLD,
+  PLAYER_SPRITE_HEIGHT_WORLD,
+  PLAYER_SPRITE_PIVOT_X_WORLD,
+  PLAYER_SPRITE_CENTER_OFFSET_Y_WORLD,
+  PLAYER_FAST_FALL_SPRITE_THRESHOLD_WORLD,
+  PLAYER_AFTERIMAGE_MIN_SPEED_WORLD_PER_SEC,
+  PLAYER_AFTERIMAGE_COUNT,
+  HURT_FLASH_DURATION_TICKS,
+  HURT_FLASH_MAX_ALPHA,
+} from './characterSprites';
+import {
+  getFlyingEyeColor,
+  renderFlyingEye,
+  renderGoldenMimic,
+  renderRollingEnemy,
+  renderRockElemental,
+  renderSlimeBody,
+  renderLargeSlimeDustOrbit,
+  renderWheelEnemy,
+  renderBeetleCrawling,
+  renderBeetleFlying,
+  renderSquareStampede,
+  renderWaterBubbleBody,
+  renderIceBubbleBody,
+} from './enemyRenderers';
 
-/** Block size in world units — walls are decomposed into tiles of this size. */
-const BLOCK_SIZE_PX = BLOCK_SIZE_WORLD;
+// ── Grapple dust sprites ─────────────────────────────────────────────────────
 
-// ── Sprite loading ──────────────────────────────────────────────────────────
-
-/** Module-level image cache keyed by URL — populated once, reused forever. */
-const _imgCache = new Map<string, HTMLImageElement>();
-
-function _loadImg(src: string): HTMLImageElement {
-  const cached = _imgCache.get(src);
-  if (cached !== undefined) return cached;
-  const img = new Image();
-  img.src = src;
-  _imgCache.set(src, img);
-  return img;
-}
-
-function _isSpriteReady(img: HTMLImageElement): boolean {
-  return img.complete && img.naturalWidth > 0;
-}
-
-/** Player character sprite. */
-const _playerSprite: HTMLImageElement = _loadImg('SPRITES/player/player.png');
-
-/** Rolling enemy sprites indexed by spriteIndex (1–6). Index 0 is unused. */
-const _enemySprites: HTMLImageElement[] = [
-  _loadImg('SPRITES/player/player.png'), // placeholder at index 0 (unused)
-  _loadImg('SPRITES/enemies/universal/enemy (1).png'),
-  _loadImg('SPRITES/enemies/universal/enemy (2).png'),
-  _loadImg('SPRITES/enemies/universal/enemy (3).png'),
-  _loadImg('SPRITES/enemies/universal/enemy (4).png'),
-  _loadImg('SPRITES/enemies/universal/enemy (5).png'),
-  _loadImg('SPRITES/enemies/universal/enemy (6).png'),
-];
-
-// ── Flying Eye rendering constants ─────────────────────────────────────────
-
-/** Sizes of each concentric diamond (as a fraction of the outermost half-diagonal). */
-const FLYING_EYE_RING_SCALES = [1.0, 0.72, 0.50, 0.31];
-/** Offset of each diamond's centre in the facing direction (fraction of outerR). */
-const FLYING_EYE_RING_OFFSETS = [0.0, 0.07, 0.14, 0.19];
-/** Stroke widths (screen pixels) for each ring, outer to inner. */
-const FLYING_EYE_RING_WIDTHS = [3.5, 2.5, 2.0, 1.5];
-
-/** Returns the primary display colour for a flying eye by element kind. */
-function getFlyingEyeColor(elementKind: number): string {
-  switch (elementKind as ParticleKind) {
-    case ParticleKind.Fire:  return '#ff5522';
-    case ParticleKind.Ice:   return '#44ccff';
-    case ParticleKind.Wind:  return '#88ffaa';
-    default:                 return '#ccccff';
-  }
-}
-
-/**
- * Draws four concentric diamond outlines centred at (screenX, screenY).
- * The inner diamonds are offset in the facing direction so the eye appears
- * to "look" in that direction.
- */
-function renderFlyingEye(
-  ctx: CanvasRenderingContext2D,
-  screenX: number,
-  screenY: number,
-  outerHalfDiagonalPx: number,
-  facingAngleRad: number,
-  elementKind: number,
-  healthRatio: number,
-): void {
-  const color = getFlyingEyeColor(elementKind);
-  const facingDirX = Math.cos(facingAngleRad);
-  const facingDirY = Math.sin(facingAngleRad);
-
-  ctx.strokeStyle = color;
-  ctx.fillStyle = 'transparent';
-  ctx.globalAlpha = 0.85 + healthRatio * 0.15;
-
-  for (let d = 0; d < FLYING_EYE_RING_SCALES.length; d++) {
-    const r   = outerHalfDiagonalPx * FLYING_EYE_RING_SCALES[d];
-    const off = outerHalfDiagonalPx * FLYING_EYE_RING_OFFSETS[d];
-    const cx  = screenX + facingDirX * off;
-    const cy  = screenY + facingDirY * off;
-
-    ctx.lineWidth = FLYING_EYE_RING_WIDTHS[d];
-    ctx.beginPath();
-    ctx.moveTo(cx + r, cy);       // right point
-    ctx.lineTo(cx,     cy + r);   // bottom point
-    ctx.lineTo(cx - r, cy);       // left point
-    ctx.lineTo(cx,     cy - r);   // top point
-    ctx.closePath();
-    ctx.stroke();
-  }
-
-  ctx.globalAlpha = 1.0;
-}
+const _grappleDustSprite = loadImg('SPRITES/DUST/grapplingHook/grapplingHookDust.png');
+const _grappleDustEndSprite = loadImg('SPRITES/DUST/grapplingHook/grapplingHookDust_end.png');
+const GRAPPLE_DUST_SEGMENT_PX = 4;
+const GRAPPLE_DUST_SIZE_PX = 4;
+const GRAPPLE_DUST_END_SIZE_PX = 4;
 
 /**
  * Renders walls (level geometry) from the snapshot on the 2D canvas using
@@ -109,7 +54,7 @@ function renderFlyingEye(
  * that hitbox boundaries are visible during development.
  */
 export function renderWalls(ctx: CanvasRenderingContext2D, snapshot: WorldSnapshot, offsetXPx: number, offsetYPx: number, scalePx: number, isDebugMode = false): void {
-  renderWallSprites(ctx, snapshot, offsetXPx, offsetYPx, scalePx, BLOCK_SIZE_PX);
+  renderWallSprites(ctx, snapshot, offsetXPx, offsetYPx, scalePx, BLOCK_SIZE_MEDIUM);
 
   if (isDebugMode) {
     ctx.save();
@@ -121,7 +66,26 @@ export function renderWalls(ctx: CanvasRenderingContext2D, snapshot: WorldSnapsh
       const screenY = snapshot.walls.yWorld[wi] * scalePx + offsetYPx;
       const screenW = snapshot.walls.wWorld[wi] * scalePx;
       const screenH = snapshot.walls.hWorld[wi] * scalePx;
-      ctx.strokeRect(screenX, screenY, screenW, screenH);
+      const isInvisibleBoundary = snapshot.walls.isInvisibleFlag[wi] === 1;
+      const isThinHorizontal = screenH <= BLOCK_SIZE_MEDIUM * scalePx;
+      const isThinVertical = screenW <= BLOCK_SIZE_MEDIUM * scalePx;
+      if (isInvisibleBoundary && (isThinHorizontal || isThinVertical)) {
+        // Draw a single centerline for thin invisible boundary walls so room
+        // borders show as one dotted line instead of a double-edge rectangle.
+        ctx.beginPath();
+        if (isThinHorizontal) {
+          const centerY = screenY + screenH * 0.5;
+          ctx.moveTo(screenX, centerY);
+          ctx.lineTo(screenX + screenW, centerY);
+        } else {
+          const centerX = screenX + screenW * 0.5;
+          ctx.moveTo(centerX, screenY);
+          ctx.lineTo(centerX, screenY + screenH);
+        }
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(screenX, screenY, screenW, screenH);
+      }
     }
     ctx.setLineDash([]);
     ctx.restore();
@@ -135,15 +99,21 @@ export function renderClusters(
   offsetYPx: number,
   scalePx: number,
   showHitboxes = false,
+  playerCloak?: PlayerCloak,
+  phantomCloak?: PhantomCloakExtension,
+  isDebugCloak = false,
 ): void {
   ctx.save();
+  // Pixel-art safety: simulation/camera may be subpixel, but sprite draws
+  // should land on integer screen pixels to avoid texture interpolation blur.
+  ctx.imageSmoothingEnabled = false;
 
   for (let ci = 0; ci < snapshot.clusters.length; ci++) {
     const cluster = snapshot.clusters[ci];
     if (cluster.isAliveFlag === 0) continue;
 
-    const screenX = cluster.positionXWorld * scalePx + offsetXPx;
-    const screenY = cluster.positionYWorld * scalePx + offsetYPx;
+    const screenX = Math.round(cluster.renderPositionXWorld * scalePx + offsetXPx);
+    const screenY = Math.round(cluster.renderPositionYWorld * scalePx + offsetYPx);
 
     const isPlayer = cluster.isPlayerFlag === 1;
 
@@ -154,18 +124,6 @@ export function renderClusters(
     const boxTop   = screenY - boxHalfH;
     const boxW     = boxHalfW * 2;
     const boxH     = boxHalfH * 2;
-
-    // ── Influence ring (faint, dashed) ─────────────────────────────────────
-    const influenceRadiusPx = cluster.influenceRadiusWorld * scalePx;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, influenceRadiusPx, 0, Math.PI * 2);
-    ctx.strokeStyle = isPlayer
-      ? 'rgba(0,255,153,0.10)'
-      : 'rgba(255,102,0,0.08)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([8, 6]);
-    ctx.stroke();
-    ctx.setLineDash([]);
 
     // ── Dash recharge golden ring animation ───────────────────────────────
     if (isPlayer && cluster.dashRechargeAnimTicks > 0) {
@@ -207,46 +165,283 @@ export function renderClusters(
         healthRatio,
       );
     } else if (isPlayer) {
-      // ── Player: sprite (fitted to box, slowly rotating) ─────────────────
-      const rotAngle = cluster.playerRotationAngleRad;
-      const sprite   = _playerSprite;
-      if (_isSpriteReady(sprite)) {
+      // ── Player: character sprite (no rotation; flip when facing left) ────
+      const charSprites = getCharacterSprites(snapshot.characterId);
+      const isGrappling = snapshot.isGrappleActiveFlag === 1;
+      const sprite = getPlayerSprite(charSprites, cluster, isGrappling);
+      // spritePivotX is the x-offset from the flip-pivot (hitbox centre, screenX) to
+      // the sprite's left edge.  Pixel 9.5 from the sprite left aligns with screenX,
+      // so the sprite left is 9.5px to the left of screenX.
+      const spritePivotX = PLAYER_SPRITE_PIVOT_X_WORLD * scalePx;
+      const spriteHalfH = (PLAYER_SPRITE_HEIGHT_WORLD * scalePx) * 0.5;
+      const spriteW = PLAYER_SPRITE_WIDTH_WORLD * scalePx;
+      const spriteH = spriteHalfH * 2;
+      const spriteCenterY = screenY + PLAYER_SPRITE_CENTER_OFFSET_Y_WORLD * scalePx;
+      // Build player state for cloak rendering (shared by back + front).
+      const cloakPlayerState = playerCloak !== undefined ? {
+        positionXWorld: cluster.positionXWorld,
+        positionYWorld: cluster.positionYWorld,
+        velocityXWorld: cluster.velocityXWorld,
+        velocityYWorld: cluster.velocityYWorld,
+        isFacingLeftFlag: cluster.isFacingLeftFlag,
+        isGroundedFlag: cluster.isGroundedFlag,
+        isSprintingFlag: cluster.isSprintingFlag,
+        isCrouchingFlag: cluster.isCrouchingFlag,
+        isWallSlidingFlag: cluster.isWallSlidingFlag,
+        halfWidthWorld: cluster.halfWidthWorld,
+        halfHeightWorld: cluster.halfHeightWorld,
+      } : undefined;
+
+      if (isSpriteReady(sprite)) {
+        // ── Invulnerability flicker: skip every other 3 ticks while invulnerable ──
+        const isInvulnerable = cluster.invulnerabilityTicks > 0;
+        // Flicker: visible for 3 ticks, invisible for 3 ticks — use ticks countdown.
+        const flickerHide = isInvulnerable && (Math.floor(cluster.invulnerabilityTicks / 3) % 2 === 0);
+        if (flickerHide) {
+          // Skip rendering this cluster for this flicker frame — still render cloak/phantom
+          if (phantomCloak !== undefined) {
+            phantomCloak.render(ctx, offsetXPx, offsetYPx, scalePx);
+          }
+          if (playerCloak !== undefined && cloakPlayerState !== undefined) {
+            playerCloak.renderFront(ctx, offsetXPx, offsetYPx, scalePx, cloakPlayerState);
+          }
+          if (phantomCloak !== undefined) {
+            phantomCloak.renderParticles(ctx, offsetXPx, offsetYPx, scalePx);
+          }
+          continue; // skip rest of player rendering
+        }
+
+        // ── Layer 0: Phantom cloak extension (behind main cloak) ──────────
+        if (phantomCloak !== undefined) {
+          phantomCloak.render(ctx, offsetXPx, offsetYPx, scalePx);
+        }
+
+        // ── Layer 1: Back cloak (behind body) ──────────────────────────
+        if (playerCloak !== undefined) {
+          playerCloak.renderBack(ctx, offsetXPx, offsetYPx, scalePx);
+        }
+
+        // ── Layer 2: Player body sprite ────────────────────────────────
+        const outlineThicknessPx = PLAYER_OUTLINE_THICKNESS_WORLD * scalePx;
+        const outlineMask = getOrCreateOuterOutlineMask(sprite);
+        const speedXWorldPerSec = cluster.velocityXWorld;
+        const speedYWorldPerSec = cluster.velocityYWorld;
+        const speedWorldPerSec = Math.sqrt(
+          speedXWorldPerSec * speedXWorldPerSec + speedYWorldPerSec * speedYWorldPerSec,
+        );
+        if (speedWorldPerSec > PLAYER_AFTERIMAGE_MIN_SPEED_WORLD_PER_SEC) {
+          const normX = speedXWorldPerSec / speedWorldPerSec;
+          const normY = speedYWorldPerSec / speedWorldPerSec;
+          for (let afterimageIndex = 0; afterimageIndex < PLAYER_AFTERIMAGE_COUNT; afterimageIndex++) {
+            const t = (afterimageIndex + 1) / PLAYER_AFTERIMAGE_COUNT;
+            const spacingPx = 3.0 * t;
+            const drawCenterX = screenX - normX * spacingPx;
+            const drawCenterY = spriteCenterY - normY * spacingPx;
+            const alpha = 0.085 * (1.0 - t * 0.35);
+            ctx.save();
+            ctx.translate(Math.round(drawCenterX) - 0.5, Math.round(drawCenterY));
+            if (cluster.isFacingLeftFlag === 1) {
+              ctx.scale(-1, 1);
+            }
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(
+              outlineMask,
+              -(spritePivotX + outlineThicknessPx),
+              -spriteHalfH - outlineThicknessPx,
+              spriteW + outlineThicknessPx * 2,
+              spriteH + outlineThicknessPx * 2,
+            );
+            ctx.drawImage(sprite, -spritePivotX, -spriteHalfH, spriteW, spriteH);
+            ctx.restore();
+          }
+        }
         ctx.save();
-        ctx.translate(screenX, screenY);
-        ctx.rotate(rotAngle);
-        ctx.drawImage(sprite, -boxHalfW, -boxHalfH, boxW, boxH);
+        // Shift by -0.5 so that sprite edges (at ±9.5 / ±6.5 from pivot) land on
+        // integer virtual pixels in both facing directions, preventing the edge-pixel
+        // duplication artifact that appears under ctx.scale(-1, 1).
+        ctx.translate(screenX - 0.5, spriteCenterY);
+        if (cluster.isFacingLeftFlag === 1) {
+          ctx.scale(-1, 1);
+        }
+        // Draw black outer silhouette first, then the original sprite on top.
+        ctx.drawImage(
+          outlineMask,
+          -(spritePivotX + outlineThicknessPx),
+          -spriteHalfH - outlineThicknessPx,
+          spriteW + outlineThicknessPx * 2,
+          spriteH + outlineThicknessPx * 2,
+        );
+        ctx.drawImage(sprite, -spritePivotX, -spriteHalfH, spriteW, spriteH);
         ctx.restore();
+
+        // ── Hurt flash overlay: red tint while hurtTicks > 0 ─────────────
+        if (cluster.hurtTicks > 0) {
+          const flashAlpha = (cluster.hurtTicks / HURT_FLASH_DURATION_TICKS) * HURT_FLASH_MAX_ALPHA;
+          ctx.save();
+          ctx.globalAlpha = flashAlpha;
+          ctx.fillStyle = '#ff2222';
+          ctx.fillRect(screenX - spritePivotX, spriteCenterY - spriteHalfH, spriteW, spriteH);
+          ctx.restore();
+        }
+
+        // ── Debug hitbox for player (only when showHitboxes is on) ────────
+        if (showHitboxes) {
+          // The sprite's top-left in screen space (constant regardless of facing).
+          const spriteTopY = spriteCenterY - spriteHalfH; // = screenY - 14*scalePx
+          // Determine state-adjusted hitbox in sprite pixel coordinates.
+          // All measured from sprite top-left; y increases downward.
+          const isAirborne = cluster.isGroundedFlag === 0;
+          const isJumping  = isAirborne && cluster.velocityYWorld < 0;
+          // Jumping (y 2–22): the debug rectangle is 2 px higher than the sim
+          // hitbox (y 4–24 / PLAYER_HALF_HEIGHT_WORLD = 10).  The sim collision
+          // box is intentionally left unchanged for jumping — only the debug
+          // indicator shifts to reflect the intended visual hitbox placement.
+          let hbTopPx   = isJumping ? 2 : 4;   // sprite y-pixel of hitbox top
+          const hbBotPx = isJumping ? 22 : 24;  // sprite y-pixel of hitbox bottom
+          // Derive x edges from the pivot constant so they stay in sync.
+          const hbHalfWPx = PLAYER_HALF_WIDTH_WORLD; // 3.5
+          const hbLeftPx  = PLAYER_SPRITE_PIVOT_X_WORLD - hbHalfWPx; // 9.5 - 3.5 = 6
+          const hbRightPx = PLAYER_SPRITE_PIVOT_X_WORLD + hbHalfWPx; // 9.5 + 3.5 = 13
+          // Crouching: sim already adjusted positionY and halfHeightWorld.
+          // Use the documented sprite y 8–24 for the crouching indicator.
+          if (cluster.isCrouchingFlag === 1) {
+            hbTopPx = 8; // y 8–24, matching CROUCH_HALF_HEIGHT_WORLD = 8
+          }
+          const hbScreenLeft = screenX - spritePivotX + hbLeftPx  * scalePx;
+          const hbScreenTop  = spriteTopY              + hbTopPx   * scalePx;
+          const hbScreenW    = (hbRightPx - hbLeftPx) * scalePx;
+          const hbScreenH    = (hbBotPx   - hbTopPx)  * scalePx;
+          // Fast-fall: use actual sim half-width (already narrowed in sim).
+          const isFastFalling = isAirborne && cluster.velocityYWorld > PLAYER_FAST_FALL_SPRITE_THRESHOLD_WORLD;
+          const fastFallHbW    = cluster.halfWidthWorld * 2 * scalePx;
+          const fastFallHbLeft = screenX - cluster.halfWidthWorld * scalePx;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(0, 255, 100, 0.9)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
+          if (isFastFalling) {
+            ctx.strokeRect(fastFallHbLeft, hbScreenTop, fastFallHbW, hbScreenH);
+          } else {
+            ctx.strokeRect(hbScreenLeft, hbScreenTop, hbScreenW, hbScreenH);
+          }
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // ── Layer 3: Front cloak (in front of body) ────────────────────
+        if (playerCloak !== undefined && cloakPlayerState !== undefined) {
+          playerCloak.renderFront(ctx, offsetXPx, offsetYPx, scalePx, cloakPlayerState);
+        }
+
+        // ── Layer 4: Phantom dissipation particles (above all cloaks) ─────
+        if (phantomCloak !== undefined) {
+          phantomCloak.renderParticles(ctx, offsetXPx, offsetYPx, scalePx);
+        }
+
+        // ── Debug overlay (both cloak polygons + control points) ───────
+        if (playerCloak !== undefined && isDebugCloak && cloakPlayerState !== undefined) {
+          playerCloak.renderDebug(ctx, offsetXPx, offsetYPx, scalePx, cloakPlayerState);
+        }
+        if (phantomCloak !== undefined && isDebugCloak) {
+          phantomCloak.renderDebug(ctx, offsetXPx, offsetYPx, scalePx);
+        }
       } else {
         // Fallback while sprite loads: coloured box
+        const spritePivotXFb = PLAYER_SPRITE_PIVOT_X_WORLD * scalePx;
+        const spriteHFb = PLAYER_SPRITE_HEIGHT_WORLD * scalePx;
         ctx.fillStyle = '#00ff99';
         ctx.globalAlpha = 0.75;
-        ctx.fillRect(boxLeft, boxTop, boxW, boxH);
+        ctx.fillRect(screenX - spritePivotXFb, spriteCenterY - spriteHFb * 0.5, PLAYER_SPRITE_WIDTH_WORLD * scalePx, spriteHFb);
         ctx.globalAlpha = 1.0;
         ctx.strokeStyle = '#00ff99';
         ctx.lineWidth = 2;
-        ctx.strokeRect(boxLeft, boxTop, boxW, boxH);
+        ctx.strokeRect(screenX - spritePivotXFb, spriteCenterY - spriteHFb * 0.5, PLAYER_SPRITE_WIDTH_WORLD * scalePx, spriteHFb);
       }
     } else if (cluster.isRollingEnemyFlag === 1) {
       // ── Rolling enemy: sprite rotated by accumulated roll angle ──────────
-      const idx    = cluster.rollingEnemySpriteIndex;
-      const sprite = idx >= 1 && idx <= 6 ? _enemySprites[idx] : _enemySprites[1];
-      const rollAngle = cluster.rollingEnemyRollAngleRad;
-      if (_isSpriteReady(sprite)) {
-        ctx.save();
-        ctx.translate(screenX, screenY);
-        ctx.rotate(rollAngle);
-        ctx.drawImage(sprite, -boxHalfW, -boxHalfH, boxW, boxH);
-        ctx.restore();
-      } else {
-        // Fallback while sprite loads: orange box
-        ctx.fillStyle = '#ff6600';
-        ctx.globalAlpha = 0.75;
-        ctx.fillRect(boxLeft, boxTop, boxW, boxH);
-        ctx.globalAlpha = 1.0;
-        ctx.strokeStyle = '#ff6600';
+      renderRollingEnemy(ctx, screenX, screenY, cluster, scalePx);
+    } else if (cluster.isRockElementalFlag === 1) {
+      // ── Rock Elemental: composite sprite (head + 2 arms) ────────────────
+      renderRockElemental(ctx, screenX, screenY, cluster, scalePx);
+
+    } else if (cluster.isRadiantTetherFlag === 1) {
+      // Radiant Tether boss body is rendered by radiantTetherRenderer.ts
+      // Skip default cluster rendering; health bar drawn below.
+
+    } else if (cluster.isGrappleHunterFlag === 1) {
+      // ── Grapple Hunter: dark purple box with hook accent ────────────────
+      ctx.fillStyle = '#8833cc';
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(boxLeft, boxTop, boxW, boxH);
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = '#aa55ee';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(boxLeft, boxTop, boxW, boxH);
+      // Inner highlight
+      ctx.fillStyle = 'rgba(200,150,255,0.3)';
+      ctx.fillRect(boxLeft + 2, boxTop + 2, boxW - 4, 3);
+
+      // Draw grapple chain during attack/reel states
+      if (cluster.grappleHunterState === 2 || cluster.grappleHunterState === 3) {
+        const tipScreenX = cluster.grappleHunterTipXWorld * scalePx + offsetXPx;
+        const tipScreenY = cluster.grappleHunterTipYWorld * scalePx + offsetYPx;
+        // Gold chain line
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY);
+        ctx.lineTo(tipScreenX, tipScreenY);
+        ctx.strokeStyle = 'rgba(255, 180, 50, 0.6)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(boxLeft, boxTop, boxW, boxH);
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Tip dot
+        ctx.beginPath();
+        ctx.arc(tipScreenX, tipScreenY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fill();
       }
+
+    } else if (cluster.isSlimeFlag === 1) {
+      // ── Slime: green blob circle ──────────────────────────────────────────
+      const healthRatio = cluster.maxHealthPoints > 0 ? cluster.healthPoints / cluster.maxHealthPoints : 1;
+      renderSlimeBody(ctx, screenX, screenY, boxHalfW, false, healthRatio);
+    } else if (cluster.isLargeSlimeFlag === 1) {
+      // ── Large Dust Slime: larger green blob with orbiting dust ────────────
+      const healthRatio = cluster.maxHealthPoints > 0 ? cluster.healthPoints / cluster.maxHealthPoints : 1;
+      renderSlimeBody(ctx, screenX, screenY, boxHalfW, true, healthRatio);
+      renderLargeSlimeDustOrbit(ctx, screenX, screenY, cluster.largeSlimeDustOrbitAngleRad, boxHalfW);
+    } else if (cluster.isWheelEnemyFlag === 1) {
+      // ── Wheel Enemy: rolling circle with spokes ───────────────────────────
+      renderWheelEnemy(ctx, screenX, screenY, boxHalfW, cluster.wheelRollAngleRad);
+    } else if (cluster.isBeetleFlag === 1) {
+      // ── Golden Beetle: stub graphics — oval body with wing hints ─────────
+      if (cluster.beetleIsFlightModeFlag === 1) {
+        renderBeetleFlying(ctx, screenX, screenY, boxHalfW);
+      } else {
+        renderBeetleCrawling(
+          ctx, screenX, screenY, boxHalfW,
+          cluster.beetleSurfaceNormalXWorld,
+          cluster.beetleSurfaceNormalYWorld,
+        );
+      }
+    } else if (cluster.isBubbleEnemyFlag === 1) {
+      // ── Bubble enemy: translucent circle body ─────────────────────────────
+      if (cluster.bubbleState === 0) {
+        const healthRatio = cluster.maxHealthPoints > 0
+          ? cluster.healthPoints / cluster.maxHealthPoints : 1.0;
+        if (cluster.isIceBubbleFlag === 1) {
+          renderIceBubbleBody(ctx, screenX, screenY, boxHalfW, healthRatio);
+        } else {
+          renderWaterBubbleBody(ctx, screenX, screenY, boxHalfW, healthRatio);
+        }
+      }
+      // In popped state (bubbleState === 1), no cluster body is drawn — only particles.
+    } else if (cluster.isSquareStampedeFlag === 1) {
+      // ── Square Stampede: ghost trail + current square ─────────────────────
+      renderSquareStampede(ctx, screenX, screenY, cluster, snapshot, scalePx, offsetXPx, offsetYPx);
+    } else if (cluster.isGoldenMimicFlag === 1) {
+      // ── Golden Mimic: golden silhouette of the player sprite ──────────────
+      renderGoldenMimic(ctx, screenX, screenY, cluster, snapshot.tick, scalePx, snapshot.characterId);
     } else {
       // ── Regular cluster box body ─────────────────────────────────────────
       const bodyColor = '#ff6600';
@@ -276,6 +471,11 @@ export function renderClusters(
     }
 
     // ── Health bar (above the body) ───────────────────────────────────────
+    // Player health bar is drawn in the HUD (top-left), not over the character.
+    if (isPlayer) continue;
+    // Popped bubble clusters have no visible body — skip health bar too
+    if (cluster.isBubbleEnemyFlag === 1 && cluster.bubbleState === 1) continue;
+
     const healthRatio = cluster.healthPoints / cluster.maxHealthPoints;
     // For flying eyes the health bar is anchored above the outer diamond ring;
     // for regular clusters it sits above the box.
@@ -295,6 +495,26 @@ export function renderClusters(
     let barColor: string;
     if (cluster.isFlyingEyeFlag === 1) {
       barColor = getFlyingEyeColor(cluster.flyingEyeElementKind);
+    } else if (cluster.isRockElementalFlag === 1) {
+      barColor = '#8b6914'; // brown/amber for rock elemental
+    } else if (cluster.isRadiantTetherFlag === 1) {
+      barColor = '#fffde0'; // radiant white-gold for light boss
+    } else if (cluster.isGrappleHunterFlag === 1) {
+      barColor = '#aa55ee'; // purple for grapple hunter
+    } else if (cluster.isSlimeFlag === 1) {
+      barColor = '#44cc44';
+    } else if (cluster.isLargeSlimeFlag === 1) {
+      barColor = '#228822';
+    } else if (cluster.isWheelEnemyFlag === 1) {
+      barColor = '#cc8844';
+    } else if (cluster.isBeetleFlag === 1) {
+      barColor = '#ffd700'; // golden yellow for beetle
+    } else if (cluster.isBubbleEnemyFlag === 1) {
+      barColor = cluster.isIceBubbleFlag === 1 ? '#aaddff' : '#3388ff';
+    } else if (cluster.isSquareStampedeFlag === 1) {
+      barColor = '#dd44ff'; // vivid magenta-purple for square stampede
+    } else if (cluster.isGoldenMimicFlag === 1) {
+      barColor = '#ffd700'; // bright gold for golden mimic
     } else if (isPlayer) {
       barColor = '#00ff99';
     } else {
@@ -308,7 +528,8 @@ export function renderClusters(
 }
 
 export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnapshot, offsetXPx: number, offsetYPx: number, scalePx: number): void {
-  if (snapshot.isGrappleActiveFlag === 0 && snapshot.grappleAttachFxTicks <= 0) return;
+  const hasActiveOrMiss = snapshot.isGrappleActiveFlag === 1 || snapshot.isGrappleMissActiveFlag === 1;
+  if (!hasActiveOrMiss && snapshot.grappleAttachFxTicks <= 0) return;
 
   let playerCluster: (typeof snapshot.clusters)[0] | undefined;
   for (let ci = 0; ci < snapshot.clusters.length; ci++) {
@@ -319,14 +540,29 @@ export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnap
   }
   if (playerCluster === undefined && snapshot.grappleAttachFxTicks <= 0) return;
 
-  const px = playerCluster !== undefined ? playerCluster.positionXWorld * scalePx + offsetXPx : 0;
-  const py = playerCluster !== undefined ? playerCluster.positionYWorld * scalePx + offsetYPx : 0;
-  const ax = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
-  const ay = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
+  // Grapple visually originates from right-middle (or left-middle when facing left) of the sprite
+  let px = 0;
+  let py = 0;
+  if (playerCluster !== undefined) {
+    const halfW = playerCluster.halfWidthWorld * scalePx;
+    const offsetDir = playerCluster.isFacingLeftFlag === 1 ? -1 : 1;
+    px = playerCluster.positionXWorld * scalePx + offsetXPx + offsetDir * halfW;
+    py = playerCluster.positionYWorld * scalePx + offsetYPx;
+  }
+  let ax = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
+  let ay = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
+  if (snapshot.isGrappleMissActiveFlag === 1 && snapshot.grappleParticleStartIndex >= 0) {
+    const tipIndex = snapshot.grappleParticleStartIndex + 9;
+    const isTipAlive = tipIndex < snapshot.particles.particleCount && snapshot.particles.isAliveFlag[tipIndex] === 1;
+    if (isTipAlive) {
+      ax = snapshot.particles.positionXWorld[tipIndex] * scalePx + offsetXPx;
+      ay = snapshot.particles.positionYWorld[tipIndex] * scalePx + offsetYPx;
+    }
+  }
 
   ctx.save();
 
-  if (snapshot.isGrappleActiveFlag === 1 && playerCluster !== undefined) {
+  if (hasActiveOrMiss && playerCluster !== undefined) {
     // Faint guide glow only — the "rope" itself is represented by gold particles.
     ctx.beginPath();
     ctx.moveTo(px, py);
@@ -338,14 +574,46 @@ export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnap
     ctx.setLineDash([]);
   }
 
-  // ── Anchor point circle ───────────────────────────────────────────────────
-  ctx.beginPath();
-  ctx.arc(ax, ay, 7, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 215, 0, 0.85)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 200, 0.95)';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  if (hasActiveOrMiss && playerCluster !== undefined) {
+    const dx = ax - px;
+    const dy = ay - py;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const segmentCount = Math.max(1, Math.floor(dist / GRAPPLE_DUST_SEGMENT_PX));
+    const dustSizePx = GRAPPLE_DUST_SIZE_PX * Math.max(1, scalePx * 0.5);
+
+    if (isSpriteReady(_grappleDustSprite)) {
+      for (let segmentIndex = 0; segmentIndex <= segmentCount; segmentIndex++) {
+        const t = segmentCount > 0 ? segmentIndex / segmentCount : 0;
+        const sx = px + dx * t;
+        const sy = py + dy * t;
+        ctx.drawImage(_grappleDustSprite, sx - dustSizePx * 0.5, sy - dustSizePx * 0.5, dustSizePx, dustSizePx);
+      }
+    } else {
+      for (let segmentIndex = 0; segmentIndex <= segmentCount; segmentIndex++) {
+        const t = segmentCount > 0 ? segmentIndex / segmentCount : 0;
+        const sx = px + dx * t;
+        const sy = py + dy * t;
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.75)';
+        ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+      }
+    }
+  }
+
+  const endSizePx = GRAPPLE_DUST_END_SIZE_PX * Math.max(1, scalePx * 0.5);
+  if (isSpriteReady(_grappleDustEndSprite)) {
+    ctx.drawImage(_grappleDustEndSprite, ax - endSizePx * 0.5, ay - endSizePx * 0.5, endSizePx, endSizePx);
+    if (hasActiveOrMiss && playerCluster !== undefined) {
+      ctx.drawImage(_grappleDustEndSprite, px - endSizePx * 0.5, py - endSizePx * 0.5, endSizePx, endSizePx);
+    }
+  } else {
+    ctx.beginPath();
+    ctx.arc(ax, ay, 7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.85)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 200, 0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
 
   if (snapshot.grappleAttachFxTicks > 0) {
     const fxProgress = 1.0 - snapshot.grappleAttachFxTicks / 14.0;
@@ -361,6 +629,57 @@ export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnap
     );
     ctx.strokeStyle = `rgba(255, 236, 170, ${fxAlpha})`;
     ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // ── Top-surface grapple special effect: rotating golden starburst at anchor ─
+  if (snapshot.isGrappleTopSurfaceFlag === 1 && snapshot.isGrappleActiveFlag === 1) {
+    /** Tick-to-radians scale for starburst rotation speed. */
+    const STARBURST_TIME_SCALE = 0.12;
+    /** Number of radiating rays in the starburst. */
+    const STARBURST_RAY_COUNT = 8;
+    /** Inner radius (px) where rays begin — keeps the center clear. */
+    const STARBURST_INNER_RADIUS_PX = 2;
+    /** Base outer radius (px) of the starburst rays. */
+    const STARBURST_OUTER_BASE_PX = 8;
+    /** Frequency of the pulsing outer-radius oscillation. */
+    const STARBURST_PULSE_FREQUENCY = 3.0;
+    /** Amplitude (px) of the pulsing oscillation on the outer radius. */
+    const STARBURST_PULSE_AMPLITUDE_PX = 3;
+    /** Radius (px) of the bright center glow circle. */
+    const STARBURST_CENTER_GLOW_RADIUS_PX = 3;
+
+    const starAx = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
+    const starAy = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
+    const time = snapshot.tick * STARBURST_TIME_SCALE;
+    const pulseOuter = STARBURST_OUTER_BASE_PX +
+      Math.sin(time * STARBURST_PULSE_FREQUENCY) * STARBURST_PULSE_AMPLITUDE_PX;
+
+    // Radiating golden rays
+    for (let r = 0; r < STARBURST_RAY_COUNT; r++) {
+      const angle = time + (r / STARBURST_RAY_COUNT) * Math.PI * 2;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(starAx + cosA * STARBURST_INNER_RADIUS_PX, starAy + sinA * STARBURST_INNER_RADIUS_PX);
+      ctx.lineTo(starAx + cosA * pulseOuter, starAy + sinA * pulseOuter);
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Bright center glow
+    ctx.beginPath();
+    ctx.arc(starAx, starAy, STARBURST_CENTER_GLOW_RADIUS_PX, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 220, 0.95)';
+    ctx.fill();
+
+    // Outer pulsing ring (brighter when stuck / decelerating)
+    const ringAlpha = snapshot.isGrappleStuckFlag === 1 ? 0.7 : 0.4;
+    ctx.beginPath();
+    ctx.arc(starAx, starAy, pulseOuter + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 236, 170, ${ringAlpha})`;
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 

@@ -5,23 +5,23 @@ export enum CommandKind {
   BlockStart = 3,
   BlockUpdate = 4,
   BlockEnd = 5,
-  Dash = 6,
-  Jump = 7,
-  GrappleFire = 8,
-  GrappleRelease = 9,
-  Interact = 10,
+  Jump = 6,
+  GrappleFire = 7,
+  GrappleRelease = 8,
+  Interact = 9,
   /** Activate the equipped primary Weave (left click quick release). */
-  WeaveActivatePrimary = 11,
+  WeaveActivatePrimary = 10,
   /** Begin holding the primary Weave (left click sustained). */
-  WeaveHoldPrimary = 12,
+  WeaveHoldPrimary = 11,
   /** Release/end the primary Weave hold. */
-  WeaveEndPrimary = 13,
+  WeaveEndPrimary = 12,
   /** Activate the equipped secondary Weave (right click quick release). */
-  WeaveActivateSecondary = 14,
+  WeaveActivateSecondary = 13,
   /** Begin holding the secondary Weave (right click sustained). */
-  WeaveHoldSecondary = 15,
+  WeaveHoldSecondary = 14,
   /** Release/end the secondary Weave hold. */
-  WeaveEndSecondary = 16,
+  WeaveEndSecondary = 15,
+  ToggleFullscreen = 16,
 }
 
 export interface MovePlayerCommand {
@@ -67,16 +67,6 @@ export interface BlockUpdateCommand {
 
 export interface BlockEndCommand {
   kind: CommandKind.BlockEnd;
-}
-
-export interface DashCommand {
-  kind: CommandKind.Dash;
-  /**
-   * Preferred dash direction in screen space (absolute pixels, from player toward cursor).
-   * Falls back to current movement direction when no explicit direction is given.
-   */
-  aimXPx: number;
-  aimYPx: number;
 }
 
 export interface JumpCommand {
@@ -139,6 +129,10 @@ export interface WeaveEndSecondaryCommand {
   kind: CommandKind.WeaveEndSecondary;
 }
 
+export interface ToggleFullscreenCommand {
+  kind: CommandKind.ToggleFullscreen;
+}
+
 export type GameCommand =
   | MovePlayerCommand
   | ReturnToMapCommand
@@ -146,7 +140,6 @@ export type GameCommand =
   | BlockStartCommand
   | BlockUpdateCommand
   | BlockEndCommand
-  | DashCommand
   | JumpCommand
   | GrappleFireCommand
   | GrappleReleaseCommand
@@ -156,5 +149,5 @@ export type GameCommand =
   | WeaveEndPrimaryCommand
   | WeaveActivateSecondaryCommand
   | WeaveHoldSecondaryCommand
-  | WeaveEndSecondaryCommand;
-
+  | WeaveEndSecondaryCommand
+  | ToggleFullscreenCommand;

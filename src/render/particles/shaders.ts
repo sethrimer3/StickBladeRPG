@@ -1,8 +1,8 @@
 /**
  * GLSL shader sources for WebGL particle rendering.
  *
- * Vertex format (per particle): [x, y, kind, normalizedAge, disturbanceFactor]
- *                                (5 floats)
+ * Vertex format (per particle): [x, y, kind, normalizedAge, disturbanceFactor, isOffensive]
+ *                                (6 floats)
  *
  * Design goals:
  *  - Single draw call for all particles via gl.POINTS / point sprites.
@@ -23,6 +23,7 @@ export const PARTICLE_VERTEX_SHADER_SRC = `
   attribute float a_kind;
   attribute float a_normalizedAge;
   attribute float a_disturbanceFactor;
+  attribute float a_isOffensive;
 
   uniform vec2  u_resolution;
   uniform float u_pointSizePx;
@@ -36,9 +37,15 @@ export const PARTICLE_VERTEX_SHADER_SRC = `
     clip.y = -clip.y;
     gl_Position = vec4(clip, 0.0, 1.0);
 
-    // Particles shrink to ~60 % of their base size as they age out.
-    float sizeFactor = 1.0 - a_normalizedAge * 0.40;
-    gl_PointSize = u_pointSizePx * sizeFactor;
+    // Offensive particles stay at their full size throughout their lifetime.
+    // They are clamped to at least 2x2 in-game pixels for readability.
+    // Orbit/shield particles shrink to ~60 % of their base size as they age out.
+    float sizeFactor = a_isOffensive > 0.5 ? 1.0 : (1.0 - a_normalizedAge * 0.40);
+    float pointSize = u_pointSizePx * sizeFactor;
+    if (a_isOffensive > 0.5) {
+      pointSize = max(2.0, pointSize);
+    }
+    gl_PointSize = pointSize;
 
     v_kind              = a_kind;
     v_normalizedAge     = a_normalizedAge;
@@ -98,7 +105,8 @@ export const PARTICLE_FRAGMENT_SHADER_SRC = `
     if (ki == 16) return vec3(1.00, 0.13, 0.00);  // Lava      — deep molten red-orange
     if (ki == 17) return vec3(0.53, 0.53, 0.60);  // Stone     — cool grey
     if (ki == 18) return vec3(1.00, 0.84, 0.00);  // Gold      — bright golden yellow
-    return vec3(0.47, 0.60, 0.67);                // Physical  — steel blue-grey
+    if (ki == 19) return vec3(1.00, 0.99, 0.88);  // Light     — radiant white-gold
+    return vec3(1.00, 0.84, 0.00);                // Physical  — bright golden yellow
   }
 
   // Maps a ParticleKind to a shape index (0–7).
@@ -123,7 +131,8 @@ export const PARTICLE_FRAGMENT_SHADER_SRC = `
     if (ki == 16) return 0.0; // Lava      → Circle (molten, fluid)
     if (ki == 17) return 3.0; // Stone     → Triangle (rocky, jagged)
     if (ki == 18) return 1.0; // Gold      → Diamond (sparkle)
-    return 0.0;               // Physical  → Circle (default)
+    if (ki == 19) return 0.0; // Light     → Circle (radiant glow)
+    return 2.0;               // Physical  → Square (gold dust mote)
   }
 
   // Returns true if the point coord (in [-0.5, 0.5] space) lies outside the
@@ -239,5 +248,4 @@ export const PARTICLE_FRAGMENT_SHADER_SRC = `
     gl_FragColor = vec4(color, alpha);
   }
 `.trim();
-
 

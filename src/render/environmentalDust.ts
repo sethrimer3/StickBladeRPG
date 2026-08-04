@@ -2,13 +2,25 @@ import { ClusterState } from '../sim/clusters/state';
 import { WorldState } from '../sim/world';
 
 const MAX_DUST_PARTICLES = 1000;
-const DUST_DENSITY_PER_1000PX = 420;
 const SWIRL_ACCEL = 26.0;
 const DRAG_PER_SECOND = 3.2;
 const RETURN_TO_REST = 16.0;
 const DISTURB_RADIUS_WORLD = 92.0;
 const LANDING_RADIUS_WORLD = 145.0;
 const LANDING_VERTICAL_SPEED_THRESHOLD = 80.0;
+const DUST_RENDER_SIZE_PX = 4;
+const LOBBY_WORLD_NUMBER = 0;
+
+
+const BASE = import.meta.env.BASE_URL;
+const GOLDEN_DUST_SPRITE_SRC = `${BASE}SPRITES/DUST/golden/goldenDust.png`;
+const BROWN_DUST_SPRITE_SRC = `${BASE}SPRITES/DUST/brownRock/brownRockDust.png`;
+
+function loadDustSprite(src: string): HTMLImageElement {
+  const image = new Image();
+  image.src = src;
+  return image;
+}
 
 interface SurfaceSegment {
   x0: number;
@@ -36,27 +48,16 @@ export class EnvironmentalDustLayer {
   private readonly prevGroundedFlags: number[] = [];
 
   private readonly surfaces: SurfaceSegment[] = [];
+  private readonly goldenDustSprite = loadDustSprite(GOLDEN_DUST_SPRITE_SRC);
+  private readonly brownDustSprite = loadDustSprite(BROWN_DUST_SPRITE_SRC);
+  private activeDustSprite: HTMLImageElement | null = null;
 
-  initFromWorld(world: WorldState): void {
+  initFromWorld(world: WorldState, worldNumber: number): void {
     this.buildSurfaceSegments(world);
+    this.activeDustSprite = worldNumber === LOBBY_WORLD_NUMBER ? this.goldenDustSprite : this.brownDustSprite;
 
-    const targetCount = Math.min(
-      MAX_DUST_PARTICLES,
-      Math.max(300, Math.floor((world.worldWidthWorld / 1000) * DUST_DENSITY_PER_1000PX)),
-    );
-    this.particleCount = targetCount;
-
-    for (let i = 0; i < targetCount; i++) {
-      this.spawnParticleAtSurface(i);
-      this.vxWorld[i] = 0.0;
-      this.vyWorld[i] = 0.0;
-      this.glow[i] = 0.0;
-    }
-
-    this.prevGroundedFlags.length = world.clusters.length;
-    for (let ci = 0; ci < world.clusters.length; ci++) {
-      this.prevGroundedFlags[ci] = world.clusters[ci].isGroundedFlag;
-    }
+    // All dust is now placed explicitly via editor dust piles — skip procedural generation.
+    this.particleCount = 0;
   }
 
   update(world: WorldState, dtMs: number): void {
@@ -142,15 +143,20 @@ export class EnvironmentalDustLayer {
         const g = this.glow[i];
         if (g < minGlow || g >= maxGlow) continue;
 
-        const size = (1 + (this.moundHeightPx[i] > 2 ? 1 : 0)) * scalePx;
+        const size = DUST_RENDER_SIZE_PX * scalePx;
         const drawX = this.xWorld[i] * scalePx + offsetXPx;
         const drawY = this.yWorld[i] * scalePx + offsetYPx;
-        ctx.fillRect(
-          drawX,
-          drawY,
-          size,
-          size,
-        );
+        const sprite = this.activeDustSprite;
+        if (sprite !== null && sprite.complete && sprite.naturalWidth > 0) {
+          ctx.drawImage(sprite, drawX, drawY, size, size);
+        } else {
+          ctx.fillRect(
+            drawX,
+            drawY,
+            size,
+            size,
+          );
+        }
         if (showHitboxes) {
           ctx.strokeStyle = 'rgba(255, 230, 140, 0.9)';
           ctx.lineWidth = 0.75;
@@ -178,20 +184,6 @@ export class EnvironmentalDustLayer {
       const y = world.wallYWorld[wi];
       this.surfaces.push({ x0, x1, y });
     }
-  }
-
-  private spawnParticleAtSurface(index: number): void {
-    const surface = this.surfaces[(Math.random() * this.surfaces.length) | 0];
-    const x = surface.x0 + Math.random() * (surface.x1 - surface.x0);
-
-    // Mound height bias: 0-2 common, 3 uncommon, 4 rare peak.
-    const r = Math.random();
-    const mound = r < 0.45 ? 0 : r < 0.76 ? 1 : r < 0.92 ? 2 : r < 0.985 ? 3 : 4;
-
-    this.xWorld[index] = x;
-    this.moundHeightPx[index] = mound;
-    this.restYWorld[index] = surface.y - mound;
-    this.yWorld[index] = this.restYWorld[index];
   }
 
   private applyClusterDisturbance(

@@ -11,16 +11,27 @@
 
 ## Coordinate System
 - World space: floating-point units.
-- Screen space: pixels.
-- Scale: 1 world unit = 1 pixel at default zoom.
-- Camera zoom: default 2× (1 world unit = 2 screen pixels at default zoom).
+- Virtual canvas: 480×270 virtual pixels (fixed internal resolution).
+- Device canvas: sized in **physical pixels** (`window.innerWidth * devicePixelRatio`),
+  used only as upscale target. Its CSS size is always `100vw × 100vh` with
+  `image-rendering: pixelated` (+ `crisp-edges` for Firefox) so the browser
+  composites the element using nearest-neighbor — no browser-level blur.
+  The backing store (HTML width/height attributes) is set to physical pixels so
+  `drawImage` fills the entire physical screen without a secondary browser scale.
+- Scale: 1 world unit = 1 virtual pixel at zoom 1.0.
+- Camera zoom: 1.0 (1 world unit = 1 virtual pixel).
   Camera follows player, clamped to room bounds so viewport never shows void.
+- Upscale: `deviceCtx.drawImage(virtualCanvas, 0, 0, w, h)` with
+  `imageSmoothingEnabled = false` for crisp nearest-neighbor sampling.
+  At 1080p (1920×1080 physical) the scale factor is exactly 4× per virtual pixel.
+- WebGL particle canvas also renders at 480×270 and is composited onto the
+  device canvas during the upscale pass.
 
 ## Metroidvania Room System (BUILD 24)
 - Game uses interconnected rooms instead of a level-select world map.
 - Player spawns in a central lobby (world 0) with tunnels leading left (world 2)
   and right (world 1).
-- Rooms are defined in block-unit coordinates (1 block = 30 world units).
+- Rooms are defined in block-unit coordinates (currently 1 block = BLOCK_SIZE_SMALL = 8 world units).
 - Room transitions are open tunnel passages at room edges; blocks line the
   tunnel ceiling/floor and a darkness gradient fades to 100% black at the edge.
 - When the player enters a transition zone, the current room is unloaded and
@@ -114,7 +125,106 @@ The `kind` drives element colour selection in the GLSL fragment shader.
 `normalizedAge` (ageTicks / lifetimeTicks) drives alpha fade and point-size
 shrink in the vertex shader — particles visually decay as they age out.
 
-## Player Movement Physics (BUILD 38 — Celeste-inspired retune)
+## Renderer Performance (BUILD 156 — Eliminate rAF Violation Warnings)
+
+### Reusable WorldSnapshot
+
+`createReusableSnapshot(world)` allocates a `ReusableWorldSnapshot` once after
+`createWorldState()`.  `updateSnapshotInPlace(snap, world)` updates it each
+frame without heap allocation — cluster objects are recycled from a pre-allocated
+pool of 64 slots (expandable lazily).  `resetReusableSnapshot(snap, world)` is
+called in `loadRoom()` to rebuild the cluster array for the new room's cluster
+count.
+
+**Safety invariant**: `reusableSnapshot` must never be stored or referenced
+across frame boundaries.  It is valid only for the duration of the `renderFrame()`
+call that consumed it.  After the next `updateSnapshotInPlace()` all previous
+field values are overwritten.
+
+`createSnapshot(world)` is retained as a compatibility wrapper used by the
+editor preview path (which requires an immutable one-shot snapshot).
+
+### Cached Room Decorations
+
+`buildRoomDecorations()` is called once in `loadRoom()` and the result stored in
+`cachedWallDecorations`.  Per-decoration center coordinates are precomputed into
+`cachedDecorationCenterX` / `cachedDecorationCenterY` (pre-allocated
+`Float32Array`s of `DecorationWaveState.MAX_DECORATIONS` slots) for use by
+`DecorationWaveState.update()`.  `renderFrame()` no longer calls
+`buildRoomDecorations()` on every frame.
+
+### DecorationWaveState Broad-Phase
+
+`DecorationWaveState.update()` now accepts pre-computed center arrays and:
+1. Skips any cluster whose `|velocityXWorld| < MIN_PUSH_VELOCITY_THRESHOLD (1.0)`
+   without entering the inner decoration loop (broad-phase reject for still entities).
+2. Uses an AABB early-out `|dx| > pushRadius || |dy| > pushRadius` before the
+   more expensive `distSq` computation (avoids multiply-add for out-of-range pairs).
+
+### Offensive Outline Batching
+
+`drawOffensiveDustOutlineOverlay()` builds a `Set<number>` of alive enemy entity
+IDs in one O(C) pass, then uses `set.has()` instead of an O(P×C) inner cluster
+scan.  All qualifying arcs are batched into a single `beginPath` + `stroke` call
+instead of one flush per particle.  The set is a module-level pre-allocated
+`_aliveEnemyEntityIds`, cleared and refilled each frame — avoids a per-frame
+`new Set<number>()` heap allocation.
+
+### High-Water Glow Guard (DISABLED BY DEFAULT)
+
+`HIGH_WATER_GLOW_GUARD_ENABLED = false` in `gameRender.ts`.  When flipped to
+`true`, `addDecorationBloom()` will only process decorations within the virtual
+canvas viewport when the decoration count exceeds
+`HIGH_WATER_DECORATION_BLOOM_LIMIT = 128`.  This avoids off-screen bloom cost on
+pathological rooms.  No visual regression for visible decorations.
+
+## Renderer Performance (BUILD 157 — Wall Layer Baking)
+
+### Wall Layer Bake Cache
+
+`renderWallSprites()` in `blockSpriteRenderer.ts` now pre-renders the entire wall
+layer into an offscreen `HTMLCanvasElement` (the "bake canvas") and caches it.
+Subsequent frames skip all per-tile draw calls and instead blit the bake canvas
+with a single `ctx.drawImage(bakedCanvas, ox, oy)`.
+
+**Bake canvas dimensions**: `ceil(roomWidthBlocks × blockSizePx × scalePx)` ×
+`ceil(roomHeightBlocks × blockSizePx × scalePx)` pixels.  At the standard zoom
+of 1.0 with BLOCK_SIZE_MEDIUM = 8 and a 80×45-block room this is 640×360 virtual
+pixels — well within memory budget.
+
+**Bake key**: Layout identity (`_bakedWallLayoutRef === wallLayout`) plus
+`_bakedWallScalePx === scalePx`.  Using object-reference comparison for the
+wall layout avoids building a long concatenated string on every fast-path frame —
+`_buildWallLayoutCache` returns the same object while the room is unchanged.
+Theme/lighting/world changes are detected via `_invalidateBakedWallCanvas()`
+which nulls `_bakedWallCanvas`/`_bakedWallLayoutRef` before the next render.
+
+**Fallback detection**: `_bakePassHadFallbacks` is set to `true` inside
+`_doRenderWallTilesDirect()` whenever any sprite is not yet loaded and a
+placeholder tile is drawn instead.  When this flag is true after the bake pass,
+`_bakedWallHadFallbacks` is recorded and the fast blit path is suppressed on the
+next frame, triggering a re-bake.  Once all sprites have loaded the bake is
+committed without fallbacks and the fast path is taken every subsequent frame.
+
+**Performance impact**: replaces ~300–500 `drawImage`/`fillRect` calls per frame
+with a single `drawImage` blit after the warm-up period.  Expected savings: 1–2 ms
+per frame on a dense room at 60 fps.
+
+### solid2x2Map Pre-Computed in Layout Cache
+
+`CachedWallLayout` now includes a `solid2x2Map: Map<string, number>` field
+populated once in `_buildWallLayoutCache()`.  This removes the per-frame call to
+the deleted `_collectSolid2x2WallTopLefts()` helper, eliminating one
+`new Map<string, number>()` allocation and one O(wallCount) wall iteration per
+frame.
+
+### Pre-Allocated `_coveredBy2x2Keys`
+
+`_coveredBy2x2Keys` is now a module-level `Set<string>`, cleared and repopulated
+from `wallLayout.solid2x2Map` each frame via `_populateCoveredBy2x2Keys()`.
+Avoids one `new Set<string>()` allocation per frame.
+
+
 
 ### Gravity Model
 Replaced the dual rise/fall gravity split with a unified normal gravity (900 px/s²).
@@ -149,8 +259,9 @@ Direct acceleration model preserved. Retuned values:
 - Max run speed:       105 px/s
 
 ### Player Hitbox
-Changed from 8×12 to 10×10 px (halfWidth=5, halfHeight=5) to match the spec of
-exactly one-third of a standard block (30 px) in each dimension.
+Changed from 8×12 to 8×10 px (halfWidth=4, halfHeight=5). Player size constants
+are exported from `src/levels/roomDef.ts` as PLAYER_WIDTH_WORLD=8,
+PLAYER_HEIGHT_WORLD=10, PLAYER_HALF_WIDTH_WORLD=4, PLAYER_HALF_HEIGHT_WORLD=5.
 
 ### Wall Slide
 Wall slide descent capped at 25 px/s (reduced from 80) for deliberate, readable
@@ -213,7 +324,7 @@ This prevents the acceleration model from fighting against the swing.
 ## Skill Tomb Save Points (BUILD 27)
 - Skill tombs are placed in rooms via `skillTombs` array in `RoomDef`.
 - Uses `skill_tomb.png` sprite from `ASSETS/SPRITES/WORLDS/W-0/`.
-- Proximity detection radius: 3 blocks (90 world units).
+- Proximity detection radius: 3 blocks (3 × BLOCK_SIZE_MEDIUM world units).
 - Golden dust particles swirl around the tomb when the player is near;
   particles transition to dull gold and fall to the ground when the player leaves.
 - Press F to interact: saves progress and opens the Skill Tomb menu.
@@ -242,12 +353,43 @@ This prevents the acceleration model from fighting against the swing.
 ## BUILD 34 Changes
 
 ### Block Size Reduction
-`BLOCK_SIZE_WORLD` reduced from 15 to 11.25 (25% smaller).  All room dimensions
-(walls, enemy spawns, tunnel positions) are stored in block units and converted
-to world units at load time, so the entire geometry shrinks proportionally.
-Player and enemy physics constants (jump height, gravity, speed) remain in
-absolute world units and are therefore unaffected by the block size change —
-the player effectively becomes larger relative to each block.
+### Block Size Constants (BUILD 45)
+`BLOCK_SIZE_WORLD` (previously 11.25) replaced with three canonical constants,
+updated from the BUILD 44 values (3/6/12) to the new standard:
+- `BLOCK_SIZE_SMALL  = 8`  → 8×8 virtual px, 32×32 physical px @ 4×
+- `BLOCK_SIZE_MEDIUM = 8`  → temporary alias of small tier while medium tier is disabled
+- `BLOCK_SIZE_LARGE  = 8`  → temporary alias of small tier while large tier is disabled
+
+At zoom 1.0 with 480×270 virtual canvas: 60 small blocks horizontally, 33.75 vertically.
+All room definitions remain in block units and are converted at load time.
+
+Player size constants are now exported from `src/levels/roomDef.ts`:
+- `PLAYER_WIDTH_WORLD = 8`, `PLAYER_HEIGHT_WORLD = 10`
+- `PLAYER_HALF_WIDTH_WORLD = 4`, `PLAYER_HALF_HEIGHT_WORLD = 5`
+
+The obsolete 30×30 tile model is fully removed. All block sizing uses the three-tier
+system above. Particle radius updated to 4/6 ≈ 0.667 world units (1/6 of player width).
+
+### Collision System Rewrite (BUILD 44)
+**Wall merging**: At room load time, contiguous axis-aligned wall rectangles are
+iteratively merged into single AABBs. This eliminates internal seam edges that
+caused ghost collisions when the player walked across adjacent blocks.
+
+**Axis-separated sweep**: `resolveClusterSolidWallCollision` rewritten with a
+strict two-pass approach:
+1. **X pass**: integrate posX, resolve all X-axis overlaps, zero velX on contact.
+2. **Y pass**: integrate posY, resolve all Y-axis overlaps, zero velY on contact,
+   set isGroundedFlag on top-surface landing.
+The passes are completely independent — X and Y resolution never mix. The old
+minimum-penetration fallback is removed as the primary resolver; each axis has
+its own directional fallback for edge-case overlaps (e.g. spawn inside a wall).
+
+**Epsilon guards**: `COLLISION_EPSILON = 0.5` world units applied to all sweep
+boundary checks to absorb floating-point error across ticks.
+
+**Sub-tick safety**: Each axis pass is sub-stepped when the movement distance
+exceeds half the cluster's dimension on that axis. This prevents tunneling
+through thin walls (BLOCK_SIZE_SMALL = 8 units) at dash speed (~9 units/tick).
 
 ### Jump Height Reduction
 `JUMP_HEIGHT_WORLD` reduced from 60 to 40 world units.  Derived constants
@@ -385,3 +527,228 @@ can verify the collision boundary matches the visual tile geometry.
 - Weave slot capacities: `sim/weaves/weaveDefinition.ts`
 - Weave behavior tuning: `sim/weaves/weaveCombat.ts`
 - Default loadout: `sim/weaves/playerLoadout.ts` (createDefaultWeaveLoadout)
+
+## Brown Rock Cave Content (BUILD 41)
+
+### World 0 Background
+- World 0 now uses `SPRITES/BACKGROUNDS/brownRock_background_1.png` as its tiled background.
+- Procedural background generation has been removed. All worlds use image-based backgrounds.
+- If an image is not yet loaded, a solid fallback colour is drawn (no procedural textures).
+- World 0 fallback colour: `#2a1a0e` (brown-rock cave).
+
+### Brown Rock Block Sprites
+- World 0 block auto-tiling uses brown-rock sprites from `SPRITES/BLOCKS/brownRock/`.
+- Four variants available: `brownRock_block_1.png` (block/vertex), `brownRock_block_2.png` (edge/corner),
+  `brownRock_block_3.png` (single/end), `brownRock_block_large_1.png` (2×2 editor palette).
+- Editor palette includes all 4 brown rock blocks with correct dimensions.
+
+### Rock Elemental Enemy
+- New enemy type: `isRockElementalFlag` on `RoomEnemyDef` and `ClusterState`.
+- 7 states: inactive (0), activating (1), active (2), evading (3), attacking (4), regenerating (5), dead (6).
+- AI module: `sim/clusters/rockElementalAi.ts`
+- Dust orbit/projectile module: `sim/clusters/rockElementalDust.ts`
+- Tick pipeline: steps 0.5b (AI) and 0.5c (dust) after `applyEnemyAI`.
+- Movement: hover physics with reduced gravity (200 vs 900) in active states.
+- Dust uses `ParticleKind.Earth` particles, orbiting at 36 wu radius.
+- Orbit → projectile conversion uses existing `behaviorMode=1` attack damage flow.
+- Composite rendering: head + 2 arm sprites with deactivated/activated variants.
+
+### Rock Elemental Tuning Constants
+- Activation range: 180 wu
+- Activation duration: 30 ticks (0.5 s)
+- Preferred distance: 140 wu
+- Evade threshold: 80 wu
+- Max hover height: 40 wu
+- Leash radius: 220 wu
+- Max dust: 12
+- Orbit radius: 36 wu
+- Regen interval: 48 ticks (0.8 s)
+- Projectile speed: 220 wu/s
+- Projectile lifetime: 180 ticks (3 s)
+- All constants in `sim/clusters/rockElementalAi.ts`.
+
+### Lobby Remake
+- Lobby room "Stone Hollow" (48×24 blocks, world 0).
+- Cave-shaped with uneven ceiling stalactites, irregular side wall insets, uneven floor.
+- Central plateau: 8 blocks wide (x=20..28), top at row 19 (3 blocks above row 22 floor).
+- Player spawn on plateau top at (24, 18).
+- Skill tome on plateau at (26, 18), 2 blocks right of spawn.
+- One Rock Elemental at (10, 20), >10 blocks from plateau center.
+- Left/right tunnel transitions preserved at row 16.
+
+## Radiant Tether Boss (BUILD 42)
+
+### Boss Concept
+- First boss: floating spherical entity made of light ("Radiant Tether").
+- Uses rotating laser telegraphs followed by chains of light anchored to walls.
+- Boss moves by changing chain lengths (winch behavior).
+- Chain count scales 3→8 as health drops (threshold-based).
+
+### Boss Room
+- 60×60 block square chamber ("Luminous Chamber"), world 1.
+- Accessible from W1 Room 1 via right tunnel.
+- Thick walls on all sides for reliable chain anchoring.
+- Small platforms for player cover/parkour.
+- Boss spawns at block (30, 20) with Holy + Lightning particles.
+
+### Attack Loop Phases
+1. **Telegraph** (90 ticks / 1.5s): Thin laser lines rotate around boss.
+2. **Lock** (30 ticks / 0.5s): Lasers freeze for player reaction.
+3. **Firing** (6 ticks / ~instant): Chains raycast to wall anchors.
+4. **Movement** (300 ticks / 5s): Boss winches via tighten/loosen chains.
+5. **Reset** (30 ticks / 0.5s): Retract chains, prepare next cycle.
+
+### Chain System
+- Chains fire along evenly-spaced angles (e.g., 4 chains = 90° apart).
+- Each chain raycasts from boss to nearest wall in its direction.
+- Retry with slight angle offsets if a direction misses terrain.
+- Visual: parabolic sag approximation (not full rope sim) for performance.
+- Damage: player takes 1 HP on chain contact + 60 ticks iframes.
+- Telegraphs do NOT deal damage.
+
+### Opposing-Chain Snap
+- When two chains are ~180° apart and both tightening with high tension,
+  they snap off the boss and swing from their wall anchors as broken chains.
+- Tunable thresholds: opposing angle tolerance (0.35 rad), straightness
+  threshold (0.92), tension ratio (0.55).
+- Broken chains persist as environmental hazards for 240 ticks (4s).
+
+### Chain Count Health Thresholds
+- ≥85% HP → 3 chains
+- ≥70% HP → 4 chains
+- ≥55% HP → 5 chains
+- ≥40% HP → 6 chains
+- ≥25% HP → 7 chains
+- <25% HP → 8 chains
+
+### Movement Physics
+- Boss has zero gravity (fully floating).
+- Position/velocity controlled by chain tension forces.
+- Boss bounces softly off room boundaries.
+- Standard enemy AI is skipped (dedicated state machine).
+
+### Files
+- Config: `sim/clusters/radiantTetherConfig.ts` (all tunable constants)
+- AI state machine: `sim/clusters/radiantTetherAi.ts`
+- Chain system: `sim/clusters/radiantTetherChains.ts`
+- Renderer: `render/clusters/radiantTetherRenderer.ts`
+- Room: `levels/rooms.ts` (ROOM_BOSS_RADIANT_TETHER)
+- Particle kind: `ParticleKind.Light` (kind 19)
+
+## Player Movement Overhaul (BUILD 59)
+
+### Speed Changes
+- Walk speed: 70 → 105 (+50%)
+- Jump speed: 200 → 300 (+50%)
+- Gravity: 600 → 900 (+50%)
+- Normal fall cap: 107 → 160.5 (+50%)
+- Fast fall cap: 160 → 240 (+50%)
+- Sprint multiplier: 2.0x → 1.5x (relative to already-increased base)
+
+### Shift Mechanics
+- Holding shift increases run speed by 50% (sprint multiplier 1.5x)
+- Holding shift decreases ground friction by 50%
+- Skidding: when sprinting and moving opposite to facing direction, spawn
+  debris particles (1×1 px) from bottom-front corner, increase friction by 50%
+- Skid jump: jumping while skidding boosts jump height by 50%
+
+### Down Key Behavior
+- Holding down without shift blocks left/right acceleration (no movement)
+- Holding shift+down = sliding (normal movement is allowed)
+
+### Grapple Hook Miss
+- When raycast hits no wall, chain extends to full influence radius
+- Chain links have heavy inertia (gravity + drag) and fall limp
+- Links stay connected via distance constraints
+- If tip link hits a surface, grapple attaches there
+- Auto-cancels after 90 ticks if nothing is hit
+
+### Debug Speed Panel
+- All player speed constants are exposed as editable textboxes in the debug panel
+- Debug panel appears when debug mode is toggled on (via pause menu)
+- Values written to `debugSpeedOverrides` in `movement.ts` for live playtesting
+
+### Level Editor Resolution Fix
+- Editor mouse coordinates now properly convert from device pixels to
+  virtual canvas coordinates (480×270) before computing world positions
+- Editor passes device and virtual canvas dimensions through the update pipeline
+
+## Progression System Rework (BUILD 74)
+
+### Capacity Model
+- Replaced vague slot-based dust system with explicit container-based capacity model
+- Each dust container grants 4 capacity
+- Different dust types consume different capacity per particle (Physical=1, Fire=2, etc.)
+- This reuses the existing `slotCost` table from `sim/particles/slotCost.ts`
+
+### Passive Techniques vs Active Weaves
+- Passive techniques (e.g., Cycle) are a separate category from active weaves
+- Passive techniques are always active once unlocked, never bound to LMB/RMB
+- Active weaves remain bindable to LMB/RMB as before
+- This separation is enforced by distinct types: `PassiveTechniqueId` vs `WeaveId`
+
+### New Profile Flow
+- New profiles skip the loadout screen entirely and load straight into gameplay
+- Player starts as a blank slate: 0 containers, 0 dust, no unlocked types/weaves
+- The early auto-assignment (Golden Dust + 2 containers) is a one-time event
+- After auto-assignment, loadout changes only happen at save tombs
+
+### Dust Recharge Behavior
+- Player-owned dust only recharges (respawn delay countdown) while the player is grounded
+- Enemy dust recharges normally regardless of state
+- This adds a meaningful risk/reward dynamic to aerial combat
+
+### Health Bar Placement
+- Player health bar moved from over-character to the top-left HUD
+- Now always visible and screen-anchored (not camera-relative)
+- Positioned above the dust container display
+- Enemy health bars remain over their characters (shown when recently damaged)
+
+## Per-Wall Block Theme (BUILD 107)
+- Each wall can optionally have its own `blockTheme` that overrides the room default
+- Stored as an optional `blockTheme?: BlockTheme` field on `RoomWallDef`, `EditorWall`, and `RoomJsonWall`
+- At runtime, `wallThemeIndex` (Uint8Array) in WorldState maps 0=blackRock, 1=brownRock, 2=dirt; 255=use room default
+- The renderer resolves per-tile theme from wall layout cache, falling back to room-level `_activeBlockTheme`
+- Wall merge only combines walls with matching theme index (in addition to matching platform flag)
+- The Block Theme dropdown in the editor sets which theme newly placed blocks receive
+- Individual wall themes can be changed via the inspector when a wall is selected
+
+## 2x2 BlackRock Block Sprites (BUILD 107)
+- blackRock 1x1 sprites are 16×16 source images drawn at 8×8 virtual pixels (downscaled)
+- For 2x2 blocks (16×16 virtual pixels), blackRock reuses the existing 16×16 source sprites at native resolution
+- Hash-based variant selection (`_getBlackRock2x2Sprite`) picks from 20 variants per 2x2 block
+- brownRock and dirt continue using dedicated `_16x16.png` sprites for 2x2 blocks
+
+## Editor Immediate Preview (BUILD 107)
+- Every editor action (place, delete, property change, theme/lighting/background change, dimension change)
+  triggers `applyEdits()` which rebuilds the RoomDef and calls `loadRoom()`
+- This gives instant visual feedback: blocks appear/disappear immediately, theme changes apply instantly
+- Player and enemies reset to spawn positions on each edit (time stays frozen in editor)
+- The editor remains active throughout the reload
+
+## Dust Combat Rework (BUILD 113)
+
+### Dust Types
+- All dust types removed from player equipment except Gold Dust (Physical, kind 0)
+- Legacy kinds (Fire through Void, plus Water/Lava/Stone) retained for enemy use and backward compatibility
+- Full documentation of removed types and their mechanics preserved in `DUST_TYPES_ARCHIVE.md`
+
+### Weave System
+- Old weave patterns (Aegis, Bastion, Spire, Torrent, Comet, Scatter) removed
+- Two new weaves implemented:
+  - **Storm Weave**: Passive attraction — always active, attracts unowned Gold Dust within 80 world units, claims particles within 12 world units
+  - **Shield Weave**: Crescent formation — activated by mouse button, forms particles in a crescent arc in the aim direction. Arc size scales with particle count (min 0.15 rad, max π/2 rad). Spring force of 600 pulls particles to crescent positions. Particles slide inward to fill gaps as outer particles are destroyed.
+- Storm Weave is the first pickup; Shield Weave assigned to a mouse button
+
+### Dust Rendering
+- Particle visual diameter changed from 4 to 3 world units (3×3 virtual pixels per mote)
+- Physical (Gold Dust) particles render as squares (GLSL shape 2, Canvas 2D fillRect)
+- Additive glow added via bloom system: each Gold Dust particle emits a circular glow (radius 2.5× scale, intensity 0.6, gold color #ffd700) that blends additively — multiple overlapping particles produce stronger combined glow
+
+### Editor-Placed Dust Piles
+- Gold dust on the ground is no longer procedurally generated in the lobby (worldNumber 0)
+- New `dustPile` editor palette item for placing gold dust piles at specific positions
+- Each pile has configurable `dustCount` (default 5)
+- At room load, piles spawn unowned Physical particles with near-permanent lifetime (99999 ticks)
+- Storm Weave attracts and claims these particles when the player is nearby
+- Environmental dust layer skips procedural generation in lobby rooms to avoid duplication

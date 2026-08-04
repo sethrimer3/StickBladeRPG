@@ -2,7 +2,7 @@
  * Main simulation tick pipeline.
  *
  * Order matters — each pass reads forces accumulated by previous passes:
- *   0.   Cluster movement — smooth acceleration/deceleration + player dash   → clusters/movement.ts
+ *   0.   Cluster movement — smooth acceleration/deceleration   → clusters/movement.ts
  *   0.5. Enemy AI — attack / block / dodge decisions                          → clusters/enemyAi.ts
  *   1.   Clear forces
  *   2.   Per-element forces (noise, curl, buoyancy)                           → elementForces.ts
@@ -20,18 +20,30 @@
 
 import { WorldState } from './world';
 import { applyClusterMovement } from './clusters/movement';
-import { applyGrappleClusterConstraint, updateGrappleChainParticles } from './clusters/grapple';
+import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleMissChain } from './clusters/grapple';
 import { applyEnemyAI } from './clusters/enemyAi';
+import { applyRockElementalAI } from './clusters/rockElementalAi';
+import { updateRockElementalDust } from './clusters/rockElementalDust';
+import { applyRadiantTetherAI } from './clusters/radiantTetherAi';
+import { applyGrappleHunterAI } from './clusters/grappleHunterAi';
 import { applyElementForces } from './particles/elementForces';
 import { applyFluidDisturbance } from './particles/disturbance';
 import { applyBindingForces } from './clusters/binding';
 import { applyCombatForces } from './particles/combat';
 import { applyLavaEffect } from './particles/lavaEffect';
 import { applyInterParticleForces } from './particles/forces';
-import { applyWallForces, applyWallBounce } from './particles/walls';
+import { applyWallForces, applyWallBounce, settleFloorDust } from './particles/walls';
 import { integrateParticles } from './particles/integration';
 import { updateParticleLifetimes } from './particles/lifetime';
 import { applyPlayerWeaveCombat } from './weaves/weaveCombat';
+import { applyHazards } from './hazards';
+import { tickGrasshoppers } from './critters/grasshopper';
+import { applySlimeAI, applyLargeSlimeAI } from './clusters/slimeAi';
+import { applyWheelEnemyAI } from './clusters/wheelEnemyAi';
+import { applyBeetleAI } from './clusters/beetleAi';
+import { applyBubbleAI, applyBubblePopForces } from './clusters/bubbleAi';
+import { applySquareStampedeAI } from './clusters/squareStampedeAi';
+import { applyGoldenMimicAI } from './clusters/goldenMimicAi';
 
 export function tick(world: WorldState): void {
   if (world.grappleAttachFxTicks > 0) world.grappleAttachFxTicks -= 1;
@@ -39,17 +51,59 @@ export function tick(world: WorldState): void {
   // 0. Cluster movement — smooth acceleration/deceleration for player and enemies
   applyClusterMovement(world);
 
+  // 0.1. Environmental hazards — spikes, springs, water buoyancy, lava, breakables, jars, fireflies
+  applyHazards(world);
+
   // 0.25. Grapple rope constraint — corrects player cluster position/velocity
   applyGrappleClusterConstraint(world);
 
   // 0.5. Enemy AI — decide attack / block / dodge for each enemy cluster
   applyEnemyAI(world);
 
+  // 0.5b. Rock Elemental AI — state machine transitions
+  applyRockElementalAI(world);
+
+  // 0.5c. Rock Elemental dust orbit/projectile — position and fire dust
+  updateRockElementalDust(world);
+
+  // 0.5d. Radiant Tether AI — light-chain boss state machine
+  applyRadiantTetherAI(world);
+
+  // 0.5e. Grapple Hunter AI — grapple attack state machine
+  applyGrappleHunterAI(world);
+
+  // 0.5f. Slime AI — hop toward player
+  applySlimeAI(world);
+
+  // 0.5g. Large Dust Slime AI — slower hops + dust orbit
+  applyLargeSlimeAI(world);
+
+  // 0.5h. Wheel Enemy AI — roll along surfaces toward player
+  applyWheelEnemyAI(world);
+
+  // 0.5i_pre. Golden Beetle AI — crawl/fly state machine with contact damage
+  applyBeetleAI(world);
+
+  // 0.5i. Grasshopper critters — ambient hop + flee
+  tickGrasshoppers(world);
+
+  // 0.5j. Bubble Enemy AI — orbit ring maintenance, drift, regen, pop detection
+  applyBubbleAI(world);
+
+  // 0.5k. Square Stampede AI — orthogonal dashing, trail update, contact damage
+  applySquareStampedeAI(world);
+
+  // 0.5l. Golden Mimic AI — mirror player movement, heap/fade state, contact damage
+  applyGoldenMimicAI(world);
+
   // 1. Clear accumulated forces from previous tick
   for (let i = 0; i < world.particleCount; i++) {
     world.forceX[i] = 0;
     world.forceY[i] = 0;
   }
+
+  // 1.5. Bubble pop forces — gravity + heat-seeking for popped water particles
+  applyBubblePopForces(world);
 
   // 2. Per-element forces (noise, curl, diffusion, buoyancy)
   applyElementForces(world);
@@ -83,8 +137,15 @@ export function tick(world: WorldState): void {
   //      stone shatter events are processed here too.
   applyWallBounce(world);
 
+  // 6.8. Floor settle — hard-snap unowned Physical (gold dust pile) particles
+  //      to the nearest wall surface so they don't fall through block seams.
+  settleFloorDust(world);
+
   // 6.75. Grapple chain particle update — reposition Gold chain particles along rope
   updateGrappleChainParticles(world);
+
+  // 6.76. Grapple miss chain update — limp chain physics when grapple missed
+  updateGrappleMissChain(world);
 
   // 7. Lifetime: age particles; cycle owned particles or respawn combat-killed ones
   updateParticleLifetimes(world);

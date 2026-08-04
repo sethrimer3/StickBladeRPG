@@ -1,130 +1,94 @@
 /**
  * World background renderer with parallax scrolling.
  *
- * Each world has a background texture (loaded from an image file or generated
- * procedurally). The background scrolls at a fraction of the camera offset
+ * Each world has a background texture loaded from an image file.
+ * The background scrolls at a fraction of the camera offset
  * to create a depth/parallax effect.
  *
- * The renderer pre-loads and tiles background images. If no image is
- * available for a world, a procedural texture is generated at startup.
+ * If an image is not yet loaded, the renderer draws a solid clear colour
+ * as a deterministic fallback (no procedural generation).
  */
+
+import type { BackgroundId } from '../levels/roomDef';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Parallax factor: 0 = fully fixed, 1 = moves with foreground. */
-const PARALLAX_FACTOR = 0.3;
-
-/** Size of the procedurally-generated tile (px). */
-const PROC_TILE_SIZE = 256;
+const PARALLAX_FACTOR = 0.2;
 
 /** Vite base URL for public assets. */
 const BASE = import.meta.env.BASE_URL;
 
-/** Path template for world background images (relative to publicDir). */
-const WORLD_BG_PATH = (worldNumber: number): string =>
-  `${BASE}SPRITES/WORLDS/W-${worldNumber}/background/background.png`;
-
-// ─── Image / procedural cache ────────────────────────────────────────────────
-
-const _bgImageCache = new Map<number, HTMLCanvasElement>();
-
-/**
- * Returns a background tile canvas for the given world.
- * Attempts to load `ASSETS/SPRITES/WORLDS/W-{n}/background/background.png`;
- * falls back to a procedurally generated tile if unavailable.
- */
-function _getOrCreateBgTile(worldNumber: number): HTMLCanvasElement {
-  const cached = _bgImageCache.get(worldNumber);
-  if (cached !== undefined) return cached;
-
-  // Create procedural fallback immediately (will be replaced if image loads)
-  const tile = _generateProceduralTile(worldNumber);
-  _bgImageCache.set(worldNumber, tile);
-
-  // Attempt to load the real background image
-  const img = new Image();
-  img.src = WORLD_BG_PATH(worldNumber);
-  img.onload = () => {
-    // Replace procedural tile with the loaded image drawn onto a canvas
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth;
-    c.height = img.naturalHeight;
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(img, 0, 0);
-    _bgImageCache.set(worldNumber, c);
-  };
-
-  return tile;
-}
-
-/** Colour palettes per world for procedural textures. */
-const _WORLD_PALETTES: Record<number, { base: string; accent1: string; accent2: string; highlight: string }> = {
-  0: { base: '#0d1a0f', accent1: '#142e18', accent2: '#0a150c', highlight: 'rgba(40,80,50,0.12)' },
-  1: { base: '#051408', accent1: '#0c2a12', accent2: '#03100a', highlight: 'rgba(30,90,40,0.10)' },
-  2: { base: '#080c1a', accent1: '#0e1530', accent2: '#050815', highlight: 'rgba(40,60,120,0.10)' },
-};
-
-function _getPalette(worldNumber: number): { base: string; accent1: string; accent2: string; highlight: string } {
-  return _WORLD_PALETTES[worldNumber] ?? _WORLD_PALETTES[0];
+/** Path for world background images (relative to publicDir). */
+function worldBgImagePath(worldNumber: number): string {
+  if (worldNumber === 0) {
+    return `${BASE}SPRITES/BACKGROUNDS/brownRock_background_1.png`;
+  }
+  return `${BASE}SPRITES/WORLDS/W-${worldNumber}/background/background.png`;
 }
 
 /**
- * Generates a procedural tileable background texture for a given world.
- * Uses a simple pseudo-random noise pattern with the world's colour palette.
+ * Returns the image path for a named BackgroundId, or null for procedural
+ * backgrounds (e.g. crystallineCracks) that have no static image.
  */
-function _generateProceduralTile(worldNumber: number): HTMLCanvasElement {
-  const size = PROC_TILE_SIZE;
-  const c = document.createElement('canvas');
-  c.width = size;
-  c.height = size;
-  const ctx = c.getContext('2d')!;
-
-  const pal = _getPalette(worldNumber);
-
-  // Fill base colour
-  ctx.fillStyle = pal.base;
-  ctx.fillRect(0, 0, size, size);
-
-  // Simple deterministic noise pattern using a basic hash
-  const seed = worldNumber * 7919 + 31;
-  for (let y = 0; y < size; y += 4) {
-    for (let x = 0; x < size; x += 4) {
-      const h = _hash(x + y * size + seed);
-      const t = (h & 0xff) / 255;
-
-      if (t > 0.85) {
-        ctx.fillStyle = pal.accent1;
-        ctx.fillRect(x, y, 4, 4);
-      } else if (t > 0.7) {
-        ctx.fillStyle = pal.accent2;
-        ctx.fillRect(x, y, 4, 4);
-      }
-    }
+function backgroundIdToImagePath(id: BackgroundId): string | null {
+  switch (id) {
+    case 'brownRock':        return `${BASE}SPRITES/BACKGROUNDS/brownRock_background_1.png`;
+    case 'world1':           return `${BASE}SPRITES/WORLDS/W-1/background/background.png`;
+    case 'world2':           return `${BASE}SPRITES/WORLDS/W-2/background/background.png`;
+    case 'world3':           return `${BASE}SPRITES/WORLDS/W-3/background/background.png`;
+    case 'crystallineCracks':
+    case 'thero_prologue':
+    case 'thero_ch1':
+    case 'thero_ch2':
+    case 'thero_ch3':
+    case 'thero_ch4':
+    case 'thero_ch5':
+    case 'thero_ch6':
+      return null;  // procedural background effect
+    default:                 return null;
   }
-
-  // Add subtle larger shapes for visual interest
-  for (let i = 0; i < 12; i++) {
-    const h = _hash(i * 137 + seed + 999);
-    const cx = ((h >>> 0) % size);
-    const cy = ((_hash(h) >>> 0) % size);
-    const r = 8 + ((h >>> 8) & 0x1f);
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = pal.highlight;
-    ctx.fill();
-  }
-
-  return c;
 }
 
-/** Simple integer hash for deterministic procedural generation. */
-function _hash(n: number): number {
-  let x = n | 0;
-  x = ((x >>> 16) ^ x) * 0x45d9f3b;
-  x = ((x >>> 16) ^ x) * 0x45d9f3b;
-  x = (x >>> 16) ^ x;
-  return x;
+/** Solid fallback colour per world (shown while the image is loading). */
+function worldFallbackColor(worldNumber: number): string {
+  switch (worldNumber) {
+    case 0:  return '#2a1a0e';  // brown-rock cave
+    case 1:  return '#051408';  // deep dark green
+    case 2:  return '#080c1a';  // dark blue
+    case 3:  return '#1a0500';  // deep dark red-orange
+    default: return '#0a0a12';
+  }
+}
+
+// ─── Image cache ─────────────────────────────────────────────────────────────
+
+/** Caches loaded background images per image URL. */
+const _bgImageCache = new Map<string, HTMLImageElement>();
+
+/** Tracks which URLs have started loading. */
+const _bgLoadStarted = new Set<string>();
+
+/**
+ * Returns the cached background image for the given URL, or null if not
+ * yet loaded.  Triggers an async load on the first call for each URL.
+ */
+function _getBgImageByUrl(url: string): HTMLImageElement | null {
+  const cached = _bgImageCache.get(url);
+  if (cached !== undefined && cached.complete && cached.naturalWidth > 0) {
+    return cached;
+  }
+
+  if (!_bgLoadStarted.has(url)) {
+    _bgLoadStarted.add(url);
+    const img = new Image();
+    img.src = url;
+    img.onload = () => {
+      _bgImageCache.set(url, img);
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -138,14 +102,22 @@ function wrapToTileStart(offset: number, tileSize: number): number {
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Renders the tiled background for the current world with parallax scrolling.
+ * Renders the room background for the current world with parallax scrolling.
+ *
+ * If `backgroundId` is provided it overrides `worldNumber` for image selection.
+ * For `backgroundId='crystallineCracks'`, a solid black fill is drawn — the
+ * caller is responsible for rendering the procedural effect on top.
  *
  * @param ctx               The 2D canvas context.
- * @param worldNumber       Active world number (0, 1, 2, …).
+ * @param worldNumber       Active world number (0, 1, 2, …) — used as fallback.
  * @param viewportWidthPx   Canvas width in pixels.
  * @param viewportHeightPx  Canvas height in pixels.
  * @param cameraOffsetXPx   Full camera X offset (foreground).
  * @param cameraOffsetYPx   Full camera Y offset (foreground).
+ * @param roomWidthWorld    Room width in world units.
+ * @param roomHeightWorld   Room height in world units.
+ * @param zoom              Active camera zoom.
+ * @param backgroundId      Optional named background override.
  */
 export function renderWorldBackground(
   ctx: CanvasRenderingContext2D,
@@ -154,24 +126,73 @@ export function renderWorldBackground(
   viewportHeightPx: number,
   cameraOffsetXPx: number,
   cameraOffsetYPx: number,
+  roomWidthWorld: number,
+  roomHeightWorld: number,
+  zoom: number,
+  backgroundId?: BackgroundId,
 ): void {
-  const tile = _getOrCreateBgTile(worldNumber);
-  const tw = tile.width;
-  const th = tile.height;
+  // Thero showcase rooms and Crystalline Cracks use solid black — no parallax image.
+  if (
+    worldNumber === 99 ||
+    backgroundId === 'crystallineCracks' ||
+    backgroundId === 'thero_prologue' ||
+    backgroundId === 'thero_ch1' ||
+    backgroundId === 'thero_ch2' ||
+    backgroundId === 'thero_ch3' ||
+    backgroundId === 'thero_ch4' ||
+    backgroundId === 'thero_ch5' ||
+    backgroundId === 'thero_ch6'
+  ) {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
+    return;
+  }
+
+  // Determine the image URL to use
+  const imgUrl = backgroundId != null
+    ? backgroundIdToImagePath(backgroundId)
+    : worldBgImagePath(worldNumber);
+
+  if (imgUrl === null) {
+    // Procedural background with no image — solid black
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
+    return;
+  }
+
+  const img = _getBgImageByUrl(imgUrl);
+
+  if (img === null) {
+    // Image not loaded yet — draw solid fallback colour
+    ctx.fillStyle = worldFallbackColor(worldNumber);
+    ctx.fillRect(0, 0, viewportWidthPx, viewportHeightPx);
+    return;
+  }
+
+  const tw = img.naturalWidth;
+  const th = img.naturalHeight;
   if (tw === 0 || th === 0) return;
 
-  // Parallax offset: moves slower than the foreground
-  const pxOff = cameraOffsetXPx * PARALLAX_FACTOR;
-  const pyOff = cameraOffsetYPx * PARALLAX_FACTOR;
+  // Anchor background to room centre, then apply relative camera parallax.
+  const roomCenterOffsetXPx = viewportWidthPx * 0.5 - (roomWidthWorld * 0.5 * zoom);
+  const roomCenterOffsetYPx = viewportHeightPx * 0.5 - (roomHeightWorld * 0.5 * zoom);
+  const relCameraOffsetXPx = cameraOffsetXPx - roomCenterOffsetXPx;
+  const relCameraOffsetYPx = cameraOffsetYPx - roomCenterOffsetYPx;
 
-  // Compute starting tile position so tiles seamlessly cover the viewport
+  // Keep a centred tiled origin so the room centre maps to image centre.
+  const centeredOriginXPx = (viewportWidthPx - tw) * 0.5;
+  const centeredOriginYPx = (viewportHeightPx - th) * 0.5;
+  const pxOff = centeredOriginXPx + relCameraOffsetXPx * PARALLAX_FACTOR;
+  const pyOff = centeredOriginYPx + relCameraOffsetYPx * PARALLAX_FACTOR;
+
+  // Compute starting tile position so tiles seamlessly cover the viewport.
   const startX = wrapToTileStart(pxOff, tw);
   const startY = wrapToTileStart(pyOff, th);
 
   ctx.save();
   for (let y = startY; y < viewportHeightPx; y += th) {
     for (let x = startX; x < viewportWidthPx; x += tw) {
-      ctx.drawImage(tile, x, y);
+      ctx.drawImage(img, x, y);
     }
   }
   ctx.restore();

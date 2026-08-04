@@ -9,8 +9,9 @@
  */
 
 import { ParticleKind } from '../sim/particles/kinds';
-import type { RoomDef, RoomEnemyDef, RoomWallDef, RoomTransitionDef, TransitionDirection } from '../levels/roomDef';
-import type { EditorRoomData, EditorEnemy, EditorTransition, EditorWall, EditorSkillTomb } from './editorState';
+import type { RoomDef, RoomEnemyDef, RoomWallDef, RoomTransitionDef, TransitionDirection, BlockTheme, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection } from '../levels/roomDef';
+import type { EditorRoomData, EditorEnemy, EditorTransition, EditorWall, EditorSaveTomb, EditorSkillTomb, EditorDustPile, EditorGrasshopperArea, EditorDecoration, EditorAmbientLightBlocker, EditorLightSource, RoomSongId } from './editorState';
+import { AVAILABLE_SONGS } from '../audio/musicManager';
 
 // ── ParticleKind string mapping ──────────────────────────────────────────────
 
@@ -58,6 +59,16 @@ export interface RoomJsonEnemy {
   isFlyingEye: boolean;
   isRollingEnemy: boolean;
   rollingEnemySpriteIndex?: number;
+  isRockElemental: boolean;
+  isRadiantTether: boolean;
+  isGrappleHunter: boolean;
+  isSlime?: boolean;
+  isLargeSlime?: boolean;
+  isWheelEnemy?: boolean;
+  isBeetle?: boolean;
+  isBubbleEnemy?: boolean;
+  isIceBubble?: boolean;
+  isSquareStampede?: boolean;
 }
 
 export interface RoomJsonWall {
@@ -65,6 +76,22 @@ export interface RoomJsonWall {
   yBlock: number;
   wBlock: number;
   hBlock: number;
+  /** true if this is a one-way platform block. */
+  isPlatform?: boolean;
+  /**
+   * Which edge is the one-way surface. Only meaningful when isPlatform=true.
+   * 0=top (default), 1=bottom, 2=left, 3=right.
+   */
+  platformEdge?: 0 | 1 | 2 | 3;
+  /** Per-wall block theme override (defaults to room-level theme). */
+  blockTheme?: BlockTheme;
+  /**
+   * Ramp orientation. When present, this wall is a diagonal triangle.
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
+   */
+  rampOrientation?: 0 | 1 | 2 | 3;
+  /** true if this pillar wall is half-block wide (4 px). */
+  isPillarHalfWidth?: boolean;
 }
 
 export interface RoomJsonTransition {
@@ -73,17 +100,127 @@ export interface RoomJsonTransition {
   openingSizeBlocks: number;
   targetRoomId: string;
   targetSpawnBlock: [number, number];
+  fadeColor?: string;
+  depthBlock?: number;
 }
 
+/** Save Tomb — where the player saves their progress. Uses "skillTombs" JSON key for backward compat. */
 export interface RoomJsonSkillTomb {
   xBlock: number;
   yBlock: number;
+}
+
+/** Skill Tomb — grants a specific dust skill/weave when interacted with. */
+export interface RoomJsonDustSkillTomb {
+  xBlock: number;
+  yBlock: number;
+  /** The weave ID unlocked by this tomb. */
+  weaveId: string;
+}
+
+export interface RoomJsonSpike {
+  xBlock: number;
+  yBlock: number;
+  direction: 'up' | 'down' | 'left' | 'right';
+}
+
+export interface RoomJsonSpringboard {
+  xBlock: number;
+  yBlock: number;
+}
+
+export interface RoomJsonZone {
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
+}
+
+export interface RoomJsonBreakableBlock {
+  xBlock: number;
+  yBlock: number;
+}
+
+export interface RoomJsonDustBoostJar {
+  xBlock: number;
+  yBlock: number;
+  dustKind: string;
+  dustCount: number;
+}
+
+export interface RoomJsonFireflyJar {
+  xBlock: number;
+  yBlock: number;
+}
+
+export interface RoomJsonDustPile {
+  xBlock: number;
+  yBlock: number;
+  dustCount: number;
+}
+
+export interface RoomJsonGrasshopperArea {
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
+  count: number;
+}
+
+export interface RoomJsonDecoration {
+  xBlock: number;
+  yBlock: number;
+  kind: DecorationKind;
+}
+
+/** Authored tile-coord ambient-light blocker (see {@link RoomAmbientLightBlockerDef}). */
+export interface RoomJsonAmbientLightBlocker {
+  xBlock: number;
+  yBlock: number;
+}
+
+/** Authored local light source (see {@link RoomLightSourceDef}). */
+export interface RoomJsonLightSource {
+  xBlock: number;
+  yBlock: number;
+  radiusBlocks: number;
+  /** 0-255 RGB channels. */
+  colorR: number;
+  colorG: number;
+  colorB: number;
+  /** 0-100 percent. */
+  brightnessPct: number;
 }
 
 export interface RoomJsonDef {
   id: string;
   name: string;
   worldNumber: number;
+  /** X position on the visual world map (map world units). */
+  mapX?: number;
+  /** Y position on the visual world map (map world units). */
+  mapY?: number;
+  /** Block sprite theme. Defaults to 'blackRock' if not set. */
+  blockTheme?: BlockTheme;
+  /** Background visual ID. Falls back to worldNumber if not set. */
+  backgroundId?: BackgroundId;
+  /**
+   * Lighting model. Falls back to `'Ambient'` when not set.
+   * Legacy `'DEFAULT'` and `'Above'` values are accepted and treated as
+   * `'Ambient'` with the appropriate direction (omni / down) at runtime.
+   */
+  lightingEffect?: LightingEffect;
+  /** Ambient/skylight direction (see {@link AmbientLightDirection}). */
+  ambientLightDirection?: AmbientLightDirection;
+  /** Sparse tile-coord list of authored ambient-light blockers. */
+  ambientLightBlockers?: RoomJsonAmbientLightBlocker[];
+  /** Sparse list of authored local light sources. */
+  lightSources?: RoomJsonLightSource[];
+  /**
+   * Background music. Omitting or setting to '_continue' means "keep playing
+   * whatever was already playing".  '_silence' stops music.
+   */
+  songId?: string;
   widthBlocks: number;
   heightBlocks: number;
   playerSpawnBlock: [number, number];
@@ -91,7 +228,26 @@ export interface RoomJsonDef {
   interiorWalls: RoomJsonWall[];
   enemies: RoomJsonEnemy[];
   transitions: RoomJsonTransition[];
+  /** Save Tombs (stored as "skillTombs" for backward compatibility with existing room files). */
   skillTombs: RoomJsonSkillTomb[];
+  /** Skill Tombs — grant dust skills/weaves when interacted with. */
+  dustSkillTombs?: RoomJsonDustSkillTomb[];
+  /** Collectible skill book positions (block units). */
+  skillBooks?: RoomJsonSkillTomb[];
+  /** Collectible dust container positions (block units). */
+  dustContainers?: RoomJsonSkillTomb[];
+  // ── Environmental hazards (all optional) ──────────────────────────────────
+  spikes?: RoomJsonSpike[];
+  springboards?: RoomJsonSpringboard[];
+  waterZones?: RoomJsonZone[];
+  lavaZones?: RoomJsonZone[];
+  breakableBlocks?: RoomJsonBreakableBlock[];
+  dustBoostJars?: RoomJsonDustBoostJar[];
+  fireflyJars?: RoomJsonFireflyJar[];
+  dustPiles?: RoomJsonDustPile[];
+  grasshopperAreas?: RoomJsonGrasshopperArea[];
+  /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
+  decorations?: RoomJsonDecoration[];
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────
@@ -118,6 +274,18 @@ export function validateRoomJson(data: unknown): ValidationError[] {
   }
   if (typeof obj.worldNumber !== 'number') {
     errors.push({ path: 'worldNumber', message: 'Must be a number' });
+  }
+  if (obj.mapX !== undefined && typeof obj.mapX !== 'number') {
+    errors.push({ path: 'mapX', message: 'Must be a number when provided' });
+  }
+  if (obj.mapY !== undefined && typeof obj.mapY !== 'number') {
+    errors.push({ path: 'mapY', message: 'Must be a number when provided' });
+  }
+  if (obj.lightingEffect !== undefined) {
+    const v = obj.lightingEffect;
+    if (v !== 'Ambient' && v !== 'DarkRoom' && v !== 'FullyLit' && v !== 'DEFAULT' && v !== 'Above') {
+      errors.push({ path: 'lightingEffect', message: 'Must be Ambient|DarkRoom|FullyLit (legacy DEFAULT|Above also accepted)' });
+    }
   }
   if (typeof obj.widthBlocks !== 'number' || (obj.widthBlocks as number) < 10) {
     errors.push({ path: 'widthBlocks', message: 'Must be a number >= 10' });
@@ -160,6 +328,23 @@ export function validateRoomJson(data: unknown): ValidationError[] {
   return errors;
 }
 
+// ── Song ID helpers ───────────────────────────────────────────────────────────
+
+const VALID_SONG_IDS: ReadonlySet<string> = new Set<string>([
+  '_continue', '_silence', ...AVAILABLE_SONGS,
+]);
+
+/**
+ * Parse a raw string from JSON into a RoomSongId.
+ * Unknown strings fall back to '_continue' with a console warning.
+ */
+export function parseSongId(raw: string | undefined): RoomSongId {
+  if (raw === undefined) return '_continue';
+  if (VALID_SONG_IDS.has(raw)) return raw as RoomSongId;
+  console.warn(`[roomJson] Unknown songId "${raw}" — falling back to "_continue".`);
+  return '_continue';
+}
+
 // ── Conversion: RoomJsonDef → EditorRoomData ─────────────────────────────────
 
 export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { data: EditorRoomData; nextUid: number } {
@@ -171,6 +356,11 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
     yBlock: w.yBlock,
     wBlock: w.wBlock,
     hBlock: w.hBlock,
+    isPlatformFlag: w.isPlatform ? 1 : 0,
+    platformEdge: w.platformEdge ?? 0,
+    blockTheme: w.blockTheme,
+    rampOrientation: w.rampOrientation,
+    isPillarHalfWidthFlag: w.isPillarHalfWidth ? 1 : 0,
   }));
 
   const enemies: EditorEnemy[] = json.enemies.map(e => ({
@@ -183,6 +373,16 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
     isFlyingEyeFlag: e.isFlyingEye ? 1 : 0,
     isRollingEnemyFlag: e.isRollingEnemy ? 1 : 0,
     rollingEnemySpriteIndex: e.rollingEnemySpriteIndex ?? 1,
+    isRockElementalFlag: e.isRockElemental ? 1 : 0,
+    isRadiantTetherFlag: e.isRadiantTether ? 1 : 0,
+    isGrappleHunterFlag: e.isGrappleHunter ? 1 : 0,
+    isSlimeFlag: (e.isSlime ?? false) ? 1 : 0,
+    isLargeSlimeFlag: (e.isLargeSlime ?? false) ? 1 : 0,
+    isWheelEnemyFlag: (e.isWheelEnemy ?? false) ? 1 : 0,
+    isBeetleFlag: (e.isBeetle ?? false) ? 1 : 0,
+    isBubbleEnemyFlag: (e.isBubbleEnemy ?? false) ? 1 : 0,
+    isIceBubbleFlag: (e.isIceBubble ?? false) ? 1 : 0,
+    isSquareStampedeFlag: (e.isSquareStampede ?? false) ? 1 : 0,
   }));
 
   const transitions: EditorTransition[] = json.transitions.map(t => ({
@@ -192,12 +392,70 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
     openingSizeBlocks: t.openingSizeBlocks,
     targetRoomId: t.targetRoomId,
     targetSpawnBlock: [...t.targetSpawnBlock] as [number, number],
+    fadeColor: t.fadeColor,
+    depthBlock: t.depthBlock,
   }));
 
-  const skillTombs: EditorSkillTomb[] = json.skillTombs.map(s => ({
+  const saveTombs: EditorSaveTomb[] = json.skillTombs.map(s => ({
     uid: uid++,
     xBlock: s.xBlock,
     yBlock: s.yBlock,
+  }));
+
+  const skillTombs: EditorSkillTomb[] = [
+    ...(json.dustSkillTombs ?? []).map(s => ({
+      uid: uid++,
+      xBlock: s.xBlock,
+      yBlock: s.yBlock,
+      weaveId: s.weaveId,
+    })),
+    // Legacy: skill books are unified with skill tombs — load them in.
+    ...(json.skillBooks ?? []).filter(s => !!(s as unknown as Record<string, unknown>)['weaveId']).map(s => ({
+      uid: uid++,
+      xBlock: s.xBlock,
+      yBlock: s.yBlock,
+      weaveId: (s as unknown as Record<string, unknown>)['weaveId'] as string,
+    })),
+  ];
+
+  const dustPiles: EditorDustPile[] = (json.dustPiles ?? []).map(p => ({
+    uid: uid++,
+    xBlock: p.xBlock,
+    yBlock: p.yBlock,
+    dustCount: p.dustCount,
+  }));
+
+  const grasshopperAreas: EditorGrasshopperArea[] = (json.grasshopperAreas ?? []).map(a => ({
+    uid: uid++,
+    xBlock: a.xBlock,
+    yBlock: a.yBlock,
+    wBlock: a.wBlock,
+    hBlock: a.hBlock,
+    count: a.count,
+  }));
+
+  const decorations: EditorDecoration[] = (json.decorations ?? []).map(d => ({
+    uid: uid++,
+    xBlock: d.xBlock,
+    yBlock: d.yBlock,
+    kind: d.kind,
+  }));
+
+  const ambientLightBlockers: EditorAmbientLightBlocker[] = (json.ambientLightBlockers ?? []).map(b => ({
+    uid: uid++,
+    xBlock: b.xBlock,
+    yBlock: b.yBlock,
+  }));
+
+  const lightSources: EditorLightSource[] = (json.lightSources ?? []).map(l => ({
+    uid: uid++,
+    xBlock: l.xBlock,
+    yBlock: l.yBlock,
+    radiusBlocks: l.radiusBlocks,
+    colorR: l.colorR,
+    colorG: l.colorG,
+    colorB: l.colorB,
+    brightnessPct: l.brightnessPct,
   }));
 
   return {
@@ -205,13 +463,26 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
       id: json.id,
       name: json.name,
       worldNumber: json.worldNumber,
+      mapX: json.mapX ?? 0,
+      mapY: json.mapY ?? 0,
+      blockTheme: json.blockTheme ?? 'blackRock',
+      backgroundId: json.backgroundId ?? 'brownRock',
+      lightingEffect: json.lightingEffect ?? 'Ambient',
+      ambientLightDirection: json.ambientLightDirection,
+      songId: parseSongId(json.songId),
       widthBlocks: json.widthBlocks,
       heightBlocks: json.heightBlocks,
       playerSpawnBlock: [...json.playerSpawnBlock] as [number, number],
       interiorWalls,
       enemies,
       transitions,
+      saveTombs,
       skillTombs,
+      dustPiles,
+      grasshopperAreas,
+      decorations,
+      ambientLightBlockers,
+      lightSources,
     },
     nextUid: uid,
   };
@@ -220,19 +491,31 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
 // ── Conversion: EditorRoomData → RoomJsonDef ─────────────────────────────────
 
 export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
-  return {
+  const json: RoomJsonDef = {
     id: data.id,
     name: data.name,
     worldNumber: data.worldNumber,
+    mapX: data.mapX,
+    mapY: data.mapY,
     widthBlocks: data.widthBlocks,
     heightBlocks: data.heightBlocks,
     playerSpawnBlock: [...data.playerSpawnBlock],
-    interiorWalls: data.interiorWalls.map(w => ({
-      xBlock: w.xBlock,
-      yBlock: w.yBlock,
-      wBlock: w.wBlock,
-      hBlock: w.hBlock,
-    })),
+    interiorWalls: data.interiorWalls.map(w => {
+      const wall: RoomJsonWall = {
+        xBlock: w.xBlock,
+        yBlock: w.yBlock,
+        wBlock: w.wBlock,
+        hBlock: w.hBlock,
+      };
+      if (w.isPlatformFlag === 1) {
+        wall.isPlatform = true;
+        if (w.platformEdge !== 0 && w.platformEdge !== undefined) wall.platformEdge = w.platformEdge;
+      }
+      if (w.blockTheme !== undefined) wall.blockTheme = w.blockTheme;
+      if (w.rampOrientation !== undefined) wall.rampOrientation = w.rampOrientation;
+      if (w.isPillarHalfWidthFlag === 1) wall.isPillarHalfWidth = true;
+      return wall;
+    }),
     enemies: data.enemies.map(e => ({
       xBlock: e.xBlock,
       yBlock: e.yBlock,
@@ -242,26 +525,98 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       isFlyingEye: e.isFlyingEyeFlag === 1,
       isRollingEnemy: e.isRollingEnemyFlag === 1,
       rollingEnemySpriteIndex: e.isRollingEnemyFlag === 1 ? e.rollingEnemySpriteIndex : undefined,
+      isRockElemental: e.isRockElementalFlag === 1,
+      isRadiantTether: e.isRadiantTetherFlag === 1,
+      isGrappleHunter: e.isGrappleHunterFlag === 1,
+      isSlime: e.isSlimeFlag === 1,
+      isLargeSlime: e.isLargeSlimeFlag === 1,
+      isWheelEnemy: e.isWheelEnemyFlag === 1,
+      isBeetle: e.isBeetleFlag === 1,
+      isBubbleEnemy: e.isBubbleEnemyFlag === 1,
+      isIceBubble: e.isIceBubbleFlag === 1,
+      isSquareStampede: e.isSquareStampedeFlag === 1,
     })),
-    transitions: data.transitions.map(t => ({
-      direction: t.direction,
-      positionBlock: t.positionBlock,
-      openingSizeBlocks: t.openingSizeBlocks,
-      targetRoomId: t.targetRoomId,
-      targetSpawnBlock: [...t.targetSpawnBlock],
-    })),
-    skillTombs: data.skillTombs.map(s => ({
+    transitions: data.transitions.map(t => {
+      const jt: RoomJsonTransition = {
+        direction: t.direction,
+        positionBlock: t.positionBlock,
+        openingSizeBlocks: t.openingSizeBlocks,
+        targetRoomId: t.targetRoomId,
+        targetSpawnBlock: [...t.targetSpawnBlock],
+      };
+      if (t.fadeColor) jt.fadeColor = t.fadeColor;
+      if (t.depthBlock !== undefined) jt.depthBlock = t.depthBlock;
+      return jt;
+    }),
+    skillTombs: data.saveTombs.map(s => ({
       xBlock: s.xBlock,
       yBlock: s.yBlock,
     })),
   };
+  // Always write blockTheme and backgroundId when present
+  if (data.blockTheme) json.blockTheme = data.blockTheme;
+  if (data.backgroundId) json.backgroundId = data.backgroundId;
+  if (data.lightingEffect) json.lightingEffect = data.lightingEffect;
+  // Only write songId when it differs from the default ('_continue')
+  if (data.songId !== '_continue') json.songId = data.songId;
+  if (data.skillTombs.length > 0) {
+    json.dustSkillTombs = data.skillTombs.map(s => ({
+      xBlock: s.xBlock,
+      yBlock: s.yBlock,
+      weaveId: s.weaveId,
+    }));
+  }
+  if (data.dustPiles.length > 0) {
+    json.dustPiles = data.dustPiles.map(p => ({
+      xBlock: p.xBlock,
+      yBlock: p.yBlock,
+      dustCount: p.dustCount,
+    }));
+  }
+  if ((data.grasshopperAreas ?? []).length > 0) {
+    json.grasshopperAreas = data.grasshopperAreas.map(a => ({
+      xBlock: a.xBlock,
+      yBlock: a.yBlock,
+      wBlock: a.wBlock,
+      hBlock: a.hBlock,
+      count: a.count,
+    }));
+  }
+  if ((data.decorations ?? []).length > 0) {
+    json.decorations = data.decorations.map(d => ({
+      xBlock: d.xBlock,
+      yBlock: d.yBlock,
+      kind: d.kind,
+    }));
+  }
+  if (data.ambientLightDirection) {
+    json.ambientLightDirection = data.ambientLightDirection;
+  }
+  if ((data.ambientLightBlockers ?? []).length > 0) {
+    json.ambientLightBlockers = data.ambientLightBlockers.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+    }));
+  }
+  if ((data.lightSources ?? []).length > 0) {
+    json.lightSources = data.lightSources.map(l => ({
+      xBlock: l.xBlock,
+      yBlock: l.yBlock,
+      radiusBlocks: l.radiusBlocks,
+      colorR: l.colorR,
+      colorG: l.colorG,
+      colorB: l.colorB,
+      brightnessPct: l.brightnessPct,
+    }));
+  }
+  return json;
 }
 
 // ── Conversion: EditorRoomData → RoomDef (for runtime loading) ───────────────
 
 /**
- * Builds boundary walls with gaps for transition tunnel openings.
- * Mirrors the logic in rooms.ts but works from EditorRoomData.
+ * Builds boundary walls with gaps for edge-transition tunnel openings.
+ * Interior transitions (depthBlock defined) do not create gaps.
  */
 function buildBoundaryWalls(
   widthBlocks: number,
@@ -270,17 +625,17 @@ function buildBoundaryWalls(
 ): RoomWallDef[] {
   const walls: RoomWallDef[] = [];
 
-  // Top wall (full width)
-  walls.push({ xBlock: 0, yBlock: 0, wBlock: widthBlocks, hBlock: 1 });
-  // Bottom wall (full width)
-  walls.push({ xBlock: 0, yBlock: heightBlocks - 1, wBlock: widthBlocks, hBlock: 1 });
+  // Top wall (full width) — invisible boundary
+  walls.push({ xBlock: 0, yBlock: 0, wBlock: widthBlocks, hBlock: 1, isInvisibleFlag: 1 });
+  // Bottom wall (full width) — invisible boundary
+  walls.push({ xBlock: 0, yBlock: heightBlocks - 1, wBlock: widthBlocks, hBlock: 1, isInvisibleFlag: 1 });
 
-  // Left wall — split around tunnel openings
-  const leftTunnels = transitions.filter(t => t.direction === 'left');
+  // Left wall — split around edge-transition openings only
+  const leftTunnels = transitions.filter(t => t.direction === 'left' && t.depthBlock === undefined);
   buildSideWall(walls, 0, 1, heightBlocks - 2, leftTunnels);
 
-  // Right wall — split around tunnel openings
-  const rightTunnels = transitions.filter(t => t.direction === 'right');
+  // Right wall — split around edge-transition openings only
+  const rightTunnels = transitions.filter(t => t.direction === 'right' && t.depthBlock === undefined);
   buildSideWall(walls, widthBlocks - 1, 1, heightBlocks - 2, rightTunnels);
 
   return walls;
@@ -301,13 +656,13 @@ function buildSideWall(
     const tunnelTop = tunnel.positionBlock;
     const tunnelBottom = tunnel.positionBlock + tunnel.openingSizeBlocks;
     if (tunnelTop > currentY) {
-      out.push({ xBlock, yBlock: currentY, wBlock: 1, hBlock: tunnelTop - currentY });
+      out.push({ xBlock, yBlock: currentY, wBlock: 1, hBlock: tunnelTop - currentY, isInvisibleFlag: 1 });
     }
     currentY = tunnelBottom;
   }
 
   if (currentY < endY) {
-    out.push({ xBlock, yBlock: currentY, wBlock: 1, hBlock: endY - currentY });
+    out.push({ xBlock, yBlock: currentY, wBlock: 1, hBlock: endY - currentY, isInvisibleFlag: 1 });
   }
 }
 
@@ -318,7 +673,10 @@ function buildTunnelWalls(
   const walls: RoomWallDef[] = [];
   const TUNNEL_OVERHANG_BLOCKS = 4;
 
+  // Only edge transitions (depthBlock undefined) get physical corridor walls.
   for (const tunnel of transitions) {
+    if (tunnel.depthBlock !== undefined) continue; // interior transition — no corridor walls
+
     const topY = tunnel.positionBlock - 1;
     const bottomY = tunnel.positionBlock + tunnel.openingSizeBlocks;
 
@@ -348,6 +706,11 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
     yBlock: w.yBlock,
     wBlock: w.wBlock,
     hBlock: w.hBlock,
+    isPlatformFlag: w.isPlatformFlag,
+    platformEdge: w.platformEdge,
+    blockTheme: w.blockTheme,
+    rampOrientation: w.rampOrientation,
+    isPillarHalfWidthFlag: w.isPillarHalfWidthFlag,
   }));
 
   const allWalls: RoomWallDef[] = [...boundaryWalls, ...tunnelWalls, ...interiorWalls];
@@ -368,6 +731,16 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
       isFlyingEyeFlag: e.isFlyingEyeFlag,
       isRollingEnemyFlag: e.isRollingEnemyFlag,
       rollingEnemySpriteIndex: e.rollingEnemySpriteIndex,
+      isRockElementalFlag: e.isRockElementalFlag,
+      isRadiantTetherFlag: e.isRadiantTetherFlag,
+      isGrappleHunterFlag: e.isGrappleHunterFlag,
+      isSlimeFlag: e.isSlimeFlag,
+      isLargeSlimeFlag: e.isLargeSlimeFlag,
+      isWheelEnemyFlag: e.isWheelEnemyFlag,
+      isBeetleFlag: e.isBeetleFlag,
+      isBubbleEnemyFlag: e.isBubbleEnemyFlag,
+      isIceBubbleFlag: e.isIceBubbleFlag,
+      isSquareStampedeFlag: e.isSquareStampedeFlag,
     };
   });
 
@@ -377,19 +750,55 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
     positionBlock: t.positionBlock,
     openingSizeBlocks: t.openingSizeBlocks,
     targetSpawnBlock: [t.targetSpawnBlock[0], t.targetSpawnBlock[1]] as readonly [number, number],
+    fadeColor: t.fadeColor,
+    depthBlock: t.depthBlock,
   }));
 
   return {
     id: data.id,
     name: data.name,
     worldNumber: data.worldNumber,
+    mapX: data.mapX,
+    mapY: data.mapY,
+    blockTheme: data.blockTheme,
+    backgroundId: data.backgroundId,
+    lightingEffect: data.lightingEffect,
+    songId: data.songId !== '_continue' ? data.songId : undefined,
     widthBlocks: data.widthBlocks,
     heightBlocks: data.heightBlocks,
     walls: allWalls,
     enemies,
     playerSpawnBlock: [data.playerSpawnBlock[0], data.playerSpawnBlock[1]],
     transitions,
-    skillTombs: data.skillTombs.map(s => ({ xBlock: s.xBlock, yBlock: s.yBlock })),
+    saveTombs: data.saveTombs.map(s => ({ xBlock: s.xBlock, yBlock: s.yBlock })),
+    skillTombs: data.skillTombs.map(s => ({ xBlock: s.xBlock, yBlock: s.yBlock, weaveId: s.weaveId })),
+    dustPiles: data.dustPiles.map(p => ({ xBlock: p.xBlock, yBlock: p.yBlock, dustCount: p.dustCount })),
+    grasshopperAreas: data.grasshopperAreas.map(a => ({
+      xBlock: a.xBlock,
+      yBlock: a.yBlock,
+      wBlock: a.wBlock,
+      hBlock: a.hBlock,
+      count: a.count,
+    })),
+    decorations: (data.decorations ?? []).map(d => ({
+      xBlock: d.xBlock,
+      yBlock: d.yBlock,
+      kind: d.kind,
+    })),
+    ambientLightDirection: data.ambientLightDirection,
+    ambientLightBlockers: (data.ambientLightBlockers ?? []).map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+    })),
+    lightSources: (data.lightSources ?? []).map(l => ({
+      xBlock: l.xBlock,
+      yBlock: l.yBlock,
+      radiusBlocks: l.radiusBlocks,
+      colorR: l.colorR,
+      colorG: l.colorG,
+      colorB: l.colorB,
+      brightnessPct: l.brightnessPct,
+    })),
   };
 }
 
@@ -424,6 +833,11 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
     yBlock: w.yBlock,
     wBlock: w.wBlock,
     hBlock: w.hBlock,
+    isPlatformFlag: (w.isPlatformFlag ?? 0) as 0 | 1,
+    platformEdge: (w.platformEdge ?? 0) as 0 | 1 | 2 | 3,
+    blockTheme: w.blockTheme,
+    rampOrientation: w.rampOrientation,
+    isPillarHalfWidthFlag: (w.isPillarHalfWidthFlag ?? 0) as 0 | 1,
   }));
 
   const enemies: EditorEnemy[] = room.enemies.map(e => ({
@@ -436,6 +850,16 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
     isFlyingEyeFlag: (e.isFlyingEyeFlag ?? 0) as 0 | 1,
     isRollingEnemyFlag: (e.isRollingEnemyFlag ?? 0) as 0 | 1,
     rollingEnemySpriteIndex: e.rollingEnemySpriteIndex ?? 1,
+    isRockElementalFlag: (e.isRockElementalFlag ?? 0) as 0 | 1,
+    isRadiantTetherFlag: (e.isRadiantTetherFlag ?? 0) as 0 | 1,
+    isGrappleHunterFlag: (e.isGrappleHunterFlag ?? 0) as 0 | 1,
+    isSlimeFlag: (e.isSlimeFlag ?? 0) as 0 | 1,
+    isLargeSlimeFlag: (e.isLargeSlimeFlag ?? 0) as 0 | 1,
+    isWheelEnemyFlag: (e.isWheelEnemyFlag ?? 0) as 0 | 1,
+    isBeetleFlag: (e.isBeetleFlag ?? 0) as 0 | 1,
+    isBubbleEnemyFlag: (e.isBubbleEnemyFlag ?? 0) as 0 | 1,
+    isIceBubbleFlag: (e.isIceBubbleFlag ?? 0) as 0 | 1,
+    isSquareStampedeFlag: (e.isSquareStampedeFlag ?? 0) as 0 | 1,
   }));
 
   const transitions: EditorTransition[] = room.transitions.map(t => ({
@@ -445,12 +869,60 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
     openingSizeBlocks: t.openingSizeBlocks,
     targetRoomId: t.targetRoomId,
     targetSpawnBlock: [t.targetSpawnBlock[0], t.targetSpawnBlock[1]] as [number, number],
+    fadeColor: t.fadeColor,
   }));
 
-  const skillTombs: EditorSkillTomb[] = room.skillTombs.map(s => ({
+  const saveTombs: EditorSaveTomb[] = room.saveTombs.map(s => ({
     uid: uid++,
     xBlock: s.xBlock,
     yBlock: s.yBlock,
+  }));
+
+  const skillTombs: EditorSkillTomb[] = (room.skillTombs ?? []).map(s => ({
+    uid: uid++,
+    xBlock: s.xBlock,
+    yBlock: s.yBlock,
+    weaveId: s.weaveId,
+  }));
+
+  const dustPiles: EditorDustPile[] = (room.dustPiles ?? []).map(p => ({
+    uid: uid++,
+    xBlock: p.xBlock,
+    yBlock: p.yBlock,
+    dustCount: p.dustCount,
+  }));
+
+  const grasshopperAreas: EditorGrasshopperArea[] = (room.grasshopperAreas ?? []).map(a => ({
+    uid: uid++,
+    xBlock: a.xBlock,
+    yBlock: a.yBlock,
+    wBlock: a.wBlock,
+    hBlock: a.hBlock,
+    count: a.count,
+  }));
+
+  const decorations: EditorDecoration[] = (room.decorations ?? []).map(d => ({
+    uid: uid++,
+    xBlock: d.xBlock,
+    yBlock: d.yBlock,
+    kind: d.kind,
+  }));
+
+  const ambientLightBlockers: EditorAmbientLightBlocker[] = (room.ambientLightBlockers ?? []).map(b => ({
+    uid: uid++,
+    xBlock: b.xBlock,
+    yBlock: b.yBlock,
+  }));
+
+  const lightSources: EditorLightSource[] = (room.lightSources ?? []).map(l => ({
+    uid: uid++,
+    xBlock: l.xBlock,
+    yBlock: l.yBlock,
+    radiusBlocks: l.radiusBlocks,
+    colorR: l.colorR,
+    colorG: l.colorG,
+    colorB: l.colorB,
+    brightnessPct: l.brightnessPct,
   }));
 
   return {
@@ -458,13 +930,26 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
       id: room.id,
       name: room.name,
       worldNumber: room.worldNumber,
+      mapX: room.mapX,
+      mapY: room.mapY,
+      blockTheme: room.blockTheme ?? 'blackRock',
+      backgroundId: room.backgroundId ?? 'brownRock',
+      lightingEffect: room.lightingEffect ?? 'Ambient',
+      ambientLightDirection: room.ambientLightDirection,
+      songId: room.songId ?? '_continue',
       widthBlocks: room.widthBlocks,
       heightBlocks: room.heightBlocks,
       playerSpawnBlock: [room.playerSpawnBlock[0], room.playerSpawnBlock[1]],
       interiorWalls,
       enemies,
       transitions,
+      saveTombs,
       skillTombs,
+      dustPiles,
+      grasshopperAreas,
+      decorations,
+      ambientLightBlockers,
+      lightSources,
     },
     nextUid: uid,
   };

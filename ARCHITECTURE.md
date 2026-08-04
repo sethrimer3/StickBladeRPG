@@ -162,7 +162,45 @@ The world editor is an in-game level editing tool accessible via the debug UI.
 - The editor calls `loadRoom()` to apply changes to the runtime world when jumping rooms.
 
 
-## Weave Combat System (BUILD 39)
+## Progression System (BUILD 74)
+
+### Module Layout
+```
+src/progression/
+  playerProgress.ts      — PlayerProgress type, default factory, slot helpers
+  saveSlots.ts           — localStorage persistence (3 slots, auto-migration)
+  passiveTechniques.ts   — Passive technique definitions (e.g., Cycle)
+  dustCapacity.ts        — Container-based capacity model
+  unlocks.ts             — Progression unlock functions
+```
+
+### Clean Category Separation
+- **Passive techniques** (e.g., Cycle) — always active once unlocked, NOT bindable to LMB/RMB
+- **Dust types** (e.g., Golden Dust, Fire Dust) — unlocked independently
+- **Active weaves** (e.g., Spire, Aegis) — bound to LMB/RMB via WeaveBinding
+- **Dust containers** — each grants 4 capacity; different dust types cost different amounts
+
+### Capacity Model
+- Each dust container grants `CAPACITY_PER_CONTAINER = 4` capacity
+- Total capacity = `dustContainerCount × 4`
+- Golden Dust (Physical) costs 1 capacity per particle → 8 particles with 2 containers
+- Fire Dust costs 2 capacity per particle → 4 particles with 2 containers
+
+### Early Game Progression Flow
+1. New profile starts empty (0 containers, 0 dust, no weaves, no techniques)
+2. Loadout screen is NOT shown for new profiles
+3. Early unlock: Cycle passive technique (dust orbits the player)
+4. Next unlock: Golden Dust + 2 dust containers (auto-configured, no menu needed)
+5. After auto-assignment, loadout changes only happen at save tombs
+
+### Dust Recharge Rule
+- Player-owned dust only recharges (respawn delay countdown) while the player is grounded
+- Enemy dust recharges normally regardless of grounded state
+- Implemented in `sim/particles/lifetime.ts`
+
+### HUD Layout (top-left)
+1. Health bar (always visible, screen-anchored)
+2. Dust container display (below health bar)
 
 ### Module Layout
 ```
@@ -192,3 +230,78 @@ The Weave combat system is injected at step 4.55, after the legacy combat forces
 ### Snapshot Boundary
 - ParticleSnapshot does not include weaveSlotId (not needed for rendering)
 - WorldSnapshot includes isPlayerWeaveActiveFlag for sprite animation hints
+
+## Radiant Tether Boss (BUILD 42)
+
+### Tick Pipeline Addition
+- Step 0.5d: `applyRadiantTetherAI(world)` — boss state machine and chain winching.
+- Boss clusters are skipped by standard enemy AI (`enemyAi.ts`) and ground movement.
+- Boss movement is handled entirely by the chain tension system.
+
+### Module Structure
+- `sim/clusters/radiantTetherConfig.ts` — all tunable constants.
+- `sim/clusters/radiantTetherAi.ts` — state machine (inactive→telegraph→lock→fire→move→reset→dead).
+- `sim/clusters/radiantTetherChains.ts` — chain lifecycle, raycasting, snap detection, sag calculation, player collision.
+- `render/clusters/radiantTetherRenderer.ts` — boss body, telegraph lasers, active chains, broken chains, debug overlay.
+
+### Chain State Management
+- Chain state (`RadiantTetherChainState`) is module-level in `radiantTetherAi.ts` (one boss per room).
+- Reset when `loadRoom()` is called via `resetRadiantTetherState()`.
+- Renderer accesses chain state via `getRadiantTetherChainState()`.
+
+### Snapshot Boundary
+- `ClusterSnapshot` includes: `isRadiantTetherFlag`, `radiantTetherState`, `radiantTetherStateTicks`, `radiantTetherBaseAngleRad`, `radiantTetherChainCount`.
+- Chain visual data (anchor positions, broken chain positions) is read directly from the module-level chain state by the renderer, not copied into the snapshot.
+
+## Two-Layer Procedural Cloak (BUILD 111)
+
+The player cloak is a single connected garment rendered as two visual layers: a darker **back cloak** behind the body and a lighter **front cloak** in front of the body. Both layers are driven by one shared simulation (point chain + shape state).
+
+### Render Order
+1. Back cloak (`renderBack`) — behind player body
+2. Player body sprite (outline mask + sprite)
+3. Front cloak (`renderFront`) — in front of player body
+
+### Module Structure
+- `render/clusters/cloakConstants.ts` — all tunable constants (anchor, shape, spread, openness, colors, thresholds).
+- `render/clusters/playerCloak.ts` — `PlayerCloak` class: chain simulation, shared shape state (spread, openness, fast-fall, timers), polygon builders for back/front, debug overlay.
+
+### Shape State Model
+The shared cloak state computes:
+- `spreadAmount` (0–1): how wide the cloak opens, varies by movement state.
+- `opennessAmount` (0–1): how far front/back layers separate.
+- `isFastFallActiveFlag`: triggers dramatic widening with sharp outer corners.
+- `turnTimerSec` / `landingTimerSec`: drive overshoot and compression effects.
+
+Both cloak polygons derive from the same chain points and shape state, with the front cloak shorter, narrower, and offset toward the player's facing direction.
+
+## Dust Combat Pipeline (BUILD 113)
+
+### Weave Combat Flow
+Each tick, `applyPlayerWeaveCombat()` in `sim/weaves/weaveCombat.ts` runs two passes:
+
+1. **Storm Attraction** (always active):
+   - Scans all alive, unowned, Physical particles within 80 world units of the player
+   - Applies radial attraction force (strength 120, distance falloff)
+   - Claims particles within 12 world units (resets owner, lifetime, behavior to orbit)
+
+2. **Shield Crescent** (when mouse button held):
+   - Collects all player-owned alive particles (excluding grapple chain)
+   - Computes arc size: `halfArc = 0.15 + min(1, count/30) × (π/2 - 0.15)`
+   - Distributes particles evenly across the arc centered on aim direction
+   - Applies spring force (600) toward target positions
+   - Sets particles to `behaviorMode = 2` (block) while active
+   - On mouse release, resets all block-mode particles to orbit (`behaviorMode = 0`)
+
+### Dust Pile Spawning
+- Room definitions include optional `dustPiles: RoomDustPileDef[]`
+- At room load, `gameRoom.ts` loads pile positions into WorldState arrays
+- `gameScreen.ts` calls `spawnDustPileParticles()` for each pile
+- Spawned particles are unowned (entityId = -1), transient, Physical kind with 99999-tick lifetime
+- Environmental dust layer skips procedural generation in lobby rooms (worldNumber 0)
+
+### Dust Rendering
+- Particles render as 3×3 virtual pixel squares (diameter 3 world units)
+- WebGL: shape index 2 (Square) via `KIND_SHAPE[0]` and GLSL `kindShape()` default return
+- Canvas 2D fallback: `fillRect` in `drawParticleShape()` for `ParticleShape.Square`
+- Additive glow: `drawParticleGlow()` in `gameRender.ts` adds bloom circles for Physical/Gold particles

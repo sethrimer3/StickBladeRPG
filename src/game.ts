@@ -1,5 +1,6 @@
 import { showMainMenu } from './ui/mainMenu';
 import { showLoadoutScreen } from './ui/weaveLoadout';
+import { showCharacterSelect } from './ui/characterSelect';
 import { startGameScreen } from './screens/gameScreen';
 import { ParticleKind } from './sim/particles/kinds';
 import { createDefaultProgress, PlayerProgress } from './progression/playerProgress';
@@ -32,7 +33,7 @@ export function startGame(canvas: HTMLCanvasElement, uiRoot: HTMLElement): void 
   }
 
   function navigate(
-    to: 'mainMenu' | 'loadout' | 'gameplay',
+    to: 'mainMenu' | 'characterSelect' | 'loadout' | 'gameplay',
     loadout?: ParticleKind[],
   ): void {
     // Persist progress when leaving gameplay
@@ -51,15 +52,29 @@ export function startGame(canvas: HTMLCanvasElement, uiRoot: HTMLElement): void 
           activeSaveData = saveData;
           progress = saveData.progress;
           sessionStartMs = performance.now();
-          // If the save has explored rooms (returning player), skip loadout
+          // Returning player (has explored rooms): skip straight to gameplay
           if (progress.exploredRoomIds.length > 0) {
             navigate('gameplay', progress.loadout);
           } else {
-            navigate('loadout');
+            // Brand new profile: go to character select, then straight to gameplay
+            // Do NOT open the loadout screen — the player starts with nothing.
+            navigate('characterSelect');
           }
         },
       });
+    } else if (to === 'characterSelect') {
+      cleanup = showCharacterSelect(uiRoot, {
+        onConfirm: (characterId) => {
+          progress.characterId = characterId;
+          // New profile: skip loadout screen entirely, go straight to gameplay.
+          // The player starts as a blank slate with nothing equipped.
+          navigate('gameplay', []);
+        },
+        onCancel: () => navigate('mainMenu'),
+      });
     } else if (to === 'loadout') {
+      // Loadout screen is now only used at save tombs, not during the initial flow.
+      // Keep this branch for backward compatibility / explicit navigation.
       cleanup = showLoadoutScreen(uiRoot, progress, {
         onConfirm: (chosenLoadout, chosenWeaveLoadout) => {
           progress.loadout = chosenLoadout.slice();

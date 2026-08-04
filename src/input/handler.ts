@@ -1,4 +1,5 @@
 import { GameCommand, CommandKind } from './commands';
+import { getKeyboardBindings, keyMatches } from './keybindings';
 
 const JOYSTICK_DEAD_ZONE_PX = 12;
 export const JOYSTICK_MAX_RADIUS_PX = 60;
@@ -18,8 +19,8 @@ export interface InputState {
   isJumpHeldFlag: boolean;
   /** Tracks whether the joystick is already past the up-flick threshold (edge-detect). */
   isJoystickUpActiveFlag: boolean;
-  /** Set to true for one collectCommands call to trigger a dash. */
-  isDashTriggeredFlag: boolean;
+  /** True while the Shift key is physically held down (sprint). */
+  isSprintHeldFlag: boolean;
   mouseXPx: number;
   mouseYPx: number;
   // Touch joystick state (populated by touch listeners; read by renderer for visual feedback)
@@ -54,17 +55,19 @@ export interface InputState {
   secondTouchCurrentXPx: number;
   secondTouchCurrentYPx: number;
   // ---- Grapple hook -------------------------------------------------------
-  /** True while the grapple key (E) is physically held down. */
+  /** True while the grapple input (left click) is physically held down. */
   isGrappleHeldFlag: 0 | 1;
-  /** Set to 1 for one frame when grapple should fire (E pressed). */
+  /** Set to 1 for one frame when grapple should fire (left click pressed). */
   isGrappleFireTriggeredFlag: 0 | 1;
-  /** Set to 1 for one frame when grapple should release (E released). */
+  /** Set to 1 for one frame when grapple should release (left click released). */
   isGrappleReleaseTriggeredFlag: 0 | 1;
   /** Screen-space aim position where the grapple fires. */
   grappleAimXPx: number;
   grappleAimYPx: number;
   /** Set to true for one collectCommands call to trigger an interact (F key). */
   isInteractTriggeredFlag: boolean;
+  /** Set to true for one collectCommands call to request fullscreen toggle (P key). */
+  isFullscreenToggleTriggeredFlag: boolean;
 }
 
 export function createInputState(): InputState {
@@ -77,7 +80,7 @@ export function createInputState(): InputState {
     isJumpTriggeredFlag: false,
     isJumpHeldFlag: false,
     isJoystickUpActiveFlag: false,
-    isDashTriggeredFlag: false,
+    isSprintHeldFlag: false,
     mouseXPx: 0,
     mouseYPx: 0,
     isTouchJoystickActiveFlag: 0,
@@ -106,6 +109,7 @@ export function createInputState(): InputState {
     grappleAimXPx: 0,
     grappleAimYPx: 0,
     isInteractTriggeredFlag: false,
+    isFullscreenToggleTriggeredFlag: false,
   };
 }
 
@@ -132,57 +136,82 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
   // Track joystick touch ID so multi-touch doesn't confuse movement with aiming
   let joystickTouchId = -1;
 
+  function clientToCanvasPx(clientXPx: number, clientYPx: number): { xPx: number; yPx: number } {
+    const rect = canvas.getBoundingClientRect();
+    const xCssPx = clientXPx - rect.left;
+    const yCssPx = clientYPx - rect.top;
+    const xNormalized = rect.width > 0 ? xCssPx / rect.width : 0.0;
+    const yNormalized = rect.height > 0 ? yCssPx / rect.height : 0.0;
+    return {
+      xPx: xNormalized * canvas.width,
+      yPx: yNormalized * canvas.height,
+    };
+  }
+
+  function isTypingIntoField(e: KeyboardEvent): boolean {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.key === 'a' || e.key === 'A') state.isKeyA = true;
-    if (e.key === 'd' || e.key === 'D') state.isKeyD = true;
-    if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') state.isKeyS = true;
-    if (e.key === 'ArrowLeft') state.isKeyA = true;
-    if (e.key === 'ArrowRight') state.isKeyD = true;
+    if (isTypingIntoField(e)) return;
+    const b = getKeyboardBindings();
+    if (keyMatches(e.key, b.moveLeft) || e.key === 'ArrowLeft') state.isKeyA = true;
+    if (keyMatches(e.key, b.moveRight) || e.key === 'ArrowRight') state.isKeyD = true;
+    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') state.isKeyS = true;
     if (e.key === 'Escape') state.isEscapePressed = true;
-    if (e.key === 'w' || e.key === 'W' || e.key === ' ' || e.key === 'ArrowUp') {
+    if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!e.repeat) { state.isJumpTriggeredFlag = true; }
       state.isJumpHeldFlag = true;
     }
-    if (e.key === 'Shift') {
+    if (keyMatches(e.key, b.sprint)) {
       e.preventDefault();
-      state.isDashTriggeredFlag = true;
+      state.isSprintHeldFlag = true;
     }
-    if ((e.key === 'e' || e.key === 'E') && !e.repeat) {
-      state.isGrappleHeldFlag = 1;
-      state.isGrappleFireTriggeredFlag = 1;
-      state.grappleAimXPx = state.mouseXPx;
-      state.grappleAimYPx = state.mouseYPx;
-    }
-    if ((e.key === 'f' || e.key === 'F') && !e.repeat) {
+    if (keyMatches(e.key, b.interact) && !e.repeat) {
       state.isInteractTriggeredFlag = true;
+    }
+    if (keyMatches(e.key, b.toggleFullscreen) && !e.repeat) {
+      state.isFullscreenToggleTriggeredFlag = true;
     }
   }
   function onKeyUp(e: KeyboardEvent): void {
-    if (e.key === 'a' || e.key === 'A') state.isKeyA = false;
-    if (e.key === 'd' || e.key === 'D') state.isKeyD = false;
-    if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') state.isKeyS = false;
-    if (e.key === 'ArrowLeft') state.isKeyA = false;
-    if (e.key === 'ArrowRight') state.isKeyD = false;
+    const b = getKeyboardBindings();
+    if (keyMatches(e.key, b.moveLeft) || e.key === 'ArrowLeft') state.isKeyA = false;
+    if (keyMatches(e.key, b.moveRight) || e.key === 'ArrowRight') state.isKeyD = false;
+    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') state.isKeyS = false;
     if (e.key === 'Escape') state.isEscapePressed = false;
-    if (e.key === 'w' || e.key === 'W' || e.key === ' ' || e.key === 'ArrowUp') {
+    if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       state.isJumpHeldFlag = false;
     }
-    if (e.key === 'e' || e.key === 'E') {
-      state.isGrappleHeldFlag = 0;
-      state.isGrappleReleaseTriggeredFlag = 1;
+    if (keyMatches(e.key, b.sprint)) {
+      state.isSprintHeldFlag = false;
+    }
+    // If the sprint binding is a modifier key (e.g. Shift), keep sprint active
+    // when the other physical key of the same type is still held.
+    if (b.sprint.toLowerCase() === 'shift' && e.shiftKey) {
+      state.isSprintHeldFlag = true;
     }
   }
   function onMouseMove(e: MouseEvent): void {
-    state.mouseXPx = e.clientX;
-    state.mouseYPx = e.clientY;
+    const mouse = clientToCanvasPx(e.clientX, e.clientY);
+    state.mouseXPx = mouse.xPx;
+    state.mouseYPx = mouse.yPx;
   }
   function onMouseDown(e: MouseEvent): void {
+    const mouse = clientToCanvasPx(e.clientX, e.clientY);
     if (e.button === 0) {
       state.isMouseDownFlag = 1;
       state.mouseDownTimeMs = performance.now();
-      state.mouseDownXPx = e.clientX;
-      state.mouseDownYPx = e.clientY;
+      state.mouseDownXPx = mouse.xPx;
+      state.mouseDownYPx = mouse.yPx;
+      state.isGrappleHeldFlag = 1;
+      state.isGrappleFireTriggeredFlag = 1;
+      state.grappleAimXPx = mouse.xPx;
+      state.grappleAimYPx = mouse.yPx;
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 1;
     }
@@ -191,15 +220,18 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (e.button === 0) {
       if (state.isMouseDownFlag === 0) return;
       state.isMouseDownFlag = 0;
+      state.isGrappleHeldFlag = 0;
+      state.isGrappleReleaseTriggeredFlag = 1;
       const holdMs = performance.now() - state.mouseDownTimeMs;
       if (state.isBlockingFlag === 1) {
         // Was blocking — collectCommands will emit BlockEnd on next frame
         // (isMouseDownFlag=0 && isBlockingFlag=1 triggers the BlockEnd path)
       } else if (holdMs < ATTACK_HOLD_THRESHOLD_MS) {
         // Quick click — attack toward current mouse cursor position (gameScreen converts to direction)
+        const mouse = clientToCanvasPx(e.clientX, e.clientY);
         state.isAttackFiredFlag = 1;
-        state.attackDirXPx = e.clientX;
-        state.attackDirYPx = e.clientY;
+        state.attackDirXPx = mouse.xPx;
+        state.attackDirYPx = mouse.yPx;
       }
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 0;
@@ -210,26 +242,27 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      const touch = clientToCanvasPx(t.clientX, t.clientY);
       if (joystickTouchId === -1) {
         // First touch becomes the movement joystick
         joystickTouchId = t.identifier;
         state.isTouchJoystickActiveFlag = 1;
-        state.touchJoystickBaseXPx = t.clientX;
-        state.touchJoystickBaseYPx = t.clientY;
-        state.touchJoystickCurrentXPx = t.clientX;
-        state.touchJoystickCurrentYPx = t.clientY;
+        state.touchJoystickBaseXPx = touch.xPx;
+        state.touchJoystickBaseYPx = touch.yPx;
+        state.touchJoystickCurrentXPx = touch.xPx;
+        state.touchJoystickCurrentYPx = touch.yPx;
       } else if (state.secondTouchId === -1) {
         // Second finger — attack/block gesture
         state.secondTouchId = t.identifier;
-        state.secondTouchStartXPx = t.clientX;
-        state.secondTouchStartYPx = t.clientY;
+        state.secondTouchStartXPx = touch.xPx;
+        state.secondTouchStartYPx = touch.yPx;
         state.secondTouchStartTimeMs = performance.now();
-        state.secondTouchCurrentXPx = t.clientX;
-        state.secondTouchCurrentYPx = t.clientY;
+        state.secondTouchCurrentXPx = touch.xPx;
+        state.secondTouchCurrentYPx = touch.yPx;
       } else {
         // Additional touches update the aim/mouse position
-        state.mouseXPx = t.clientX;
-        state.mouseYPx = t.clientY;
+        state.mouseXPx = touch.xPx;
+        state.mouseYPx = touch.yPx;
       }
     }
   }
@@ -238,9 +271,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
+      const touch = clientToCanvasPx(t.clientX, t.clientY);
       if (t.identifier === joystickTouchId) {
-        const dx = t.clientX - state.touchJoystickBaseXPx;
-        const dy = t.clientY - state.touchJoystickBaseYPx;
+        const dx = touch.xPx - state.touchJoystickBaseXPx;
+        const dy = touch.yPx - state.touchJoystickBaseYPx;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > JOYSTICK_MAX_RADIUS_PX) {
           // Slide the base so the visual thumb never escapes the outer ring
@@ -248,17 +282,29 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
           state.touchJoystickBaseXPx += dx * scale;
           state.touchJoystickBaseYPx += dy * scale;
         }
-        state.touchJoystickCurrentXPx = t.clientX;
-        state.touchJoystickCurrentYPx = t.clientY;
+        state.touchJoystickCurrentXPx = touch.xPx;
+        state.touchJoystickCurrentYPx = touch.yPx;
         applyJoystickToKeys(state);
       } else if (t.identifier === state.secondTouchId) {
-        state.secondTouchCurrentXPx = t.clientX;
-        state.secondTouchCurrentYPx = t.clientY;
+        state.secondTouchCurrentXPx = touch.xPx;
+        state.secondTouchCurrentYPx = touch.yPx;
       } else {
-        state.mouseXPx = t.clientX;
-        state.mouseYPx = t.clientY;
+        state.mouseXPx = touch.xPx;
+        state.mouseYPx = touch.yPx;
       }
     }
+  }
+
+
+  function onWindowBlur(): void {
+    state.isKeyA = false;
+    state.isKeyD = false;
+    state.isKeyS = false;
+    state.isJumpHeldFlag = false;
+    state.isSprintHeldFlag = false;
+    state.isGrappleHeldFlag = 0;
+    state.isRightMouseDownFlag = 0;
+    state.isMouseDownFlag = 0;
   }
 
   function onTouchEnd(e: TouchEvent): void {
@@ -285,6 +331,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', onWindowBlur);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('mouseup', onMouseUp);
@@ -299,6 +346,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
   return () => {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('blur', onWindowBlur);
     canvas.removeEventListener('mousemove', onMouseMove);
     canvas.removeEventListener('mousedown', onMouseDown);
     canvas.removeEventListener('mouseup', onMouseUp);
@@ -335,11 +383,6 @@ export function collectCommands(input: InputState): GameCommand[] {
     commands.push({ kind: CommandKind.Jump });
   }
 
-  // ---- Dash command --------------------------------------------------------
-  if (input.isDashTriggeredFlag) {
-    input.isDashTriggeredFlag = false;
-    commands.push({ kind: CommandKind.Dash, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
-  }
 
   // ---- Attack / block commands (LEGACY — kept for enemy AI compatibility) ---
   // Old attack/block is replaced by Weave commands for the player.
@@ -433,6 +476,11 @@ export function collectCommands(input: InputState): GameCommand[] {
   if (input.isInteractTriggeredFlag) {
     input.isInteractTriggeredFlag = false;
     commands.push({ kind: CommandKind.Interact });
+  }
+
+  if (input.isFullscreenToggleTriggeredFlag) {
+    input.isFullscreenToggleTriggeredFlag = false;
+    commands.push({ kind: CommandKind.ToggleFullscreen });
   }
 
   return commands;

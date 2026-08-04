@@ -12,7 +12,7 @@ export interface ParticleStyle {
 // ---- Per-element colour palette (matches ELEMENT_COLORS in webglRenderer) -
 
 const STYLES: ParticleStyle[] = [
-  { colorHex: '#7799aa', radiusPx: 1 }, // Physical  — steel blue-grey
+  { colorHex: '#ffd700', radiusPx: 1 }, // Physical  — bright golden yellow
   { colorHex: '#ff5500', radiusPx: 1 }, // Fire      — hot orange
   { colorHex: '#88ddff', radiusPx: 1 }, // Ice       — cool light blue
   { colorHex: '#ffff44', radiusPx: 1 }, // Lightning — electric yellow
@@ -31,6 +31,7 @@ const STYLES: ParticleStyle[] = [
   { colorHex: '#ff2200', radiusPx: 1.5 }, // Lava      — molten deep red-orange (slightly larger)
   { colorHex: '#888899', radiusPx: 1 }, // Stone     — cool grey
   { colorHex: '#ffd700', radiusPx: 1 }, // Gold      — bright golden yellow
+  { colorHex: '#fffde0', radiusPx: 1.5 }, // Light   — radiant white-gold
 ];
 
 const FALLBACK_STYLE: ParticleStyle = STYLES[0];

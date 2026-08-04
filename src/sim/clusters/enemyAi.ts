@@ -16,6 +16,7 @@
 import { WorldState } from '../world';
 import { nextFloat } from '../rng';
 import { DASH_COOLDOWN_TICKS, DASH_RECHARGE_ANIM_TICKS, ENEMY_DODGE_SPEED_WORLD } from './dashConstants';
+import { dist } from '../../utils/math';
 
 // Re-export shared constants so callers that previously imported from this module
 // don't need to change their import paths.
@@ -24,11 +25,11 @@ export { DASH_COOLDOWN_TICKS, DASH_RECHARGE_ANIM_TICKS, ENEMY_DODGE_SPEED_WORLD 
 // ---- AI tuning constants -------------------------------------------------
 
 /** Distance (world units) at which an enemy starts launching attacks. */
-const ENEMY_ATTACK_RANGE_WORLD = 320.0;
+const ENEMY_ATTACK_RANGE_WORLD = 213.0;
 /** Ticks between enemy attack launches (~2 seconds at 60 fps). */
 const ENEMY_ATTACK_COOLDOWN_TICKS = 120;
 /** Distance at which incoming player particles trigger a block response. */
-const ENEMY_BLOCK_DETECTION_RANGE_WORLD = 160.0;
+const ENEMY_BLOCK_DETECTION_RANGE_WORLD = 107.0;
 /** Ticks an enemy block stance lasts before auto-releasing. */
 const ENEMY_BLOCK_DURATION_TICKS = 55;
 /** Ticks between an enemy can block again after releasing. */
@@ -62,6 +63,10 @@ export function applyEnemyAI(world: WorldState): void {
   for (let ci = 0; ci < clusters.length; ci++) {
     const cluster = clusters[ci];
     if (cluster.isPlayerFlag === 1 || cluster.isAliveFlag === 0) continue;
+    // Skip specialized enemies that have their own AI modules
+    if (cluster.isRadiantTetherFlag === 1) continue;
+    if (cluster.isGrappleHunterFlag === 1) continue;
+    if (cluster.isBubbleEnemyFlag === 1) continue;
 
     // ── Tick down cooldowns ────────────────────────────────────────────────
     if (cluster.enemyAiAttackCooldownTicks > 0) {
@@ -100,7 +105,7 @@ export function applyEnemyAI(world: WorldState): void {
 
     const dxToPlayer = playerX - cluster.positionXWorld;
     const dyToPlayer = playerY - cluster.positionYWorld;
-    const distToPlayer = Math.sqrt(dxToPlayer * dxToPlayer + dyToPlayer * dyToPlayer);
+    const distToPlayer = dist(cluster.positionXWorld, cluster.positionYWorld, playerX, playerY);
 
     const invDist = distToPlayer > 0.5 ? 1.0 / distToPlayer : 0.0;
     const dirToPlayerX = dxToPlayer * invDist;
@@ -129,7 +134,7 @@ export function applyEnemyAI(world: WorldState): void {
       const py = positionYWorld[i];
       const dxToEnemy = cluster.positionXWorld - px;
       const dyToEnemy = cluster.positionYWorld - py;
-      const distToEnemy = Math.sqrt(dxToEnemy * dxToEnemy + dyToEnemy * dyToEnemy);
+      const distToEnemy = dist(px, py, cluster.positionXWorld, cluster.positionYWorld);
       if (distToEnemy > ENEMY_BLOCK_DETECTION_RANGE_WORLD) continue;
 
       // Particle must be generally moving toward this enemy
