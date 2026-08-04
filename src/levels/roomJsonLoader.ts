@@ -21,6 +21,7 @@ import type {
   RoomFireflyJarDef,
   SpikeDirection,
 } from './roomDef';
+import { blockThemeRefToTheme } from './roomDef';
 import {
   validateRoomJson,
   stringToParticleKind,
@@ -32,7 +33,41 @@ import { getActiveCampaignId, getCampaignById, getCampaignRoomsBasePath } from '
 
 // ── Boundary wall generation (mirrors roomBuilders.ts) ───────────────────────
 
+const DISCOVERED_ROOM_FILE_PATHS = Object.keys(import.meta.glob('/ASSETS/CAMPAIGNS/*/ROOMS/*.json', {
+  query: '?url',
+  import: 'default',
+}));
+
 const TUNNEL_OVERHANG_BLOCKS = 4;
+
+function discoverRoomFilenames(campaignFolderNames: readonly string[]): string[] {
+  const campaignFolderSet = new Set(campaignFolderNames);
+  const filenames: string[] = [];
+  for (const path of DISCOVERED_ROOM_FILE_PATHS) {
+    const normalizedPath = path.replace(/\\/g, '/');
+    const match = normalizedPath.match(/\/ASSETS\/CAMPAIGNS\/([^/]+)\/ROOMS\/([^/]+\.json)$/);
+    if (!match) continue;
+    const campaignFolderName = match[1];
+    const filename = match[2];
+    if (!campaignFolderSet.has(campaignFolderName)) continue;
+    if (filename === 'manifest.json') continue;
+    filenames.push(filename);
+  }
+  return [...new Set(filenames)].sort((a, b) => a.localeCompare(b));
+}
+
+function mergeManifestAndDiscoveredRooms(manifest: readonly string[] | null, discoveredFilenames: readonly string[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  const add = (filename: string): void => {
+    if (seen.has(filename)) return;
+    seen.add(filename);
+    merged.push(filename);
+  };
+  for (const filename of manifest ?? []) add(filename);
+  for (const filename of discoveredFilenames) add(filename);
+  return merged;
+}
 
 function buildBoundaryWalls(
   widthBlocks: number,
@@ -41,10 +76,13 @@ function buildBoundaryWalls(
 ): RoomWallDef[] {
   const walls: RoomWallDef[] = [];
 
-  // Top wall (full width) — invisible boundary
-  walls.push({ xBlock: 0, yBlock: 0, wBlock: widthBlocks, hBlock: 1, isInvisibleFlag: 1 });
-  // Bottom wall (full width) — invisible boundary
-  walls.push({ xBlock: 0, yBlock: heightBlocks - 1, wBlock: widthBlocks, hBlock: 1, isInvisibleFlag: 1 });
+  // Top wall — split around edge-transition openings only
+  const upTunnels = transitions.filter(t => t.direction === 'up' && t.depthBlock === undefined);
+  buildHorizontalWall(walls, 0, 0, widthBlocks, upTunnels);
+
+  // Bottom wall — split around edge-transition openings only
+  const downTunnels = transitions.filter(t => t.direction === 'down' && t.depthBlock === undefined);
+  buildHorizontalWall(walls, heightBlocks - 1, 0, widthBlocks, downTunnels);
 
   // Left wall — split around edge-transition openings only (interior transitions keep wall intact)
   const leftTunnels = transitions.filter(t => t.direction === 'left' && t.depthBlock === undefined);
@@ -82,8 +120,34 @@ function buildSideWall(
   }
 }
 
+function buildHorizontalWall(
+  out: RoomWallDef[],
+  yBlock: number,
+  startXBlock: number,
+  totalWidthBlocks: number,
+  tunnels: RoomJsonTransition[],
+): void {
+  const sorted = [...tunnels].sort((a, b) => a.positionBlock - b.positionBlock);
+  let currentX = startXBlock;
+  const endX = startXBlock + totalWidthBlocks;
+
+  for (const tunnel of sorted) {
+    const tunnelLeft = tunnel.positionBlock;
+    const tunnelRight = tunnel.positionBlock + tunnel.openingSizeBlocks;
+    if (tunnelLeft > currentX) {
+      out.push({ xBlock: currentX, yBlock, wBlock: tunnelLeft - currentX, hBlock: 1, isInvisibleFlag: 1 });
+    }
+    currentX = tunnelRight;
+  }
+
+  if (currentX < endX) {
+    out.push({ xBlock: currentX, yBlock, wBlock: endX - currentX, hBlock: 1, isInvisibleFlag: 1 });
+  }
+}
+
 function buildTunnelWalls(
   roomWidthBlocks: number,
+  roomHeightBlocks: number,
   transitions: RoomJsonTransition[],
 ): RoomWallDef[] {
   const walls: RoomWallDef[] = [];
@@ -94,6 +158,8 @@ function buildTunnelWalls(
 
     const topY = tunnel.positionBlock - 1;
     const bottomY = tunnel.positionBlock + tunnel.openingSizeBlocks;
+    const leftX = tunnel.positionBlock - 1;
+    const rightX = tunnel.positionBlock + tunnel.openingSizeBlocks;
 
     if (tunnel.direction === 'left') {
       walls.push({ xBlock: -TUNNEL_OVERHANG_BLOCKS, yBlock: topY, wBlock: TUNNEL_OVERHANG_BLOCKS + 1, hBlock: 1 });
@@ -101,8 +167,13 @@ function buildTunnelWalls(
     } else if (tunnel.direction === 'right') {
       walls.push({ xBlock: roomWidthBlocks - 1, yBlock: topY, wBlock: TUNNEL_OVERHANG_BLOCKS + 1, hBlock: 1 });
       walls.push({ xBlock: roomWidthBlocks - 1, yBlock: bottomY, wBlock: TUNNEL_OVERHANG_BLOCKS + 1, hBlock: 1 });
+    } else if (tunnel.direction === 'up') {
+      walls.push({ xBlock: leftX, yBlock: -TUNNEL_OVERHANG_BLOCKS, wBlock: 1, hBlock: TUNNEL_OVERHANG_BLOCKS + 1 });
+      walls.push({ xBlock: rightX, yBlock: -TUNNEL_OVERHANG_BLOCKS, wBlock: 1, hBlock: TUNNEL_OVERHANG_BLOCKS + 1 });
+    } else if (tunnel.direction === 'down') {
+      walls.push({ xBlock: leftX, yBlock: roomHeightBlocks - 1, wBlock: 1, hBlock: TUNNEL_OVERHANG_BLOCKS + 1 });
+      walls.push({ xBlock: rightX, yBlock: roomHeightBlocks - 1, wBlock: 1, hBlock: TUNNEL_OVERHANG_BLOCKS + 1 });
     }
-    // TODO: up/down tunnel wall generation when runtime supports it
   }
 
   return walls;
@@ -116,7 +187,7 @@ function buildTunnelWalls(
  */
 export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
   const boundaryWalls = buildBoundaryWalls(json.widthBlocks, json.heightBlocks, json.transitions);
-  const tunnelWalls = buildTunnelWalls(json.widthBlocks, json.transitions);
+  const tunnelWalls = buildTunnelWalls(json.widthBlocks, json.heightBlocks, json.transitions);
 
   const interiorWalls: RoomWallDef[] = json.interiorWalls.map(w => ({
     xBlock: w.xBlock,
@@ -125,7 +196,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
     hBlock: w.hBlock,
     isPlatformFlag: w.isPlatform ? (1 as const) : (0 as const),
     platformEdge: w.platformEdge,
-    blockTheme: w.blockTheme,
+    blockTheme: blockThemeRefToTheme(w.blockThemeId) ?? w.blockTheme,
     rampOrientation: w.rampOrientation,
     isPillarHalfWidthFlag: w.isPillarHalfWidth ? (1 as const) : (0 as const),
   }));
@@ -240,7 +311,8 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
   };
 
   // Propagate optional theme/background fields
-  if (json.blockTheme) room.blockTheme = json.blockTheme;
+  const roomBlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme;
+  if (roomBlockTheme) room.blockTheme = roomBlockTheme;
   if (json.backgroundId) room.backgroundId = json.backgroundId;
   if (json.lightingEffect) room.lightingEffect = json.lightingEffect;
   const resolvedSongId = parseSongId(json.songId);
@@ -268,11 +340,52 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
     }));
   }
 
+  if (json.dustPiles && json.dustPiles.length > 0) {
+    room.dustPiles = json.dustPiles.map(p => ({
+      xBlock: p.xBlock,
+      yBlock: p.yBlock,
+      dustCount: p.dustCount,
+      spreadBlocks: p.spreadBlocks ?? 0,
+    }));
+  }
+
+  if (json.fireflyAreas && json.fireflyAreas.length > 0) {
+    room.fireflyAreas = json.fireflyAreas.map(a => ({
+      xBlock: a.xBlock,
+      yBlock: a.yBlock,
+      wBlock: a.wBlock,
+      hBlock: a.hBlock,
+      count: a.count,
+    }));
+  }
+
   if (json.decorations && json.decorations.length > 0) {
     room.decorations = json.decorations.map(d => ({
       xBlock: d.xBlock,
       yBlock: d.yBlock,
       kind: d.kind,
+    }));
+  }
+
+  if (json.ambientLightDirection) {
+    room.ambientLightDirection = json.ambientLightDirection;
+  }
+  if (json.ambientLightBlockers && json.ambientLightBlockers.length > 0) {
+    room.ambientLightBlockers = json.ambientLightBlockers.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+      isDark: b.isDark,
+    }));
+  }
+  if (json.lightSources && json.lightSources.length > 0) {
+    room.lightSources = json.lightSources.map(l => ({
+      xBlock: l.xBlock,
+      yBlock: l.yBlock,
+      radiusBlocks: l.radiusBlocks,
+      colorR: l.colorR,
+      colorG: l.colorG,
+      colorB: l.colorB,
+      brightnessPct: l.brightnessPct,
     }));
   }
 
@@ -282,11 +395,12 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
 // ── Async loader — fetches room JSON files at startup ────────────────────────
 
 /**
- * Fetches the room manifest and all referenced JSON room files from CAMPAIGNS/<CAMPAIGN_ID>/ROOMS/.
+ * Fetches the room manifest plus any discovered JSON room files from CAMPAIGNS/<CAMPAIGN_ID>/ROOMS/.
  * Returns a Map of room ID → RoomDef.
  *
- * If the manifest or any room file fails to load, the error is logged and that
- * room is skipped (the game can still start with whatever rooms loaded successfully).
+ * The manifest is an ordering hint rather than an exclusive list. Files found
+ * by the Vite room glob are appended when they are missing from manifest.json.
+ * If any room file fails to load, the error is logged and that room is skipped.
  */
 export async function loadRoomJsonFiles(): Promise<Map<string, RoomDef>> {
   const rooms = new Map<string, RoomDef>();
@@ -307,6 +421,10 @@ export async function loadRoomJsonFiles(): Promise<Map<string, RoomDef>> {
   }
 
   const uniqueBasePaths = [...new Set(basePathCandidates)];
+  const campaignFolderNames = meta
+    ? [...new Set([activeCampaignId, meta.folderName])]
+    : [activeCampaignId];
+  const discoveredFilenames = discoverRoomFilenames(campaignFolderNames);
 
   let manifest: string[] | null = null;
   let roomsBasePath = preferredBasePath;
@@ -327,12 +445,18 @@ export async function loadRoomJsonFiles(): Promise<Map<string, RoomDef>> {
   }
 
   if (manifest === null) {
-    console.error('[roomJsonLoader] Failed to fetch rooms manifest from all known campaign paths:', uniqueBasePaths);
-    return rooms;
+    if (discoveredFilenames.length === 0) {
+      console.error('[roomJsonLoader] Failed to fetch rooms manifest and no room files were discovered for campaign paths:', uniqueBasePaths);
+      return rooms;
+    }
+    roomsBasePath = meta ? getCampaignRoomsBasePath(meta.folderName) : preferredBasePath;
+    console.warn('[roomJsonLoader] Failed to fetch rooms manifest; using discovered room files:', discoveredFilenames);
   }
 
+  const roomFilenames = mergeManifestAndDiscoveredRooms(manifest, discoveredFilenames);
+
   // Fetch all room files in parallel
-  const fetches = manifest.map(async (filename) => {
+  const fetches = roomFilenames.map(async (filename) => {
     try {
       const resp = await fetch(`${roomsBasePath}/${filename}`);
       if (!resp.ok) {

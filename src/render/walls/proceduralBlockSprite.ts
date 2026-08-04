@@ -23,6 +23,24 @@
 
 import type { BlockShapeName } from './blockSpriteCatalog';
 import { TEMPLATE_URLS, getBaseSpriteProbePool } from './blockSpriteCatalog';
+import {
+  applyOrganicEdgeShading,
+  OPEN_AIR_SIDE_N,
+  OPEN_AIR_SIDE_E,
+  OPEN_AIR_SIDE_S,
+  OPEN_AIR_SIDE_W,
+  OPEN_AIR_ALL_SIDES,
+} from './blockEdgeShading';
+
+// Re-export open-air side constants so callers (blockSpriteRenderer.ts) do not
+// need to change their import paths.
+export {
+  OPEN_AIR_SIDE_N,
+  OPEN_AIR_SIDE_E,
+  OPEN_AIR_SIDE_S,
+  OPEN_AIR_SIDE_W,
+  OPEN_AIR_ALL_SIDES,
+};
 
 // ── Image loading ─────────────────────────────────────────────────────────────
 
@@ -57,8 +75,12 @@ function _cacheKey(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
+  openAirSidesMask: number,
+  worldOriginXWorld: number,
+  worldOriginYWorld: number,
+  seed: number,
 ): string {
-  return `${baseUrl}|${templateUrl}|${widthPx}|${heightPx}|${flipX ? 1 : 0}${flipY ? 1 : 0}${rotStep}`;
+  return `${baseUrl}|${templateUrl}|${widthPx}|${heightPx}|${flipX ? 1 : 0}${flipY ? 1 : 0}${rotStep}|${openAirSidesMask}|${worldOriginXWorld}|${worldOriginYWorld}|${seed}`;
 }
 
 /**
@@ -76,11 +98,16 @@ function _generateSprite(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
+  openAirSidesMask: number,
+  worldOriginXWorld: number,
+  worldOriginYWorld: number,
+  seed: number,
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width  = widthPx;
   canvas.height = heightPx;
   const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
 
   // Step 1: draw base texture (always upright, never transformed).
   ctx.drawImage(base, 0, 0, widthPx, heightPx);
@@ -101,6 +128,11 @@ function _generateSprite(
   }
   ctx.globalCompositeOperation = 'source-over';
 
+  // Step 3: apply organic edge shading (shared with folder-based sprites).
+  // Pixels near open air are darkened via multiply, with smooth world-space
+  // noise variation for an organic look across connected blocks.
+  applyOrganicEdgeShading(ctx, widthPx, heightPx, openAirSidesMask, worldOriginXWorld, worldOriginYWorld, seed);
+
   return canvas;
 }
 
@@ -120,8 +152,12 @@ export function getProceduralSprite(
   flipX: boolean,
   flipY: boolean,
   rotStep: number,
+  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
+  worldOriginXWorld: number = 0,
+  worldOriginYWorld: number = 0,
+  seed: number = 0,
 ): HTMLCanvasElement | null {
-  const key = _cacheKey(baseUrl, templateUrl, widthPx, heightPx, flipX, flipY, rotStep);
+  const key = _cacheKey(baseUrl, templateUrl, widthPx, heightPx, flipX, flipY, rotStep, openAirSidesMask, worldOriginXWorld, worldOriginYWorld, seed);
   const cached = _spriteCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -129,7 +165,7 @@ export function getProceduralSprite(
   const template = _loadImg(templateUrl);
   if (!_isReady(base) || !_isReady(template)) return null;
 
-  const result = _generateSprite(base, template, widthPx, heightPx, flipX, flipY, rotStep);
+  const result = _generateSprite(base, template, widthPx, heightPx, flipX, flipY, rotStep, openAirSidesMask, worldOriginXWorld, worldOriginYWorld, seed);
   _spriteCache.set(key, result);
   return result;
 }
@@ -273,13 +309,14 @@ export function getBlockSprite1x1(
   material: string,
   blockSizePx: number,
   seed: number,
+  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, false);
   if (pool.length === 0) return null;
   const hash    = hashTilePosition(col, row, seed);
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 block'], blockSizePx, blockSizePx, false, false, 0);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 block'], blockSizePx, blockSizePx, false, false, 0, openAirSidesMask, col * blockSizePx, row * blockSizePx, seed);
 }
 
 /**
@@ -298,6 +335,7 @@ export function getBlockSprite2x2(
   material: string,
   blockSizePx: number,
   seed: number,
+  openAirSidesMask: number = OPEN_AIR_ALL_SIDES,
 ): HTMLCanvasElement | null {
   const pool = getBaseSpriteProbePool(material, true);
   if (pool.length === 0) return null;
@@ -305,7 +343,7 @@ export function getBlockSprite2x2(
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
   const dim = blockSizePx * 2;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 block'], dim, dim, false, false, 0);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 block'], dim, dim, false, false, 0, openAirSidesMask, col * blockSizePx, row * blockSizePx, seed);
 }
 
 /**
@@ -332,7 +370,8 @@ export function getPlatformSprite1x1(
   const baseUrl = _pickFromPool(pool, hash);
   if (baseUrl === null) return null;
   const [flipX, flipY, rotStep] = _platformEdgeToTransform(platformEdge);
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 platform'], blockSizePx, blockSizePx, flipX, flipY, rotStep);
+  // Platforms are always at the boundary of solid regions; use all-sides-open default.
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['1x1 platform'], blockSizePx, blockSizePx, flipX, flipY, rotStep, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed);
 }
 
 /**
@@ -360,7 +399,7 @@ export function getPlatformSprite2x2(
   if (baseUrl === null) return null;
   const [flipX, flipY, rotStep] = _platformEdgeToTransform(platformEdge);
   const dim = blockSizePx * 2;
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 platform'], dim, dim, flipX, flipY, rotStep);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS['2x2 platform'], dim, dim, flipX, flipY, rotStep, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed);
 }
 
 /**
@@ -410,5 +449,5 @@ export function getRampSprite(
   }
 
   const [flipX, flipY] = _rampOriToFlips(orientation);
-  return getProceduralSprite(baseUrl, TEMPLATE_URLS[shapeName], widthPx, heightPx, flipX, flipY, 0);
+  return getProceduralSprite(baseUrl, TEMPLATE_URLS[shapeName], widthPx, heightPx, flipX, flipY, 0, OPEN_AIR_ALL_SIDES, col * blockSizePx, row * blockSizePx, seed);
 }

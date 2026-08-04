@@ -16,6 +16,7 @@ import {
   getInfluenceCircleOpacity, setInfluenceCircleOpacity,
   getInfluenceHighlightWidth, setInfluenceHighlightWidth,
   setMusicVolume, setSfxVolume,
+  setGraphicsQuality,
 } from './renderSettings';
 import { makeButton, makeSlider, makeTabButton, GOLD, PANEL_BORDER } from './helpers';
 
@@ -158,14 +159,17 @@ export function showPauseMenu(
 
       const lowBtn = makeQualityButton('Low', state.graphicsQuality === 'low', () => {
         state.graphicsQuality = 'low';
+        setGraphicsQuality('low');
         buildOptionsContent();
       });
       const medBtn = makeQualityButton('Med', state.graphicsQuality === 'med', () => {
         state.graphicsQuality = 'med';
+        setGraphicsQuality('med');
         buildOptionsContent();
       });
       const highBtn = makeQualityButton('High', state.graphicsQuality === 'high', () => {
         state.graphicsQuality = 'high';
+        setGraphicsQuality('high');
         buildOptionsContent();
       });
       btnRow.appendChild(lowBtn);
@@ -208,6 +212,14 @@ export function showPauseMenu(
   // ── Main button column ────────────────────────────────────────────────────
   const mainButtons = document.createElement('div');
 
+  // Resume (top)
+  const resumeBtn = makeButton('Resume', () => {
+    destroy();
+    callbacks.onResume();
+  });
+  resumeBtn.style.borderColor = GOLD;
+  mainButtons.appendChild(resumeBtn);
+
   // Options
   const optionsBtn = makeButton('Options', () => {
     mainButtons.style.display = 'none';
@@ -215,13 +227,6 @@ export function showPauseMenu(
     buildOptionsContent();
   });
   mainButtons.appendChild(optionsBtn);
-
-  // Exit to Main Menu
-  const exitBtn = makeButton('Exit to Main Menu', () => {
-    destroy();
-    callbacks.onExitToMainMenu();
-  });
-  mainButtons.appendChild(exitBtn);
 
   // Debug toggle
   const debugBtn = makeButton(
@@ -233,14 +238,33 @@ export function showPauseMenu(
   );
   mainButtons.appendChild(debugBtn);
 
-  // Resume (bottom)
-  const resumeBtn = makeButton('Resume', () => {
-    destroy();
-    callbacks.onResume();
+  // Exit to Main Menu (bottom) — requires a second click for confirmation
+  let exitConfirmPending = false;
+  let exitConfirmTimerId: ReturnType<typeof setTimeout> | undefined;
+  const exitBtn = makeButton('Exit to Main Menu', () => {
+    if (!exitConfirmPending) {
+      exitConfirmPending = true;
+      exitBtn.textContent = 'Confirm Exit?';
+      exitBtn.style.color = '#ff6b6b';
+      exitBtn.style.borderColor = '#ff6b6b';
+      // Auto-cancel confirmation after 3 seconds if the player doesn't confirm
+      exitConfirmTimerId = setTimeout(() => {
+        // Guard: if the menu was destroyed while we were waiting, do nothing.
+        if (exitConfirmTimerId === undefined) return;
+        if (exitConfirmPending) {
+          exitConfirmPending = false;
+          exitConfirmTimerId = undefined;
+          exitBtn.textContent = 'Exit to Main Menu';
+          exitBtn.style.color = '';
+          exitBtn.style.borderColor = '';
+        }
+      }, 3000);
+    } else {
+      destroy();
+      callbacks.onExitToMainMenu();
+    }
   });
-  resumeBtn.style.marginTop = '8px';
-  resumeBtn.style.borderColor = GOLD;
-  mainButtons.appendChild(resumeBtn);
+  mainButtons.appendChild(exitBtn);
 
   container.appendChild(mainButtons);
   container.appendChild(optionsPanel);
@@ -259,6 +283,10 @@ export function showPauseMenu(
 
   function destroy(): void {
     window.removeEventListener('keydown', onKey);
+    if (exitConfirmTimerId !== undefined) {
+      clearTimeout(exitConfirmTimerId);
+      exitConfirmTimerId = undefined;
+    }
     if (overlay.parentElement) overlay.parentElement.removeChild(overlay);
   }
 

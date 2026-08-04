@@ -25,96 +25,49 @@ import {
   getBlockSprite2x2,
   getPlatformSprite1x1,
   getRampSprite,
+  OPEN_AIR_SIDE_N,
+  OPEN_AIR_SIDE_E,
+  OPEN_AIR_SIDE_S,
+  OPEN_AIR_SIDE_W,
 } from './proceduralBlockSprite';
-
-// ── Sprite loading ──────────────────────────────────────────────────────────
-
-/** Module-level image cache — populated once, reused forever. */
-const _imageCache = new Map<string, HTMLImageElement>();
-
-function _loadImage(src: string): HTMLImageElement {
-  const cached = _imageCache.get(src);
-  if (cached !== undefined) return cached;
-  const img = new Image();
-  img.src = src;
-  _imageCache.set(src, img);
-  return img;
-}
-
-function isSpriteReady(img: HTMLImageElement): boolean {
-  return img.complete && img.naturalWidth > 0;
-}
-
-/** Sprite set for a single world theme. */
-interface BlockSpriteSet {
-  block:  HTMLImageElement;
-  single: HTMLImageElement;
-  edge:   HTMLImageElement;
-  corner: HTMLImageElement;
-  end:    HTMLImageElement;
-  vertex: HTMLImageElement;
-}
-
-// ── Block-theme sprite pre-loads ────────────────────────────────────────────
-
-// Brown Rock sprites (single flat sprite, no auto-tiling variants)
-const _brownRockSprite8 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_8x8.png');
-const _brownRockSprite16 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_16x16.png');
-const _brownRockSprite32 = _loadImage('SPRITES/BLOCKS/brownRock/brownRock_32x32.png');
-
-// Dirt sprites (edge/corner auto-tiling at 8x8)
-const _dirtBlockSprite = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8.png');
-const _dirtEdgeSprite  = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8_edge.png');
-const _dirtCornerSprite = _loadImage('SPRITES/BLOCKS/dirt/dirt_8x8_corner.png');
-const _dirtSprite16 = _loadImage('SPRITES/BLOCKS/dirt/dirt_16x16.png');
-
-/** Cache of loaded sprite sets keyed by worldNumber (for legacy world-number mode). */
-const _spriteSets = new Map<number, BlockSpriteSet>();
-
-/**
- * Returns the sprite set for a given world number, loading on first access.
- *
- * W-0, W-1, W-2 use simple filenames (block.png, corner.png, …).
- * W-3 through W-9 use prefixed filenames (world_N_block.png, …).
- */
-function getBlockSpriteSet(worldNumber: number): BlockSpriteSet {
-  const cached = _spriteSets.get(worldNumber);
-  if (cached !== undefined) return cached;
-
-  const dir = `SPRITES/WORLDS/W-${worldNumber}/blocks`;
-  let sprites: BlockSpriteSet;
-  if (worldNumber === 0) {
-    sprites = {
-      block:  _brownRockSprite8,
-      single: _brownRockSprite8,
-      edge:   _brownRockSprite8,
-      corner: _brownRockSprite8,
-      end:    _brownRockSprite8,
-      vertex: _brownRockSprite8,
-    };
-  } else if (worldNumber <= 2) {
-    sprites = {
-      block:  _loadImage(`${dir}/block.png`),
-      single: _loadImage(`${dir}/single.png`),
-      edge:   _loadImage(`${dir}/edge.png`),
-      corner: _loadImage(`${dir}/corner.png`),
-      end:    _loadImage(`${dir}/end.png`),
-      vertex: _loadImage(`${dir}/vertex.png`),
-    };
-  } else {
-    const prefix = `world_${worldNumber}_block`;
-    sprites = {
-      block:  _loadImage(`${dir}/${prefix}.png`),
-      single: _loadImage(`${dir}/${prefix}_single.png`),
-      edge:   _loadImage(`${dir}/${prefix}_edge.png`),
-      corner: _loadImage(`${dir}/${prefix}_corner.png`),
-      end:    _loadImage(`${dir}/${prefix}_end.png`),
-      vertex: _loadImage(`${dir}/${prefix}_vertex.png`),
-    };
-  }
-  _spriteSets.set(worldNumber, sprites);
-  return sprites;
-}
+import {
+  buildAmbientDepths,
+  getDarknessAlphaFromAirDepth,
+} from './ambientLightDepths';
+import {
+  isSpriteReady,
+  BlockSpriteSet,
+  getBlockSpriteSet,
+  getFullSpriteFor2x2,
+  themeSupports2x2,
+  getSpriteForLegacyTheme,
+  themeToProceduralMaterial,
+} from './blockSpriteSets';
+import {
+  isFolderBasedTheme,
+  getTheme1x1Sprite,
+  getTheme2x2Sprite,
+  getTheme1x1SpriteShaded,
+  getTheme2x2SpriteShaded,
+} from './folderBlockThemes';
+import {
+  CachedWallLayout,
+  wallTileKey,
+  isWallOccupied,
+  getWallLayoutCache,
+} from './blockWallLayoutCache';
+import {
+  TILE_MASK_N,
+  TILE_MASK_E,
+  TILE_MASK_S,
+  TILE_MASK_W,
+  TILE_TABLE,
+  drawFallbackTile,
+  drawVertexOverlays,
+  drawPlatformLine,
+  drawRampTriangle,
+  applyRampClipPath,
+} from './wallTileDrawHelpers';
 
 /** Active sprite set for world-number mode. */
 let _sprites: BlockSpriteSet = getBlockSpriteSet(0);
@@ -140,6 +93,14 @@ let _activeAmbientBlockerKeys: ReadonlySet<string> = new Set();
  * when rebuilding the wall-layout cache. Set to `''` when the set is empty.
  */
 let _activeAmbientBlockerSig = '';
+
+/**
+ * Dark ambient-light blocker tile keys (`"col,row"`).
+ * These cells draw a solid black overlay over the room background,
+ * hiding secret areas from view.  They also participate in the normal
+ * ambient-light propagation block (same as clear blockers).
+ */
+let _activeDarkBlockerKeys: ReadonlySet<string> = new Set();
 
 /**
  * Set the active world number for block sprite rendering.
@@ -213,542 +174,54 @@ export function setActiveBlockLighting(
   _invalidateBakedWallCanvas();
 }
 
-function _getBrownRockSpriteForBlockSize(blockSizePx: number): HTMLImageElement {
-  if (blockSizePx >= 32) return _brownRockSprite32;
-  if (blockSizePx >= 16) return _brownRockSprite16;
-  return _brownRockSprite8;
-}
-
-function _getDirtSprite(variant: TileVariant): HTMLImageElement {
-  switch (variant) {
-    case 'edge':   return _dirtEdgeSprite;
-    case 'corner': return _dirtCornerSprite;
-    default:       return _dirtBlockSprite;
-  }
+/**
+ * Sets the active set of dark ambient-light blocker tile keys.
+ * Dark blockers are rendered as solid black overlays over the room background
+ * before the wall sprites are drawn.  Call this when entering a room (same
+ * timing as {@link setActiveBlockLighting}).
+ *
+ * @param darkBlockerKeys  Set of `"col,row"` tile keys for dark blockers.
+ *                         Pass `undefined` or an empty set to clear.
+ */
+export function setActiveDarkAmbientBlockers(darkBlockerKeys?: ReadonlySet<string>): void {
+  _activeDarkBlockerKeys = darkBlockerKeys ?? new Set();
 }
 
 /**
- * Returns the 2×2 full sprite for themes that use a single dedicated 16×16
- * texture (brownRock, dirt).
+ * Draws a solid black rectangle over every dark ambient-light blocker cell.
+ * Call this after the procedural background effects and before rendering wall
+ * sprites so the darkness layer covers the background but not the geometry.
+ *
+ * @param ctx          The 2D canvas rendering context.
+ * @param offsetXPx    Horizontal pixel offset (camera translation).
+ * @param offsetYPx    Vertical pixel offset (camera translation).
+ * @param zoom         Scale factor (world units → screen pixels).
+ * @param blockSizePx  Block/tile size in world units (e.g. BLOCK_SIZE_SMALL = 8).
  */
-function _getFullSpriteFor2x2(theme: BlockTheme | null, blockSizePx: number): HTMLImageElement | null {
-  if (blockSizePx !== 8) return null;
-  if (theme === 'brownRock') return _brownRockSprite16;
-  if (theme === 'dirt') return _dirtSprite16;
-  return null;
-}
-
-/** Returns true if the active theme supports 2×2 full-sprite rendering. */
-function _themeSupports2x2(theme: BlockTheme | null, blockSizePx: number): boolean {
-  if (blockSizePx !== 8) return false;
-  return theme === 'brownRock' || theme === 'dirt' || theme === 'blackRock';
-}
-
-/**
- * Returns the sprite image for a non-blackRock block cell (brownRock, dirt)
- * based on the auto-tile variant.
- */
-function _getSpriteForLegacyTheme(
-  theme: BlockTheme,
-  variant: TileVariant,
+export function renderDarkAmbientBlockerOverlay(
+  ctx: CanvasRenderingContext2D,
+  offsetXPx: number,
+  offsetYPx: number,
+  zoom: number,
   blockSizePx: number,
-): HTMLImageElement {
-  switch (theme) {
-    case 'brownRock':
-      return _getBrownRockSpriteForBlockSize(blockSizePx);
-    case 'dirt':
-      return _getDirtSprite(variant);
-    default:
-      return _getBrownRockSpriteForBlockSize(blockSizePx);
-  }
-}
-
-/**
- * Maps a BlockTheme to the material name string used by the procedural sprite
- * system.  Returns null when the theme is not supported by that system.
- */
-function _themeToProceduralMaterial(theme: BlockTheme | null, legacyWorldNumber: number): string | null {
-  if (theme === 'blackRock') return 'blackRock';
-  if (theme === null && legacyWorldNumber === 0) return 'blackRock';
-  return null;
-}
-
-// ── Tile-spec lookup table ───────────────────────────────────────────────────
-
-type TileVariant = 'block' | 'single' | 'edge' | 'corner' | 'end';
-
-interface TileSpec {
-  readonly variant:     TileVariant;
-  /** Canvas rotation in radians applied around the tile centre. */
-  readonly rotationRad: number;
-}
-
-// Neighbor mask bit assignments: bit0=N, bit1=E, bit2=S, bit3=W
-const _N = 1;
-const _E = 2;
-const _S = 4;
-const _W = 8;
-const _HALF_PI = Math.PI * 0.5;
-const _PI      = Math.PI;
-
-/**
- * 16-entry lookup table indexed by 4-bit neighbor mask.
- *
- * Sprite default orientations (rotation 0):
- *  - end:    cap opening faces north (south neighbor is connected)
- *  - corner: SW corner exposed (N+E solid, NE open → rotate 0 for S+W)
- *  - edge:   south face exposed (N+E+W solid)
- */
-const _TILE_TABLE: TileSpec[] = ((): TileSpec[] => {
-  const t: TileSpec[] = new Array(16);
-
-  const set = (mask: number, variant: TileVariant, rotationRad: number): void => {
-    t[mask] = { variant, rotationRad };
-  };
-
-  // 0 neighbors — isolated
-  set(0,                 'single', 0);
-
-  // 1 neighbor — end cap; default opening faces south (S is connected),
-  // rotate to face the connected side.
-  set(_S,                'end', 0);           // S solid → no rotation
-  set(_N,                'end', _PI);          // N solid → 180°
-  set(_E,                'end', -_HALF_PI);   // E solid → -90°
-  set(_W,                'end', _HALF_PI);    // W solid → +90°
-
-  // 2 opposite neighbors — treat as interior (tunnel)
-  set(_N | _S,           'block', 0);
-  set(_E | _W,           'block', 0);
-
-  // 2 adjacent neighbors — corner; default: S+W solid, NE exposed
-  set(_S | _W,           'corner', 0);
-  set(_N | _E,           'corner', _PI);
-  set(_S | _E,           'corner', -_HALF_PI);
-  set(_N | _W,           'corner', _HALF_PI);
-
-  // 3 neighbors — edge; default sprite faces NORTH, so we add π to orient correctly.
-  set(_N | _E | _W,      'edge', _PI);          // S exposed
-  set(_N | _E | _S,      'edge', -_HALF_PI);    // W exposed
-  set(_N | _S | _W,      'edge', _HALF_PI);     // E exposed
-  set(_E | _S | _W,      'edge', 0);            // N exposed
-
-  // 4 neighbors — fully surrounded
-  set(_N | _E | _S | _W, 'block', 0);
-
-  return t;
-})();
-
-// ── Occupancy grid ───────────────────────────────────────────────────────────
-
-interface CachedTileCoord {
-  readonly key: string;
-  readonly col: number;
-  readonly row: number;
-  /** platformEdge for platform tiles: 0=top, 1=bottom, 2=left, 3=right. Only meaningful for platformTiles. */
-  readonly platformEdge: number;
-}
-
-interface RampWallInfo {
-  readonly wallIndex: number;
-}
-
-interface HalfPillarWallInfo {
-  readonly wallIndex: number;
-}
-
-/**
- * Unit 2-D vector associated with each {@link AmbientLightDirection} value.
- *
- * The vector points in the direction light TRAVELS (e.g. `'down-right'` →
- * (+1, +1) normalised, meaning light enters the room from the upper-left
- * and moves toward the lower-right). The `'omni'` value returns (0,0),
- * signalling the solver to skip directional biasing.
- */
-function _ambientDirectionVector(dir: AmbientLightDirection): { dx: number; dy: number } {
-  switch (dir) {
-    case 'omni':       return { dx:  0, dy:  0 };
-    case 'down':       return { dx:  0, dy:  1 };
-    case 'down-right': return { dx:  1, dy:  1 };
-    case 'down-left':  return { dx: -1, dy:  1 };
-    case 'up':         return { dx:  0, dy: -1 };
-    case 'up-right':   return { dx:  1, dy: -1 };
-    case 'up-left':    return { dx: -1, dy: -1 };
-    case 'left':       return { dx: -1, dy:  0 };
-    case 'right':      return { dx:  1, dy:  0 };
-  }
-}
-
-interface CachedWallLayout {
-  signature: string;
-  blockSizePx: number;
-  occupied: Set<string>;
-  platformOccupied: Set<string>;
-  occupiedTiles: CachedTileCoord[];
-  platformTiles: CachedTileCoord[];
-  /** Ramp walls (rampOrientationIndex !== 255): rendered as filled triangles. */
-  rampWalls: RampWallInfo[];
-  /** Half-pillar walls (isPillarHalfWidthFlag === 1): rendered narrow. */
-  halfPillarWalls: HalfPillarWallInfo[];
-  /** Per-tile theme: maps tile key → BlockTheme (null = use room default). */
-  tileTheme: Map<string, BlockTheme | null>;
-  /**
-   * Per-(room-size × direction × blockers) cache of computed ambient depths.
-   * Keyed by `"widthxheight|direction|blockerSig"` so a room that keeps the
-   * same wall layout but toggles ambient direction or blocker edits reuses
-   * the same outer layout cache.
-   */
-  ambientDepthsByKey: Map<string, Map<string, number>>;
-  /**
-   * Maps top-left tile key of each 2×2 solid wall to its wall theme index.
-   * Computed once per layout and reused across frames to avoid per-frame Map allocation.
-   */
-  solid2x2Map: Map<string, number>;
-}
-
-let _cachedWallLayout: CachedWallLayout | null = null;
-
-/** Returns the string key for a tile grid coordinate. */
-function _tileKey(col: number, row: number): string {
-  return `${col},${row}`;
-}
-
-/** Returns true if the cell at (col, row) is occupied by a solid wall block. */
-function _isOccupied(occupied: Set<string>, col: number, row: number): boolean {
-  return occupied.has(_tileKey(col, row));
-}
-
-function _isInsideActiveRoom(col: number, row: number): boolean {
-  return col >= 0 && col < _activeRoomWidthBlocks && row >= 0 && row < _activeRoomHeightBlocks;
-}
-
-/**
- * Unified ambient-light depth solver.
- *
- * Two-phase algorithm that replaces the legacy split between `'DEFAULT'`
- * (omni BFS from any air-touching solid) and `'Above'` (vertical scan only):
- *
- * 1. **Lit-air flood**: compute the set of in-room AIR cells that are
- *    "connected to the sky". Seeds are air cells on a room edge that faces
- *    the ambient-light direction (or every edge, for `'omni'`). The flood
- *    propagates through empty cells only, skipping solids and skipping
- *    `ambientBlockers`. When a direction is set, a cell only propagates into
- *    neighbours whose offset dot-producted with the direction vector is
- *    `≥ 0`, so light naturally spills in a diagonal cone instead of bending
- *    around arbitrary corners.
- *
- * 2. **Solid depth BFS**: every solid cell 8-adjacent to a lit-air cell is
- *    depth 0 ("directly exposed"). BFS outward through adjacent solids
- *    assigns each deeper solid an incrementing depth, which drives the
- *    exponential darkness tint in {@link _getDarknessAlphaFromAirDepth}.
- *
- * Air cells inside an enclosed/blocked pocket never enter the lit-air set, so
- * solid walls adjacent to them stay at `maxFallbackDepth` (fully dark). When
- * a breakable wall is destroyed its tile becomes empty, the wall-layout
- * signature changes, and this function is re-run — light then spills in
- * naturally on the next bake. See `ambientLightBlockers` docs in
- * `roomDef.ts` for the full authoring model.
- */
-function _buildAmbientDepths(
-  occupied: Set<string>,
-  blockers: ReadonlySet<string>,
-  direction: AmbientLightDirection,
-): Map<string, number> {
-  const depths = new Map<string, number>();
-  if (_activeRoomWidthBlocks <= 0 || _activeRoomHeightBlocks <= 0) return depths;
-
-  const { dx: directionVectorX, dy: directionVectorY } = _ambientDirectionVector(direction);
-  const isOmni = directionVectorX === 0 && directionVectorY === 0;
-
-  // ── Phase 1: flood-fill "lit air" cells ──────────────────────────────────
-  // `litAir` tracks which empty cells are connected to the sky.
-  const litAir = new Set<string>();
-  const airQueueCols: number[] = [];
-  const airQueueRows: number[] = [];
-  let airQueueIndex = 0;
-
-  const pushAirSeed = (c: number, r: number): void => {
-    if (!_isInsideActiveRoom(c, r)) return;
-    const key = _tileKey(c, r);
-    if (litAir.has(key)) return;
-    if (occupied.has(key)) return;       // solid: not a sky-seed
-    if (blockers.has(key)) return;       // authored blocker: opaque to ambient
-    litAir.add(key);
-    airQueueCols.push(c);
-    airQueueRows.push(r);
-  };
-
-  // Seed the "sky side" of the room.
-  //
-  // For `'omni'` mode we preserve the legacy `'DEFAULT'` semantics by seeding
-  // EVERY non-blocker air cell — so a fully-enclosed room with only interior
-  // air still has lit walls around the air, and authored hidden pockets are
-  // created exclusively by painting `ambientLightBlockers` over the pocket's
-  // air cells (those cells fail the `!blockers.has(key)` check and stay dark).
-  //
-  // For a directional mode, seeds come from the edges facing the sky (i.e.
-  // the sides opposite to the direction vector); the flood then propagates
-  // inward through connected air, so a hidden pocket walled off from the
-  // sky-facing edge naturally stays dark.
-  if (isOmni) {
-    for (let r = 0; r < _activeRoomHeightBlocks; r++) {
-      for (let c = 0; c < _activeRoomWidthBlocks; c++) {
-        const key = _tileKey(c, r);
-        if (occupied.has(key)) continue;
-        if (blockers.has(key)) continue;
-        litAir.add(key);
-      }
-    }
-    // Omni mode doesn't need to flood — every eligible air cell is already
-    // in `litAir` — so skip the queue-based propagation below.
-  } else {
-    const seedTop    = directionVectorY > 0;  // light moves downward ⇒ enters from top
-    const seedBottom = directionVectorY < 0;
-    const seedLeft   = directionVectorX > 0;
-    const seedRight  = directionVectorX < 0;
-
-    if (seedTop) {
-      for (let c = 0; c < _activeRoomWidthBlocks; c++) pushAirSeed(c, 0);
-    }
-    if (seedBottom) {
-      for (let c = 0; c < _activeRoomWidthBlocks; c++) pushAirSeed(c, _activeRoomHeightBlocks - 1);
-    }
-    if (seedLeft) {
-      for (let r = 0; r < _activeRoomHeightBlocks; r++) pushAirSeed(0, r);
-    }
-    if (seedRight) {
-      for (let r = 0; r < _activeRoomHeightBlocks; r++) pushAirSeed(_activeRoomWidthBlocks - 1, r);
-    }
-  }
-
-  // Flood-fill through empty cells. Directional bias: only step into a
-  // neighbour whose offset has a non-negative dot product with the direction
-  // vector (i.e. light keeps travelling generally with the direction). The
-  // check allows perpendicular spread for a natural soft cone.
-  while (airQueueIndex < airQueueCols.length) {
-    const col = airQueueCols[airQueueIndex];
-    const row = airQueueRows[airQueueIndex];
-    airQueueIndex++;
-
-    for (let ny = -1; ny <= 1; ny++) {
-      for (let nx = -1; nx <= 1; nx++) {
-        if (nx === 0 && ny === 0) continue;
-        if (!isOmni) {
-          // dot(neighbourOffset, direction) >= 0 — skip stepping "uphill"
-          const dot = nx * directionVectorX + ny * directionVectorY;
-          if (dot < 0) continue;
-        }
-        const c = col + nx;
-        const r = row + ny;
-        if (!_isInsideActiveRoom(c, r)) continue;
-        const key = _tileKey(c, r);
-        if (litAir.has(key)) continue;
-        if (occupied.has(key)) continue;
-        if (blockers.has(key)) continue;
-        litAir.add(key);
-        airQueueCols.push(c);
-        airQueueRows.push(r);
-      }
-    }
-  }
-
-  // ── Phase 2: BFS depth into solid cells from lit-air neighbours ─────────
-  const solidQueueCols: number[] = [];
-  const solidQueueRows: number[] = [];
-  const solidQueueDepths: number[] = [];
-  let qIndex = 0;
-
-  for (const key of occupied) {
+): void {
+  if (_activeDarkBlockerKeys.size === 0) return;
+  const tileSizePx = blockSizePx * zoom;
+  ctx.fillStyle = '#000000';
+  for (const key of _activeDarkBlockerKeys) {
     const commaIdx = key.indexOf(',');
     const col = parseInt(key.slice(0, commaIdx), 10);
     const row = parseInt(key.slice(commaIdx + 1), 10);
-    if (!_isInsideActiveRoom(col, row)) continue;
-
-    // Solid cell is "exposed" if any 8-neighbour is a lit-air cell.
-    let touchesLitAir = false;
-    for (let dy = -1; dy <= 1 && !touchesLitAir; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nc = col + dx;
-        const nr = row + dy;
-        if (!_isInsideActiveRoom(nc, nr)) continue;
-        if (litAir.has(_tileKey(nc, nr))) {
-          touchesLitAir = true;
-          break;
-        }
-      }
-    }
-
-    if (touchesLitAir) {
-      depths.set(key, 0);
-      solidQueueCols.push(col);
-      solidQueueRows.push(row);
-      solidQueueDepths.push(0);
-    }
+    ctx.fillRect(
+      Math.round(col * tileSizePx + offsetXPx),
+      Math.round(row * tileSizePx + offsetYPx),
+      Math.ceil(tileSizePx),
+      Math.ceil(tileSizePx),
+    );
   }
-
-  while (qIndex < solidQueueCols.length) {
-    const col = solidQueueCols[qIndex];
-    const row = solidQueueRows[qIndex];
-    const depth = solidQueueDepths[qIndex];
-    qIndex++;
-
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const nc = col + dx;
-        const nr = row + dy;
-        if (!_isInsideActiveRoom(nc, nr) || !_isOccupied(occupied, nc, nr)) continue;
-        const neighborKey = _tileKey(nc, nr);
-        if (depths.has(neighborKey)) continue;
-        const nextDepth = depth + 1;
-        depths.set(neighborKey, nextDepth);
-        solidQueueCols.push(nc);
-        solidQueueRows.push(nr);
-        solidQueueDepths.push(nextDepth);
-      }
-    }
-  }
-
-  // Solid cells never reached by the flood are authored dark pockets
-  // (enclosed by walls or by a blocker field). Assign the maximum fallback
-  // depth so the darkness tint saturates.
-  const maxFallbackDepth = Math.max(_activeRoomWidthBlocks, _activeRoomHeightBlocks);
-  for (const key of occupied) {
-    const commaIdx = key.indexOf(',');
-    const col = parseInt(key.slice(0, commaIdx), 10);
-    const row = parseInt(key.slice(commaIdx + 1), 10);
-    if (!_isInsideActiveRoom(col, row)) continue;
-    if (!depths.has(key)) depths.set(key, maxFallbackDepth);
-  }
-
-  return depths;
 }
 
-/**
- * Builds and caches occupancy data from wall AABBs in world-space tile coordinates.
- *
- * Using world-space coordinates (instead of screen-space) ensures the tile
- * grid is stable — blocks translate smoothly with the camera offset rather
- * than snapping to screen-aligned grid positions.
- */
-function _buildWallLayoutCache(
-  walls: WallSnapshot,
-  blockSizePx: number,
-): CachedWallLayout {
-  let signature = `${blockSizePx}|${walls.count}`;
-  for (let wi = 0; wi < walls.count; wi++) {
-    signature += `|${walls.xWorld[wi]},${walls.yWorld[wi]},${walls.wWorld[wi]},${walls.hWorld[wi]},${walls.isPlatformFlag[wi]},${walls.platformEdge[wi]},${walls.themeIndex[wi]},${walls.isInvisibleFlag[wi]},${walls.rampOrientationIndex[wi]},${walls.isPillarHalfWidthFlag[wi]}`;
-  }
-
-  if (_cachedWallLayout !== null &&
-      _cachedWallLayout.signature === signature &&
-      _cachedWallLayout.blockSizePx === blockSizePx) {
-    return _cachedWallLayout;
-  }
-
-  const occupied = new Set<string>();
-  const platformOccupied = new Set<string>();
-  const platformEdgeByKey = new Map<string, number>();
-  const tileTheme = new Map<string, BlockTheme | null>();
-  const rampWalls: RampWallInfo[] = [];
-  const halfPillarWalls: HalfPillarWallInfo[] = [];
-
-  for (let wi = 0; wi < walls.count; wi++) {
-    // Skip invisible boundary walls
-    if (walls.isInvisibleFlag[wi] === 1) continue;
-
-    // Ramp walls render as triangles — skip them from the regular tile grid
-    if (walls.rampOrientationIndex[wi] !== 255) {
-      rampWalls.push({ wallIndex: wi });
-      continue;
-    }
-
-    const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
-    const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
-    const colCount = Math.max(1, Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - colStart);
-    const rowCount = Math.max(1, Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - rowStart);
-
-    const wallTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
-      ? indexToBlockTheme(walls.themeIndex[wi])
-      : null;
-
-    // Half-pillar walls: add to normal occupied for lighting/neighbor purposes but
-    // record for separate narrow rendering.
-    const isHalfPillar = walls.isPillarHalfWidthFlag[wi] === 1;
-    if (isHalfPillar) {
-      halfPillarWalls.push({ wallIndex: wi });
-      // Add to occupied so neighbor detection works; these tiles still block movement.
-      for (let r = 0; r < rowCount; r++) {
-        for (let c = 0; c < colCount; c++) {
-          occupied.add(_tileKey(colStart + c, rowStart + r));
-        }
-      }
-      if (wallTheme !== null) {
-        for (let r = 0; r < rowCount; r++) {
-          for (let c = 0; c < colCount; c++) {
-            tileTheme.set(_tileKey(colStart + c, rowStart + r), wallTheme);
-          }
-        }
-      }
-      continue;
-    }
-
-    for (let r = 0; r < rowCount; r++) {
-      for (let c = 0; c < colCount; c++) {
-        const col = colStart + c;
-        const row = rowStart + r;
-        const key = _tileKey(col, row);
-        if (walls.isPlatformFlag[wi] === 1) {
-          platformOccupied.add(key);
-          platformEdgeByKey.set(key, walls.platformEdge[wi]);
-        } else {
-          occupied.add(key);
-        }
-        if (wallTheme !== null) {
-          tileTheme.set(key, wallTheme);
-        }
-      }
-    }
-  }
-
-  const occupiedTiles: CachedTileCoord[] = [];
-  for (const key of occupied) {
-    const commaIdx = key.indexOf(',');
-    occupiedTiles.push({
-      key,
-      col: parseInt(key.slice(0, commaIdx), 10),
-      row: parseInt(key.slice(commaIdx + 1), 10),
-      platformEdge: 0,
-    });
-  }
-
-  const platformTiles: CachedTileCoord[] = [];
-  for (const key of platformOccupied) {
-    const commaIdx = key.indexOf(',');
-    platformTiles.push({
-      key,
-      col: parseInt(key.slice(0, commaIdx), 10),
-      row: parseInt(key.slice(commaIdx + 1), 10),
-      platformEdge: platformEdgeByKey.get(key) ?? 0,
-    });
-  }
-
-  _cachedWallLayout = {
-    signature,
-    blockSizePx,
-    occupied,
-    platformOccupied,
-    occupiedTiles,
-    platformTiles,
-    rampWalls,
-    halfPillarWalls,
-    tileTheme,
-    ambientDepthsByKey: new Map<string, Map<string, number>>(),
-    solid2x2Map: _buildSolid2x2Map(walls, blockSizePx),
-  };
-
-  return _cachedWallLayout;
-}
+// ── Per-frame reusable collections (pre-allocated to avoid GC pressure) ───────
 
 /**
  * Returns the per-tile ambient-light depth map for the current lighting
@@ -765,44 +238,10 @@ function _getAmbientDepths(layout: CachedWallLayout): Map<string, number> {
   const cached = layout.ambientDepthsByKey.get(memoKey);
   if (cached !== undefined) return cached;
 
-  const depths = _buildAmbientDepths(layout.occupied, _activeAmbientBlockerKeys, _activeAmbientDirection);
+  const depths = buildAmbientDepths(layout.occupied, _activeAmbientBlockerKeys, _activeAmbientDirection, _activeRoomWidthBlocks, _activeRoomHeightBlocks);
   layout.ambientDepthsByKey.set(memoKey, depths);
   return depths;
 }
-
-/**
- * Converts open-air distance (in tiles) into darkness alpha.
- * Darkness now accelerates with depth: each additional tile from open air
- * contributes twice the darkness of the previous tile.
- */
-function _getDarknessAlphaFromAirDepth(airDepth: number): number {
-  if (airDepth <= 0) return 0;
-  const BASE_DARKNESS_STEP = 0.1;
-  const acceleratedAlpha = BASE_DARKNESS_STEP * (Math.pow(2, airDepth) - 1);
-  return Math.min(1, acceleratedAlpha);
-}
-
-/** Builds the 2×2 solid-wall top-left map from raw wall data. Called once per layout build. */
-function _buildSolid2x2Map(walls: WallSnapshot, blockSizePx: number): Map<string, number> {
-  const topLeftMap = new Map<string, number>();
-  if (blockSizePx !== 8) return topLeftMap;
-
-  for (let wi = 0; wi < walls.count; wi++) {
-    if (walls.isPlatformFlag[wi] === 1) continue;
-    if (walls.isInvisibleFlag[wi] === 1) continue;
-
-    const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
-    const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
-    const colCount = Math.max(1, Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - colStart);
-    const rowCount = Math.max(1, Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - rowStart);
-    if (colCount !== 2 || rowCount !== 2) continue;
-    topLeftMap.set(_tileKey(colStart, rowStart), walls.themeIndex[wi]);
-  }
-
-  return topLeftMap;
-}
-
-// ── Per-frame reusable collections (pre-allocated to avoid GC pressure) ───────
 
 /**
  * Reusable Set identifying tiles covered by a 2×2 full-sprite block.
@@ -825,14 +264,14 @@ function _populateCoveredBy2x2Keys(
     const resolvedTheme: BlockTheme | null = wallThemeIdx !== WALL_THEME_DEFAULT_INDEX
       ? indexToBlockTheme(wallThemeIdx)
       : roomTheme;
-    if (!_themeSupports2x2(resolvedTheme, blockSizePx)) continue;
+    if (!themeSupports2x2(resolvedTheme, blockSizePx)) continue;
     const commaIdx = topLeftKey.indexOf(',');
     const col = parseInt(topLeftKey.slice(0, commaIdx), 10);
     const row = parseInt(topLeftKey.slice(commaIdx + 1), 10);
-    _coveredBy2x2Keys.add(_tileKey(col, row));
-    _coveredBy2x2Keys.add(_tileKey(col + 1, row));
-    _coveredBy2x2Keys.add(_tileKey(col, row + 1));
-    _coveredBy2x2Keys.add(_tileKey(col + 1, row + 1));
+    _coveredBy2x2Keys.add(wallTileKey(col, row));
+    _coveredBy2x2Keys.add(wallTileKey(col + 1, row));
+    _coveredBy2x2Keys.add(wallTileKey(col, row + 1));
+    _coveredBy2x2Keys.add(wallTileKey(col + 1, row + 1));
   }
 }
 
@@ -877,148 +316,6 @@ function _invalidateBakedWallCanvas(): void {
   _bakedWallHadFallbacks = false;
 }
 
-// ── Solid-colour fallback ─────────────────────────────────────────────────────
-
-/** Draws a single tile as a solid-colour rectangle (used when sprites are loading). */
-function _drawFallbackTile(
-  ctx:         CanvasRenderingContext2D,
-  tileX:       number,
-  tileY:       number,
-  tileSizePx:  number,
-): void {
-  const rx = Math.round(tileX);
-  const ry = Math.round(tileY);
-  const roundedSizePx = Math.round(tileSizePx);
-  ctx.fillStyle = '#1a2535';
-  ctx.fillRect(rx, ry, roundedSizePx, roundedSizePx);
-
-  ctx.fillStyle = 'rgba(80,120,180,0.18)';
-  ctx.fillRect(rx, ry, roundedSizePx, 2);
-  ctx.fillRect(rx, ry, 2, roundedSizePx);
-
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(rx, ry + roundedSizePx - 2, roundedSizePx, 2);
-  ctx.fillRect(rx + roundedSizePx - 2, ry, 2, roundedSizePx);
-}
-
-// ── Vertex overlay ────────────────────────────────────────────────────────────
-
-/**
- * Draws the vertex overlay sprite at each concave inner corner of a corner
- * tile.  A concave inner corner exists at a diagonal position when both
- * sharing cardinal neighbours are solid but the diagonal cell itself is air.
- */
-function _drawVertexOverlays(
-  ctx:         CanvasRenderingContext2D,
-  occupied:    Set<string>,
-  col:         number,
-  row:         number,
-  tileX:       number,
-  tileY:       number,
-  tileSizePx:  number,
-  northSolid:  boolean,
-  eastSolid:   boolean,
-  southSolid:  boolean,
-  westSolid:   boolean,
-): void {
-  const vertexImg = _sprites.vertex;
-  if (!isSpriteReady(vertexImg)) return;
-
-  const qSizePx  = tileSizePx * 0.5;
-
-  // Each diagonal corner: draw vertex overlay when both adjacent cardinals
-  // are solid but the diagonal cell is air (concave inner corner).
-  if (northSolid && eastSolid && !_isOccupied(occupied, col + 1, row - 1)) {
-    ctx.save();
-    ctx.translate(Math.round(tileX + tileSizePx), Math.round(tileY));
-    ctx.rotate(_HALF_PI);
-    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
-    ctx.restore();
-  }
-  if (southSolid && eastSolid && !_isOccupied(occupied, col + 1, row + 1)) {
-    ctx.save();
-    ctx.translate(Math.round(tileX + tileSizePx), Math.round(tileY + tileSizePx));
-    ctx.rotate(_PI);
-    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
-    ctx.restore();
-  }
-  if (southSolid && westSolid && !_isOccupied(occupied, col - 1, row + 1)) {
-    ctx.save();
-    ctx.translate(Math.round(tileX), Math.round(tileY + tileSizePx));
-    ctx.rotate(-_HALF_PI);
-    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
-    ctx.restore();
-  }
-  if (northSolid && westSolid && !_isOccupied(occupied, col - 1, row - 1)) {
-    ctx.save();
-    ctx.translate(Math.round(tileX), Math.round(tileY));
-    ctx.rotate(0);
-    ctx.drawImage(vertexImg, 0, 0, qSizePx, qSizePx);
-    ctx.restore();
-  }
-}
-
-// ── Platform and ramp draw helpers ───────────────────────────────────────────
-
-/** Draws a 3-pixel thick solid-color platform line at the specified edge. */
-function _drawPlatformLine(
-  ctx: CanvasRenderingContext2D,
-  tileX: number, tileY: number,
-  tileSizeScreen: number,
-  platformEdge: number,
-  scalePx: number,
-): void {
-  const LINE_PX = Math.max(1, Math.round(3 * scalePx));
-  switch (platformEdge) {
-    case 0: ctx.fillRect(tileX, tileY, tileSizeScreen, LINE_PX); break;
-    case 1: ctx.fillRect(tileX, tileY + tileSizeScreen - LINE_PX, tileSizeScreen, LINE_PX); break;
-    case 2: ctx.fillRect(tileX, tileY, LINE_PX, tileSizeScreen); break;
-    case 3: ctx.fillRect(tileX + tileSizeScreen - LINE_PX, tileY, LINE_PX, tileSizeScreen); break;
-  }
-}
-
-/**
- * Draws a ramp as a solid-color filled triangle with a hypotenuse edge stroke.
- * Used as fallback for non-blackRock themes and while procedural sprites load.
- */
-function _drawRampTriangle(
-  ctx: CanvasRenderingContext2D,
-  wxPx: number, wyPx: number,
-  wwPx: number, whPx: number,
-  ori: number,
-  fillColor: string,
-  edgeColor: string,
-  scalePx: number,
-): void {
-  const x0 = wxPx;        const y0 = wyPx;         // TL
-  const x1 = wxPx + wwPx; const y1 = wyPx;         // TR
-  const x2 = wxPx;        const y2 = wyPx + whPx;  // BL
-  const x3 = wxPx + wwPx; const y3 = wyPx + whPx;  // BR
-
-  ctx.fillStyle = fillColor;
-  ctx.beginPath();
-  switch (ori) {
-    case 0: ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.lineTo(x1, y1); break; // /
-    case 1: ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.lineTo(x0, y0); break; // \
-    case 2: ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); break; // ⌐
-    case 3: ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x3, y3); break; // ¬
-  }
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = edgeColor;
-  ctx.lineWidth = Math.max(1, scalePx);
-  ctx.beginPath();
-  switch (ori) {
-    case 0: ctx.moveTo(x2, y2); ctx.lineTo(x1, y1); break;
-    case 1: ctx.moveTo(x3, y3); ctx.lineTo(x0, y0); break;
-    case 2: ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); break;
-    case 3: ctx.moveTo(x0, y0); ctx.lineTo(x3, y3); break;
-  }
-  ctx.stroke();
-  ctx.lineWidth = 1;
-}
-
 // ── Public render function ────────────────────────────────────────────────────
 
 /**
@@ -1046,7 +343,7 @@ export function renderWallSprites(
   const walls = snapshot.walls;
   if (walls.count === 0) return;
 
-  const wallLayout = _buildWallLayoutCache(walls, blockSizePx);
+  const wallLayout = getWallLayoutCache(walls, blockSizePx);
 
   // Populate module-level coveredBy2x2Keys from the cached solid2x2Map —
   // avoids allocating a new Set<string> every frame.
@@ -1062,7 +359,7 @@ export function renderWallSprites(
   // Fast path: blit the pre-rendered canvas when the layout, scale, and
   // rendering configuration are all unchanged and no sprite fallbacks remain.
   // Uses object-reference comparison for the layout (no string allocation) since
-  // `_buildWallLayoutCache` returns the same object when the signature is stable.
+  // `getWallLayoutCache` returns the same object when the signature is stable.
   // Theme/lighting/world changes are detected via `_invalidateBakedWallCanvas()`
   // which nulls `_bakedWallCanvas` before we reach this check.
   const bakeCurrentMatch =
@@ -1170,7 +467,7 @@ function _doRenderWallTilesDirect(
       const resolvedTheme: BlockTheme | null = wallThemeIdx !== WALL_THEME_DEFAULT_INDEX
         ? indexToBlockTheme(wallThemeIdx)
         : roomTheme;
-      if (!_themeSupports2x2(resolvedTheme, blockSizePx)) continue;
+      if (!themeSupports2x2(resolvedTheme, blockSizePx)) continue;
 
       const commaIdx = topLeftKey.indexOf(',');
       const col = parseInt(topLeftKey.slice(0, commaIdx), 10);
@@ -1178,24 +475,51 @@ function _doRenderWallTilesDirect(
       const tileX = Math.round(col * blockSizePx * scalePx + offsetXPx);
       const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
 
-      const material = _themeToProceduralMaterial(resolvedTheme, _activeWorldNumber);
+      const material = themeToProceduralMaterial(resolvedTheme, _activeWorldNumber);
+
+      // Compute open-air sides for the 2×2 group: a side is open when ALL
+      // cells along that border have no solid neighbour on that edge.
+      // Used by both the procedural and folder-based paths.
+      const northOpenA = !isWallOccupied(wallLayout.occupied, col,     row - 1);
+      const northOpenB = !isWallOccupied(wallLayout.occupied, col + 1, row - 1);
+      const southOpenA = !isWallOccupied(wallLayout.occupied, col,     row + 2);
+      const southOpenB = !isWallOccupied(wallLayout.occupied, col + 1, row + 2);
+      const eastOpenA  = !isWallOccupied(wallLayout.occupied, col + 2, row    );
+      const eastOpenB  = !isWallOccupied(wallLayout.occupied, col + 2, row + 1);
+      const westOpenA  = !isWallOccupied(wallLayout.occupied, col - 1, row    );
+      const westOpenB  = !isWallOccupied(wallLayout.occupied, col - 1, row + 1);
+      const openAirSidesMask2x2 =
+        ((northOpenA && northOpenB) ? OPEN_AIR_SIDE_N : 0) |
+        ((eastOpenA  && eastOpenB)  ? OPEN_AIR_SIDE_E : 0) |
+        ((southOpenA && southOpenB) ? OPEN_AIR_SIDE_S : 0) |
+        ((westOpenA  && westOpenB)  ? OPEN_AIR_SIDE_W : 0);
+
       if (material !== null) {
         // Procedural path: base sprite cut with 2×2 block template.
-        const procSprite = getBlockSprite2x2(col, row, material, blockSizePx, _activeWorldNumber);
+        const procSprite = getBlockSprite2x2(col, row, material, blockSizePx, _activeWorldNumber, openAirSidesMask2x2);
         if (procSprite !== null) {
           ctx.drawImage(procSprite, tileX, tileY, drawSize, drawSize);
         } else {
           _bakePassHadFallbacks = true;
-          _drawFallbackTile(ctx, tileX, tileY, drawSize);
+          drawFallbackTile(ctx, tileX, tileY, drawSize);
         }
       } else {
-        // Legacy flat-sprite path (brownRock, dirt).
-        const sprite = _getFullSpriteFor2x2(resolvedTheme, blockSizePx);
+        // Legacy flat-sprite path (brownRock, dirt) and folder-based themes.
+        const sprite = getFullSpriteFor2x2(resolvedTheme, blockSizePx);
         if (sprite !== null && isSpriteReady(sprite)) {
           ctx.drawImage(sprite, tileX, tileY, drawSize, drawSize);
+        } else if (isFolderBasedTheme(resolvedTheme)) {
+          // Folder-based theme: use edge-shaded 16×16 canvas for the 2×2 group.
+          const folderSprite = getTheme2x2SpriteShaded(resolvedTheme, col, row, _activeWorldNumber, openAirSidesMask2x2, blockSizePx);
+          if (folderSprite !== null) {
+            ctx.drawImage(folderSprite, tileX, tileY, drawSize, drawSize);
+          } else {
+            _bakePassHadFallbacks = true;
+            drawFallbackTile(ctx, tileX, tileY, drawSize);
+          }
         } else {
           _bakePassHadFallbacks = true;
-          _drawFallbackTile(ctx, tileX, tileY, drawSize);
+          drawFallbackTile(ctx, tileX, tileY, drawSize);
         }
       }
     }
@@ -1207,18 +531,18 @@ function _doRenderWallTilesDirect(
     const col = tile.col;
     const row = tile.row;
 
-    const northSolid = _isOccupied(wallLayout.occupied, col,     row - 1);
-    const eastSolid  = _isOccupied(wallLayout.occupied, col + 1, row    );
-    const southSolid = _isOccupied(wallLayout.occupied, col,     row + 1);
-    const westSolid  = _isOccupied(wallLayout.occupied, col - 1, row    );
+    const northSolid = isWallOccupied(wallLayout.occupied, col,     row - 1);
+    const eastSolid  = isWallOccupied(wallLayout.occupied, col + 1, row    );
+    const southSolid = isWallOccupied(wallLayout.occupied, col,     row + 1);
+    const westSolid  = isWallOccupied(wallLayout.occupied, col - 1, row    );
 
     const mask =
-      (northSolid ? _N : 0) |
-      (eastSolid  ? _E : 0) |
-      (southSolid ? _S : 0) |
-      (westSolid  ? _W : 0);
+      (northSolid ? TILE_MASK_N : 0) |
+      (eastSolid  ? TILE_MASK_E : 0) |
+      (southSolid ? TILE_MASK_S : 0) |
+      (westSolid  ? TILE_MASK_W : 0);
 
-    const spec = _TILE_TABLE[mask];
+    const spec = TILE_TABLE[mask];
 
     // Convert world-space tile position to screen space for smooth scrolling
     const tileX  = Math.round(col * blockSizePx * scalePx + offsetXPx);
@@ -1228,7 +552,7 @@ function _doRenderWallTilesDirect(
     if (_coveredBy2x2Keys.has(tileKey)) {
       if (isBlockTintEnabled) {
         const airDepth = (ambientDepths?.get(tileKey) ?? 0);
-        const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+        const darknessAlpha = getDarknessAlphaFromAirDepth(airDepth);
         if (darknessAlpha > 0) {
           ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
           ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
@@ -1241,20 +565,43 @@ function _doRenderWallTilesDirect(
     const tileTheme: BlockTheme | null = wallLayout.tileTheme.get(tileKey) ?? roomTheme;
     const tileIsLegacyBlackRock = (tileTheme === null) && (_activeWorldNumber === 0);
 
-    const material = _themeToProceduralMaterial(tileTheme, _activeWorldNumber);
+    const material = themeToProceduralMaterial(tileTheme, _activeWorldNumber);
 
     if (material !== null) {
       // Procedural path (blackRock): base sprite cut with 1×1 block template.
-      const procSprite = getBlockSprite1x1(col, row, material, blockSizePx, _activeWorldNumber);
+      // Edge shading is only applied on sides that are actually open to air
+      // so adjacent same-material blocks share a seamless join.
+      const openAirSidesMask =
+        (northSolid ? 0 : OPEN_AIR_SIDE_N) |
+        (eastSolid  ? 0 : OPEN_AIR_SIDE_E) |
+        (southSolid ? 0 : OPEN_AIR_SIDE_S) |
+        (westSolid  ? 0 : OPEN_AIR_SIDE_W);
+      const procSprite = getBlockSprite1x1(col, row, material, blockSizePx, _activeWorldNumber, openAirSidesMask);
       if (procSprite !== null) {
         ctx.drawImage(procSprite, tileX, tileY, tileSizeScreen, tileSizeScreen);
       } else {
         _bakePassHadFallbacks = true;
-        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+        drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+      }
+    } else if (isFolderBasedTheme(tileTheme)) {
+      // Folder-based theme: use edge-shaded 8×8 canvas for 1×1 tiles.
+      // Shading uses the same openAirSidesMask as the procedural path so
+      // solid-neighbour sides do not get a dark seam.
+      const openAirSidesMask =
+        (northSolid ? 0 : OPEN_AIR_SIDE_N) |
+        (eastSolid  ? 0 : OPEN_AIR_SIDE_E) |
+        (southSolid ? 0 : OPEN_AIR_SIDE_S) |
+        (westSolid  ? 0 : OPEN_AIR_SIDE_W);
+      const folderSprite = getTheme1x1SpriteShaded(tileTheme, col, row, _activeWorldNumber, openAirSidesMask, blockSizePx);
+      if (folderSprite !== null) {
+        ctx.drawImage(folderSprite, tileX, tileY, tileSizeScreen, tileSizeScreen);
+      } else {
+        _bakePassHadFallbacks = true;
+        drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
       }
     } else if (!tileIsLegacyBlackRock && tileTheme !== null) {
       // Legacy flat-sprite / auto-tiling path (brownRock, dirt).
-      const img = _getSpriteForLegacyTheme(tileTheme, spec.variant, blockSizePx);
+      const img = getSpriteForLegacyTheme(tileTheme, spec.variant, blockSizePx);
       if (isSpriteReady(img)) {
         if (tileTheme === 'brownRock' || spec.rotationRad === 0) {
           ctx.drawImage(img, tileX, tileY, tileSizeScreen, tileSizeScreen);
@@ -1270,7 +617,7 @@ function _doRenderWallTilesDirect(
         }
       } else {
         _bakePassHadFallbacks = true;
-        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+        drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
       }
     } else {
       // World 1+ legacy: world-specific auto-tiling sprites.
@@ -1290,13 +637,13 @@ function _doRenderWallTilesDirect(
         }
       } else {
         _bakePassHadFallbacks = true;
-        _drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
+        drawFallbackTile(ctx, tileX, tileY, tileSizeScreen);
       }
     }
 
     if (isBlockTintEnabled) {
       const airDepth = (ambientDepths?.get(tileKey) ?? 0);
-      const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+      const darknessAlpha = getDarknessAlphaFromAirDepth(airDepth);
       if (darknessAlpha > 0) {
         ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
         ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
@@ -1309,8 +656,8 @@ function _doRenderWallTilesDirect(
       if (!isSpriteReady(_sprites.vertex)) {
         _bakePassHadFallbacks = true;
       } else {
-        _drawVertexOverlays(
-          ctx, wallLayout.occupied, col, row, tileX, tileY, tileSizeScreen,
+        drawVertexOverlays(
+          ctx, _sprites.vertex, wallLayout.occupied, col, row, tileX, tileY, tileSizeScreen,
           northSolid, eastSolid, southSolid, westSolid,
         );
       }
@@ -1331,7 +678,7 @@ function _doRenderWallTilesDirect(
 
     // Resolve theme for this platform tile.
     const platTheme: BlockTheme | null = wallLayout.tileTheme.get(key) ?? roomTheme;
-    const platMaterial = _themeToProceduralMaterial(platTheme, _activeWorldNumber);
+    const platMaterial = themeToProceduralMaterial(platTheme, _activeWorldNumber);
 
     if (platMaterial !== null) {
       // Procedural path (blackRock): base sprite cut with platform template.
@@ -1342,7 +689,7 @@ function _doRenderWallTilesDirect(
         // Fallback: thin solid-color line while sprites are loading.
         _bakePassHadFallbacks = true;
         ctx.fillStyle = '#8899aa';
-        _drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
+        drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
       }
     } else {
       // Legacy flat-color line (brownRock, dirt, world 1+).
@@ -1356,13 +703,13 @@ function _doRenderWallTilesDirect(
         lineColor = '#8899aa';
       }
       ctx.fillStyle = lineColor;
-      _drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
+      drawPlatformLine(ctx, tileX, tileY, tileSizeScreen, platformEdgeForTile, scalePx);
     }
 
     const tileKey = key;
     if (isBlockTintEnabled) {
       const airDepth = (ambientDepths?.get(tileKey) ?? 0);
-      const darknessAlpha = _getDarknessAlphaFromAirDepth(airDepth);
+      const darknessAlpha = getDarknessAlphaFromAirDepth(airDepth);
       if (darknessAlpha > 0) {
         ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
         ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
@@ -1385,7 +732,7 @@ function _doRenderWallTilesDirect(
     const rampTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
       ? indexToBlockTheme(walls.themeIndex[wi])
       : roomTheme;
-    const rampMaterial = _themeToProceduralMaterial(rampTheme, _activeWorldNumber);
+    const rampMaterial = themeToProceduralMaterial(rampTheme, _activeWorldNumber);
 
     if (rampMaterial !== null) {
       // Procedural path (blackRock): base sprite cut with ramp template.
@@ -1399,7 +746,31 @@ function _doRenderWallTilesDirect(
       } else {
         // Fallback: solid triangle while sprites are loading.
         _bakePassHadFallbacks = true;
-        _drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, '#1a2535', '#5080b0', scalePx);
+        drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, '#1a2535', '#5080b0', scalePx);
+      }
+    } else if (isFolderBasedTheme(rampTheme)) {
+      // Folder-based theme: clip canvas to triangle shape, then draw the flat sprite inside.
+      const rCol = Math.floor(walls.xWorld[wi] / blockSizePx);
+      const rRow = Math.floor(walls.yWorld[wi] / blockSizePx);
+      const use2x2 = Math.round(walls.wWorld[wi] / blockSizePx) >= 2 ||
+                     Math.round(walls.hWorld[wi] / blockSizePx) >= 2;
+      const folderRampSprite = use2x2
+        ? getTheme2x2Sprite(rampTheme, rCol, rRow, _activeWorldNumber)
+        : getTheme1x1Sprite(rampTheme, rCol, rRow, _activeWorldNumber);
+      if (folderRampSprite !== null) {
+        const rX = Math.round(wxPx);
+        const rY = Math.round(wyPx);
+        const rW = Math.round(wwPx);
+        const rH = Math.round(whPx);
+        ctx.save();
+        applyRampClipPath(ctx, rX, rY, rW, rH, ori);
+        ctx.clip();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(folderRampSprite, rX, rY, rW, rH);
+        ctx.restore();
+      } else {
+        _bakePassHadFallbacks = true;
+        drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, '#555555', '#777777', scalePx);
       }
     } else {
       // Legacy solid-color triangle path (brownRock, dirt, world 1+).
@@ -1420,7 +791,7 @@ function _doRenderWallTilesDirect(
       } else {
         edgeColor = '#5080b0';
       }
-      _drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, fillColor, edgeColor, scalePx);
+      drawRampTriangle(ctx, wxPx, wyPx, wwPx, whPx, ori, fillColor, edgeColor, scalePx);
     }
   }
 

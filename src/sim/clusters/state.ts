@@ -49,6 +49,15 @@ export interface ClusterState {
    */
   varJumpSpeedWorld: number;
 
+  // ---- Committed fast-fall mode --------------------------------------------
+  /**
+   * 1 while the player is in committed fast-fall mode.
+   * Set when the player holds down while falling; cleared by landing, jumping,
+   * attaching a grapple, or holding jump long enough to brake back to normalFallCap.
+   * While active, the terminal fall speed is fastFallCap instead of normalFallCap.
+   */
+  isFastFallModeFlag: 0 | 1;
+
   // ---- Wall interaction ---------------------------------------------------
   /** 1 when the player's left side is pressed against a solid wall this tick. */
   isTouchingWallLeftFlag: 0 | 1;
@@ -78,6 +87,18 @@ export interface ClusterState {
    * Reset points: touching ground or attaching a grapple.
    */
   hasUsedWallJumpSinceResetFlag: 0 | 1;
+  /**
+   * Grace timer for the left wall.  Set to WALL_JUMP_GRACE_TICKS when the
+   * player leaves a left-wall contact; while > 0 a wall jump off the left
+   * wall is still allowed (wall coyote time).
+   */
+  wallJumpGraceLeftTicks: number;
+  /**
+   * Grace timer for the right wall.  Set to WALL_JUMP_GRACE_TICKS when the
+   * player leaves a right-wall contact; while > 0 a wall jump off the right
+   * wall is still allowed (wall coyote time).
+   */
+  wallJumpGraceRightTicks: number;
 
   // ---- Dash (player and enemy) -------------------------------------------
   /** Remaining cooldown ticks before dash is available again.  0 = ready. */
@@ -407,6 +428,35 @@ export interface ClusterState {
    * Read by the renderer to set globalAlpha on the golden silhouette.
    */
   goldenMimicFadeAlpha: number;
+
+  // ---- Bee Swarm (populated only when isBeeSwarmFlag === 1) ------------------
+  /**
+   * 1 if this cluster is a bee swarm — 10 bees that orbit a spawn area until
+   * the player comes close or the swarm takes damage, then charge the player.
+   * Each bee can be killed by 1 golden mote (1 Physical particle hit).
+   */
+  isBeeSwarmFlag: 0 | 1;
+  /**
+   * Index into the WorldState bee-position arrays (0..MAX_BEE_SWARMS-1).
+   * -1 when no slot has been assigned.
+   */
+  beeSwarmSlotIndex: number;
+  /**
+   * Current bee-swarm AI state:
+   *   0 = swarming — bees orbit the spawn area in a natural pattern
+   *   1 = charging — bees fly toward the player and deal contact damage
+   */
+  beeSwarmState: number;
+  /** Ticks elapsed in the current bee-swarm AI state. */
+  beeSwarmStateTicks: number;
+  /** Spawn X position (world units) — center of the swarm's patrol area. */
+  beeSwarmSpawnXWorld: number;
+  /** Spawn Y position (world units) — center of the swarm's patrol area. */
+  beeSwarmSpawnYWorld: number;
+  /** Health recorded at end of last tick, used to detect incoming damage for aggro. */
+  beeSwarmPrevHealthPoints: number;
+  /** Global orbit angle (radians) incremented each tick to animate the swarm path. */
+  beeSwarmOrbitAngleRad: number;
 }
 
 export function createClusterState(
@@ -434,6 +484,7 @@ export function createClusterState(
     prevJumpHeldFlag: 0,
     varJumpTimerTicks: 0,
     varJumpSpeedWorld: 0,
+    isFastFallModeFlag: 0,
     isTouchingWallLeftFlag: 0,
     isTouchingWallRightFlag: 0,
     isWallSlidingFlag: 0,
@@ -441,6 +492,8 @@ export function createClusterState(
     wallJumpForceTimeTicks: 0,
     wallJumpDirX: 0,
     hasUsedWallJumpSinceResetFlag: 0,
+    wallJumpGraceLeftTicks: 0,
+    wallJumpGraceRightTicks: 0,
     dashCooldownTicks: 0,
     dashRechargeAnimTicks: 0,
     enemyAiAttackCooldownTicks: 30,
@@ -531,5 +584,13 @@ export function createClusterState(
     goldenMimicStateTicks: 0,
     goldenMimicInitialParticleCount: 0,
     goldenMimicFadeAlpha: 1.0,
+    isBeeSwarmFlag: 0,
+    beeSwarmSlotIndex: -1,
+    beeSwarmState: 0,
+    beeSwarmStateTicks: 0,
+    beeSwarmSpawnXWorld: positionXWorld,
+    beeSwarmSpawnYWorld: positionYWorld,
+    beeSwarmPrevHealthPoints: maxHealthPoints,
+    beeSwarmOrbitAngleRad: 0,
   };
 }

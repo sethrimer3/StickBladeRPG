@@ -32,6 +32,9 @@ lerp, clamped to room bounds so the viewport never shows outside the room.
 Room definitions live in `levels/roomDef.ts` (types) and `levels/rooms.ts` (data).
 Each room specifies walls, enemies, and transitions in block-unit coordinates.
 The game screen loads one room at a time; transitions swap the entire sim state.
+Campaign room JSON loading uses the room manifest as an ordering hint and also
+discovers `ASSETS/CAMPAIGNS/*/ROOMS/*.json` at build time, so newly added room
+files appear in the editor without manually editing `manifest.json`.
 
 ```
 World 2 ←—[tunnel]—— LOBBY ——[tunnel]—→ World 1
@@ -55,6 +58,35 @@ Input → Commands → Game Loop → Sim (tick) → Snapshot → Renderer
 3. Run `tick(world)` one or more times (accumulator).
 4. Create `WorldSnapshot`.
 5. Render snapshot.
+
+## Collision Pipeline (`sim/clusters/movementCollision.ts`)
+
+Cluster wall collision uses axis-separated sweeps with sub-step safety to prevent
+tunneling through thin walls at high speed.
+
+**Primary path** (`resolveClusterSolidWallCollision`):
+  1. X pass: integrate X velocity, resolve all X overlaps (push out, zero velX on contact).
+  2. Y pass: integrate Y velocity, resolve all Y overlaps (push out, zero velY on contact,
+     set `isGroundedFlag` on top-face landing).
+  Sub-steps fire when `|velocity × dt| > halfExtent` to guarantee no thin-wall tunneling.
+
+**Ramp path** (`resolveRampSurfaces`): called after the wall sweep; handles diagonal
+  surfaces by computing per-axis surface height at the cluster center X.
+
+**Collision-safe displacement helper** (`moveClusterByDelta`):
+  For forced/special movement (e.g. grapple constraint snap) that knows a desired
+  displacement but not a velocity.  Converts delta → velocity, runs the full sweep
+  from the current position, restores original velocity, returns `ClusterMoveResult`.
+  Preferred over direct position assignment + `resolveAABBPenetration` fallback for
+  any path that can displace the cluster by more than a fraction of a world unit.
+
+**Last-resort fallback** (`resolveAABBPenetration` in `sim/physics/collision.ts`):
+  Minimum-penetration push-out.  Used only for micro-corrections after the grapple
+  stuck-phase locks position each tick.  Must not be used as the primary resolver.
+
+**Collision iteration order**: walls are always iterated in `world.wallCount` order
+(the order they were merged and stored in `loadRoomWalls`).  This order is fixed at
+room load time and is deterministic.  Do not sort or reorder walls at runtime.
 
 ## Particle Integration Pipeline
 
@@ -153,6 +185,12 @@ The world editor is an in-game level editing tool accessible via the debug UI.
 - **transitionLinker.ts** — Cross-room transition linking workflow.
 - **editorExport.ts** — Browser download of room JSON.
 - **roomJson.ts** — `RoomJsonDef` schema, validation, conversion between JSON ↔ `EditorRoomData` ↔ `RoomDef`.
+
+### Block Theme Placement
+- The block palette keeps a placement-only `selectedBlockTheme` in `EditorState`; changing it does not mutate `EditorRoomData.blockTheme` and therefore does not restyle existing walls.
+- Newly placed walls always receive their own `blockTheme`, allowing several block themes to coexist in one room.
+- The editor shows the last three used themes inline and opens the full theme palette from the adjacent palette button.
+- Theme options and chip thumbnails come from `ASSETS/SPRITES/BLOCKS/<theme>/` folder discovery, including the original Blackstone, Brownstone, and Dirt folders.
 
 ### Integration with Game Screen
 - `EditorController` is created once in `startGameScreen()`.

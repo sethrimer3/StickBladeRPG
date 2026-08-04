@@ -15,6 +15,8 @@ export interface InputState {
   isEscapePressed: boolean;
   /** Set to true for one collectCommands call to trigger a jump. */
   isJumpTriggeredFlag: boolean;
+  /** Set to true for one collectCommands call when down (S/ArrowDown) is first pressed. */
+  isDownTriggeredFlag: boolean;
   /** True while any jump key (W / Space / ArrowUp) is physically held down. */
   isJumpHeldFlag: boolean;
   /** Tracks whether the joystick is already past the up-flick threshold (edge-detect). */
@@ -66,8 +68,10 @@ export interface InputState {
   grappleAimYPx: number;
   /** Set to true for one collectCommands call to trigger an interact (F key). */
   isInteractTriggeredFlag: boolean;
-  /** Set to true for one collectCommands call to request fullscreen toggle (P key). */
+  /** Set to true for one collectCommands call to toggle fullscreen. */
   isFullscreenToggleTriggeredFlag: boolean;
+  /** Set to true for one collectCommands call to open the world map (M key). */
+  isMapKeyTriggeredFlag: boolean;
 }
 
 export function createInputState(): InputState {
@@ -78,6 +82,7 @@ export function createInputState(): InputState {
     isKeyD: false,
     isEscapePressed: false,
     isJumpTriggeredFlag: false,
+    isDownTriggeredFlag: false,
     isJumpHeldFlag: false,
     isJoystickUpActiveFlag: false,
     isSprintHeldFlag: false,
@@ -110,6 +115,7 @@ export function createInputState(): InputState {
     grappleAimYPx: 0,
     isInteractTriggeredFlag: false,
     isFullscreenToggleTriggeredFlag: false,
+    isMapKeyTriggeredFlag: false,
   };
 }
 
@@ -160,7 +166,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     const b = getKeyboardBindings();
     if (keyMatches(e.key, b.moveLeft) || e.key === 'ArrowLeft') state.isKeyA = true;
     if (keyMatches(e.key, b.moveRight) || e.key === 'ArrowRight') state.isKeyD = true;
-    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') state.isKeyS = true;
+    if (keyMatches(e.key, b.moveDown) || e.key === 'ArrowDown') {
+      state.isKeyS = true;
+      if (!e.repeat) { state.isDownTriggeredFlag = true; }
+    }
     if (e.key === 'Escape') state.isEscapePressed = true;
     if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -176,6 +185,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     }
     if (keyMatches(e.key, b.toggleFullscreen) && !e.repeat) {
       state.isFullscreenToggleTriggeredFlag = true;
+    }
+    if ((e.key === 'm' || e.key === 'M') && !e.repeat) {
+      state.isMapKeyTriggeredFlag = true;
     }
   }
   function onKeyUp(e: KeyboardEvent): void {
@@ -252,13 +264,18 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
         state.touchJoystickCurrentXPx = touch.xPx;
         state.touchJoystickCurrentYPx = touch.yPx;
       } else if (state.secondTouchId === -1) {
-        // Second finger — attack/block gesture
+        // Second finger — grapple gesture
         state.secondTouchId = t.identifier;
         state.secondTouchStartXPx = touch.xPx;
         state.secondTouchStartYPx = touch.yPx;
         state.secondTouchStartTimeMs = performance.now();
         state.secondTouchCurrentXPx = touch.xPx;
         state.secondTouchCurrentYPx = touch.yPx;
+        // Fire grapple immediately at the touch position.
+        state.isGrappleHeldFlag = 1;
+        state.isGrappleFireTriggeredFlag = 1;
+        state.grappleAimXPx = touch.xPx;
+        state.grappleAimYPx = touch.yPx;
       } else {
         // Additional touches update the aim/mouse position
         state.mouseXPx = touch.xPx;
@@ -273,21 +290,16 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       const t = e.changedTouches[i];
       const touch = clientToCanvasPx(t.clientX, t.clientY);
       if (t.identifier === joystickTouchId) {
-        const dx = touch.xPx - state.touchJoystickBaseXPx;
-        const dy = touch.yPx - state.touchJoystickBaseYPx;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > JOYSTICK_MAX_RADIUS_PX) {
-          // Slide the base so the visual thumb never escapes the outer ring
-          const scale = (dist - JOYSTICK_MAX_RADIUS_PX) / dist;
-          state.touchJoystickBaseXPx += dx * scale;
-          state.touchJoystickBaseYPx += dy * scale;
-        }
+        // Base stays fixed — only the current (thumb) position follows the finger.
         state.touchJoystickCurrentXPx = touch.xPx;
         state.touchJoystickCurrentYPx = touch.yPx;
         applyJoystickToKeys(state);
       } else if (t.identifier === state.secondTouchId) {
         state.secondTouchCurrentXPx = touch.xPx;
         state.secondTouchCurrentYPx = touch.yPx;
+        // Continuously update grapple aim as the second finger moves.
+        state.grappleAimXPx = touch.xPx;
+        state.grappleAimYPx = touch.yPx;
       } else {
         state.mouseXPx = touch.xPx;
         state.mouseYPx = touch.yPx;
@@ -302,7 +314,14 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     state.isKeyS = false;
     state.isJumpHeldFlag = false;
     state.isSprintHeldFlag = false;
+    // Fire a grapple release so the rope is cancelled when the window loses
+    // focus (alt-tab, task switch, etc.).  Without this the grapple stays
+    // active in the sim and the player is frozen mid-swing on return.
+    if (state.isGrappleHeldFlag === 1) {
+      state.isGrappleReleaseTriggeredFlag = 1;
+    }
     state.isGrappleHeldFlag = 0;
+    state.isBlockingFlag = 0;
     state.isRightMouseDownFlag = 0;
     state.isMouseDownFlag = 0;
   }
@@ -317,14 +336,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
         clearJoystickKeys(state);
       } else if (t.identifier === state.secondTouchId) {
         state.secondTouchId = -1;
-        if (state.isBlockingFlag === 1) {
-          // Let collectCommands emit BlockEnd (isBlockingFlag stays 1 until then)
-        } else {
-          // Quick swipe — fire attack toward touch release position (gameScreen converts to direction)
-          state.isAttackFiredFlag = 1;
-          state.attackDirXPx = state.secondTouchCurrentXPx;
-          state.attackDirYPx = state.secondTouchCurrentYPx;
-        }
+        // Release grapple when the second finger lifts.
+        state.isGrappleHeldFlag = 0;
+        state.isGrappleReleaseTriggeredFlag = 1;
       }
     }
   }
@@ -444,24 +458,6 @@ export function collectCommands(input: InputState): GameCommand[] {
   }
   _rightMouseWasDown = input.isRightMouseDownFlag === 1;
 
-  // ---- Second touch attack/block (mobile) — maps to primary Weave --------
-  if (input.secondTouchId !== -1) {
-    const holdMs = performance.now() - input.secondTouchStartTimeMs;
-    if (holdMs >= ATTACK_HOLD_THRESHOLD_MS && input.isBlockingFlag === 0) {
-      input.isBlockingFlag = 1;
-      commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.secondTouchCurrentXPx, aimYPx: input.secondTouchCurrentYPx });
-    }
-    if (input.isBlockingFlag === 1) {
-      commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.secondTouchCurrentXPx, aimYPx: input.secondTouchCurrentYPx });
-    }
-  }
-
-  // Emit WeaveEndPrimary when second touch ended while holding
-  if (input.secondTouchId === -1 && input.isBlockingFlag === 1 && input.isMouseDownFlag === 0) {
-    input.isBlockingFlag = 0;
-    commands.push({ kind: CommandKind.WeaveEndPrimary });
-  }
-
   // ---- Grapple hook commands ----------------------------------------------
   if (input.isGrappleFireTriggeredFlag === 1) {
     input.isGrappleFireTriggeredFlag = 0;
@@ -481,6 +477,11 @@ export function collectCommands(input: InputState): GameCommand[] {
   if (input.isFullscreenToggleTriggeredFlag) {
     input.isFullscreenToggleTriggeredFlag = false;
     commands.push({ kind: CommandKind.ToggleFullscreen });
+  }
+
+  if (input.isMapKeyTriggeredFlag) {
+    input.isMapKeyTriggeredFlag = false;
+    commands.push({ kind: CommandKind.OpenMap });
   }
 
   return commands;

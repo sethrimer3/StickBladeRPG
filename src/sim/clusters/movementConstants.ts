@@ -25,6 +25,22 @@ export const debugSpeedOverrides = {
   airDecelWorld: NaN,
   wallJumpXWorld: NaN,
   wallJumpYWorld: NaN,
+  skidJumpMultiplier: NaN,
+  grappleSuperJumpMultiplier: NaN,
+  wallJumpAirAccelMultiplier: NaN,
+  airMoveSpeedWorld: NaN,
+  airBrakingWorld: NaN,
+  momentumDecayWorld: NaN,
+  highSpeedSteeringFactor: NaN,
+  upwardBrakeStrengthWorld: NaN,
+  // Forgiveness mechanics
+  jumpBufferMs: NaN,
+  apexFloatVelocityThreshold: NaN,
+  apexFloatGravityMultiplier: NaN,
+  jumpCornerCorrectionPixels: NaN,
+  blockPopMaxPixels: NaN,
+  wallJumpProximityPixels: NaN,
+  wallJumpGraceTicks: NaN,
 };
 
 /** Helper: return override if finite, else fallback. */
@@ -71,18 +87,23 @@ export const VAR_JUMP_TIME_SEC = 0.20;
 /** Variable jump sustain window in ticks (60 fps). */
 export const VAR_JUMP_TIME_TICKS = Math.round(VAR_JUMP_TIME_SEC * 60.0);
 
-// ── Apex half-gravity ────────────────────────────────────────────────────────
+// ── Apex half-gravity (apex float) ──────────────────────────────────────────
 // Near the top of the jump arc, gravity is halved for a brief "floaty apex"
-// feel — only when vertical speed is near zero and jump is held.
-
-/** Gravity multiplier applied at the apex of a jump. */
-export const APEX_GRAVITY_MULTIPLIER = 0.5;
+// feel — only when vertical speed is near zero, jump is held, and the player
+// is not in committed fast-fall mode.
 
 /**
- * Vertical speed threshold (px/s) below which the apex gravity kicks in.
- * Only active when abs(vy) < this value and jump is held.
+ * Vertical speed threshold (world units/s) below which apex float kicks in.
+ * Only active when abs(vy) < this value, jump is held, and not fast-falling.
  */
-export const APEX_THRESHOLD_WORLD_PER_SEC = 33.0;
+export const APEX_FLOAT_VELOCITY_THRESHOLD = 35;
+
+/** Gravity multiplier applied at the apex of a jump (apex float). */
+export const APEX_FLOAT_GRAVITY_MULTIPLIER = 0.5;
+
+// Legacy aliases preserved for backward compatibility
+export const APEX_THRESHOLD_WORLD_PER_SEC  = APEX_FLOAT_VELOCITY_THRESHOLD;
+export const APEX_GRAVITY_MULTIPLIER       = APEX_FLOAT_GRAVITY_MULTIPLIER;
 
 // ── Fall system (normal fall + fast fall) ────────────────────────────────────
 // By default gravity approaches normalMaxFall.  If the player holds down
@@ -112,11 +133,16 @@ export const FAST_MAX_FALL_APPROACH_PER_SEC = 300.0;
 export const COYOTE_TIME_TICKS = 6;
 
 /**
- * Ticks a jump input is remembered while airborne (jump buffer).
- * When the player lands while bufferTicks > 0 the jump fires immediately.
- * At 60 fps, 6 ticks ≈ 0.10 s.
+ * Milliseconds a jump input is remembered while airborne (jump buffer).
+ * When the player lands while the buffer is active, the jump fires immediately.
  */
-export const JUMP_BUFFER_TICKS = 6;
+export const JUMP_BUFFER_MS = 120;
+
+/**
+ * Ticks a jump input is remembered while airborne (derived from JUMP_BUFFER_MS).
+ * At 60 fps, 7 ticks ≈ 117 ms (quantized from the 120 ms source value).
+ */
+export const JUMP_BUFFER_TICKS = Math.round(JUMP_BUFFER_MS / 1000.0 * 60);
 
 // ============================================================================
 // Horizontal movement
@@ -129,7 +155,7 @@ export const MAX_RUN_SPEED_WORLD_PER_SEC = 105.0;
 export const GROUND_ACCELERATION_PER_SEC2 = 800.0;
 
 /** Ground deceleration: how quickly the player stops on the ground when no input (px/s²). */
-export const GROUND_DECELERATION_PER_SEC2 = 1000.0;
+export const GROUND_DECELERATION_PER_SEC2 = 800.0;
 
 /** Air acceleration: slightly reduced control while airborne (px/s²). */
 export const AIR_ACCELERATION_PER_SEC2 = 520.0;
@@ -142,6 +168,57 @@ export const AIR_DECELERATION_PER_SEC2 = 600.0;
  * Higher than ground acceleration so direction changes feel crisp and snappy.
  */
 export const TURN_ACCELERATION_PER_SEC2 = 1466.7;
+
+// ============================================================================
+// Air-momentum preservation system
+// ============================================================================
+// These constants govern post-grapple and high-speed airborne movement.
+// The design goal: earned momentum (from grapple swings, bounces, etc.) is
+// preserved unless the player intentionally brakes, lands, or re-grapples.
+// Normal air input cannot push the player above AIR_MOVE_SPEED_WORLD_PER_SEC.
+
+/**
+ * Soft cap for input-generated air speed (px/s).
+ * Matches MAX_RUN_SPEED_WORLD_PER_SEC so normal aerial movement feels
+ * consistent with ground movement.  Externally generated momentum (grapple
+ * launch, bounce pads, etc.) may legitimately exceed this value; input alone
+ * may not push the player above it.
+ */
+export const AIR_MOVE_SPEED_WORLD_PER_SEC = 105.0;
+
+/**
+ * Intentional air braking rate (px/s²).
+ * Applied when the player holds input *opposite* their current high-speed
+ * movement direction.  Faster than MOMENTUM_DECAY_PER_SEC2 so braking feels
+ * deliberate.  At 1000 px/s² the player can brake from 300 px/s to
+ * AIR_MOVE_SPEED in about 0.2 seconds — responsive but not jarring.
+ */
+export const AIR_BRAKING_PER_SEC2 = 1000.0;
+
+/**
+ * Passive momentum decay rate (px/s²) while airborne, no input, above
+ * AIR_MOVE_SPEED_WORLD_PER_SEC.  Subtle enough that a grapple launch feels
+ * rewarding for many seconds, but non-zero so momentum is never truly infinite.
+ * Decay stops once speed reaches AIR_MOVE_SPEED so normal-range air movement
+ * is not affected.
+ */
+export const MOMENTUM_DECAY_PER_SEC2 = 25.0;
+
+/**
+ * Fraction of AIR_ACCELERATION_PER_SEC2 applied when holding input in the
+ * same direction as high-speed movement.  Allows subtle arc-shaping without
+ * adding meaningful speed.  The player's abs(vx) is hard-capped to its value
+ * before the steering impulse so this can never push speed above the launch.
+ */
+export const HIGH_SPEED_STEERING_FACTOR = 0.35;
+
+/**
+ * Rate at which holding jump brakes the player's downward velocity when in
+ * committed fast-fall mode (px/s²).  At 350 px/s² the player can bleed from
+ * fastFallCap (240) to normalFallCap (160.5) in ~0.23 s — intentional and
+ * expressive but not punishing.
+ */
+export const UPWARD_BRAKE_STRENGTH_PER_SEC2 = 350.0;
 
 // ============================================================================
 // Wall slide
@@ -187,12 +264,72 @@ export const WALL_JUMP_FIRST_BONUS_Y_SPEED_WORLD = 10.0;
 export const WALL_JUMP_FORCE_TIME_TICKS = 10;
 
 /**
+ * Multiplier applied to horizontal air acceleration after any wall jump until
+ * the player lands.  Doubles air steering speed for snappier control away from
+ * the wall without affecting ground or pre-wall-jump air movement.
+ */
+export const WALL_JUMP_AIR_ACCEL_MULTIPLIER = 2.0;
+
+/**
+ * Multiplier applied to wallJumpYBase for wall jumps after the first;
+ * produces half the vertical launch speed to prevent altitude gain from
+ * chained wall-jumps.
+ */
+export const WALL_JUMP_SUBSEQUENT_Y_MULTIPLIER = 0.5;
+
+/**
  * Ticks after a wall jump during which the same-side wall sensor is suppressed.
  * Prevents instant re-grab and ensures the player is physically away from the
  * wall before another wall jump becomes available.
  * At 60 fps, 12 ticks ≈ 0.20 s — enough time for the forced outward trajectory.
  */
 export const WALL_JUMP_LOCKOUT_TICKS = 12;
+
+// ============================================================================
+// Wall-jump forgiveness
+// ============================================================================
+
+/**
+ * Horizontal proximity distance (world units) within which the player can
+ * trigger a wall jump even without physically touching the wall.
+ * Allows wall jumps when 1–3 pixels away from a solid wall face.
+ */
+export const WALL_JUMP_PROXIMITY_PIXELS = 3;
+
+/**
+ * Milliseconds after leaving a wall during which a wall jump is still allowed
+ * (wall coyote time).
+ */
+export const WALL_JUMP_GRACE_MS = 100;
+
+/**
+ * Ticks derived from WALL_JUMP_GRACE_MS.  At 60 fps, 6 ticks = 100 ms (exact at this rate).
+ */
+export const WALL_JUMP_GRACE_TICKS = Math.round(WALL_JUMP_GRACE_MS / 1000.0 * 60);
+
+// ============================================================================
+// Jump corner correction
+// ============================================================================
+
+/**
+ * Maximum horizontal nudge (world units) applied when the player bonks the
+ * underside corner of a block while jumping upward.  The engine tests offsets
+ * 1, 2, … JUMP_CORNER_CORRECTION_PIXELS in the player's movement direction to
+ * find a clear path around the corner.
+ */
+export const JUMP_CORNER_CORRECTION_PIXELS = 3;
+
+// ============================================================================
+// Block pop (ledge lip assist)
+// ============================================================================
+
+/**
+ * Maximum upward pop distance (world units) for the ledge lip assist.
+ * If the player's feet are within this distance below a block's top edge
+ * while moving horizontally into it, the player is gently placed on top.
+ * Kept small to prevent stair-climbing exploits.
+ */
+export const BLOCK_POP_MAX_PIXELS = 2;
 
 // ============================================================================
 // Enemy movement
@@ -237,11 +374,45 @@ export const SPRINT_FRICTION_MULTIPLIER = 0.5;
 /** Ground deceleration multiplier when skidding (50% more friction than default). */
 export const SKID_FRICTION_MULTIPLIER = 1.5;
 
-/** Jump speed multiplier when jumping out of a skid (50% higher jump). */
-export const SKID_JUMP_MULTIPLIER = 1.5;
+/** Jump speed multiplier when jumping out of a skid; targets ~6 small blocks of height. */
+export const SKID_JUMP_MULTIPLIER = 1.153;
 
 /** Velocity threshold (px/s) below which a player is considered "not moving" for skid detection. */
 export const SKID_VELOCITY_THRESHOLD_WORLD = 5.0;
+
+/**
+ * Jump speed multiplier for the zip-jump (zip super jump).
+ * Applied to PLAYER_JUMP_SPEED_WORLD in the direction of the surface normal.
+ * At 1.331× the total speed magnitude is 1.331 × 255 ≈ 340 world units/s,
+ * giving ~8 small blocks of effective height when launched vertically.
+ */
+export const GRAPPLE_SUPER_JUMP_MULTIPLIER = 1.331;
+
+// ── Landing skid dust ────────────────────────────────────────────────────────
+
+/**
+ * Minimum horizontal speed (world units/s) required to trigger landing-skid
+ * dust when the player touches the ground.
+ * Set just above sprint speed (MAX_RUN_SPEED × SPRINT_SPEED_MULTIPLIER =
+ * 105 × 1.5 = 157.5).  Below this threshold no extra dust appears.
+ */
+export const LANDING_SKID_SPEED_THRESHOLD_WORLD = 157.5;
+
+/**
+ * Maximum scale factor for landing-skid dust (capped multiplier at very high
+ * speeds).  Above threshold, factor = (speed − threshold) / threshold, capped
+ * here.  At cap, spawn rate, spread, and velocity variance are 5× baseline.
+ */
+export const LANDING_SKID_SPEED_FACTOR_MAX = 4.0;
+
+// ── Grapple zip double-tap ───────────────────────────────────────────────────
+
+/**
+ * Maximum ticks between two successive down presses for a double-tap to be
+ * recognised and trigger the grapple zip.  At 60 fps, 18 ticks ≈ 0.3 s —
+ * wide enough to be comfortably hittable but narrow enough to feel intentional.
+ */
+export const GRAPPLE_ZIP_DOUBLE_TAP_WINDOW_TICKS = 18;
 
 // ── Player crouch ───────────────────────────────────────────────────────────
 

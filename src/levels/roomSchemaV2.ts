@@ -23,7 +23,7 @@
  *
  * The solid-encoding algorithm is a deterministic 3-pass greedy tile cover:
  *   1. Rasterize all non-special solid walls into a boolean tile grid, per
- *      theme.  Theme keys are exact strings (the room-default uses the
+ *      theme.  Theme keys are compact BlockThemeId strings (the room-default uses the
  *      sentinel key `__default__` so we never repeat the default name on
  *      every tile).
  *   2. Greedy rectangle extraction — for each seed cell, grow the maximal
@@ -38,7 +38,8 @@
  * stable.
  */
 
-import type { BlockTheme, BackgroundId, LightingEffect, TransitionDirection } from './roomDef';
+import type { BlockTheme, BlockThemeId, BackgroundId, LightingEffect, TransitionDirection } from './roomDef';
+import { blockThemeRefToTheme, blockThemeToId } from './roomDef';
 import type {
   RoomJsonDef,
   RoomJsonWall,
@@ -55,7 +56,12 @@ import type {
   RoomJsonDustPile,
   RoomJsonGrasshopperArea,
   RoomJsonDecoration,
+  RoomJsonLightSource,
+  RoomJsonSunbeam,
 } from '../editor/roomJson';
+import { createTileGrid, paintRect, extractLayerFromGrid } from './tileGridCompressor';
+import type { SavedRect, SavedPoint, SavedSolidLayer } from './tileGridCompressor';
+export type { SavedRect, SavedRun, SavedPoint, SavedSolidLayer } from './tileGridCompressor';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA VERSIONING
@@ -67,30 +73,9 @@ export const ROOM_SCHEMA_VERSION = 2 as const;
 /** Sentinel theme key used for tiles that use the room-level default theme. */
 export const DEFAULT_THEME_KEY = '__default__';
 
-/** Minimum area for a greedy rectangle to be emitted as a rect (vs. runs). */
-const RECT_MIN_AREA = 4;
-/** Minimum side length for a greedy rectangle. */
-const RECT_MIN_SIDE = 2;
-/** Minimum length for a horizontal run primitive. */
-const RUN_MIN_LENGTH = 2;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SAVED v2 TYPES
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** A compact axis-aligned rectangle: [x, y, w, h] in block units. */
-export type SavedRect = readonly [number, number, number, number];
-/** A compact horizontal run: [y, xStart, xEndExclusive] in block units. */
-export type SavedRun = readonly [number, number, number];
-/** A compact point (single tile): [x, y] in block units. */
-export type SavedPoint = readonly [number, number];
-
-/** Encoded solids for a single block theme. All three forms may be empty. */
-export interface SavedSolidLayer {
-  rects?: SavedRect[];
-  runs?: SavedRun[];
-  points?: SavedPoint[];
-}
 
 /** Encoded solids, grouped by block theme. */
 export interface SavedSolids {
@@ -105,8 +90,8 @@ export interface SavedSolids {
 export interface SavedSpecialWall {
   /** [x, y, w, h] */
   r: SavedRect;
-  /** Block theme override, if any. */
-  theme?: BlockTheme;
+  /** Compact block theme override, if any. Legacy long names are still accepted. */
+  theme?: BlockThemeId | BlockTheme;
   /** 1 if one-way platform. */
   plat?: 1;
   /** Platform edge: 0=top,1=bottom,2=left,3=right. */
@@ -162,7 +147,7 @@ export interface SavedRoomV2 {
   world: number;
   /** [mapX, mapY] */
   map?: [number, number];
-  theme?: BlockTheme;
+  theme?: BlockThemeId | BlockTheme;
   bg?: BackgroundId;
   light?: LightingEffect;
   song?: string;
@@ -198,13 +183,25 @@ export interface SavedRoomV2 {
    * Stored verbatim as the string literal.
    */
   ambientDir?: string;
-  /** Sparse list of ambient-light blocker tile coordinates: [x, y]. */
-  ambientBlockers?: [number, number][];
+  /**
+   * Sparse list of ambient-light blocker tile coordinates.
+   * Each entry is [x, y] for a clear blocker, or [x, y, 1] for a dark blocker.
+   */
+  ambientBlockers?: ([number, number] | [number, number, 1])[];
   /**
    * Sparse list of local light sources:
    * [xBlock, yBlock, radiusBlocks, r, g, b, brightnessPct].
    */
   lights?: [number, number, number, number, number, number, number][];
+  /**
+   * Full light-source objects used when any source has extended fields
+   * (e.g. dustMoteCount > 0). When present, takes priority over `lights`.
+   */
+  lightSourcesExt?: RoomJsonLightSource[];
+  /** Designer-placed sunbeams. Stored as full objects (small count). */
+  sunbeams?: RoomJsonSunbeam[];
+  /** Editor-painted falling block tiles. Stored as compact tuples [x, y, variant_char]. */
+  fallingBlocks?: [number, number, string][];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -269,147 +266,13 @@ export function isUniformSolidWall(w: RoomJsonWall): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 2D boolean tile occupancy map backed by a single Uint8Array. */
-interface TileGrid {
-  widthBlocks: number;
-  heightBlocks: number;
-  cells: Uint8Array;
-}
-
-function createTileGrid(widthBlocks: number, heightBlocks: number): TileGrid {
-  return {
-    widthBlocks,
-    heightBlocks,
-    cells: new Uint8Array(widthBlocks * heightBlocks),
-  };
-}
-
-function gridIndex(grid: TileGrid, x: number, y: number): number {
-  return y * grid.widthBlocks + x;
-}
-
-/**
- * Fills a rectangular region in the grid, clamping to grid bounds so
- * out-of-bounds tiles are silently discarded (the boundary wall regenerator
- * may emit rectangles that extend past `widthBlocks` for tunnel overhangs).
- */
-function paintRect(grid: TileGrid, x: number, y: number, w: number, h: number): void {
-  const x0 = Math.max(0, x);
-  const y0 = Math.max(0, y);
-  const x1 = Math.min(grid.widthBlocks, x + w);
-  const y1 = Math.min(grid.heightBlocks, y + h);
-  for (let yy = y0; yy < y1; yy++) {
-    for (let xx = x0; xx < x1; xx++) {
-      grid.cells[gridIndex(grid, xx, yy)] = 1;
-    }
-  }
-}
-
-/**
- * Greedy maximal rectangle starting at (x0, y0).  Grows right as far as
- * possible while every cell is filled, then grows down as far as possible
- * while every cell in the row is filled.
- */
-function maximalRectAt(grid: TileGrid, x0: number, y0: number): { w: number; h: number } {
-  // Grow width.
-  let w = 0;
-  while (x0 + w < grid.widthBlocks && grid.cells[gridIndex(grid, x0 + w, y0)] === 1) {
-    w += 1;
-  }
-  if (w === 0) return { w: 0, h: 0 };
-
-  // Grow height — each new row must be fully filled across [x0, x0+w).
-  let h = 1;
-  while (y0 + h < grid.heightBlocks) {
-    let allFilled = true;
-    const rowStart = gridIndex(grid, x0, y0 + h);
-    for (let i = 0; i < w; i++) {
-      if (grid.cells[rowStart + i] !== 1) { allFilled = false; break; }
-    }
-    if (!allFilled) break;
-    h += 1;
-  }
-  return { w, h };
-}
-
-function clearRect(grid: TileGrid, x: number, y: number, w: number, h: number): void {
-  for (let yy = y; yy < y + h; yy++) {
-    const rowStart = gridIndex(grid, x, yy);
-    for (let i = 0; i < w; i++) {
-      grid.cells[rowStart + i] = 0;
-    }
-  }
-}
-
-/**
- * Three-pass deterministic tile cover:
- *   1. Rectangles (min 2×2, min area 4).
- *   2. Horizontal runs (length ≥ 2).
- *   3. Points (length 1 leftovers).
- */
-function extractLayerFromGrid(grid: TileGrid): SavedSolidLayer {
-  const rects: SavedRect[] = [];
-  const runs: SavedRun[] = [];
-  const points: SavedPoint[] = [];
-
-  // Pass 1 — rectangles.  Scan row-major; first seed found is the top-left
-  // corner of the next rectangle.
-  for (let y = 0; y < grid.heightBlocks; y++) {
-    for (let x = 0; x < grid.widthBlocks; x++) {
-      if (grid.cells[gridIndex(grid, x, y)] !== 1) continue;
-      const { w, h } = maximalRectAt(grid, x, y);
-      if (w >= RECT_MIN_SIDE && h >= RECT_MIN_SIDE && w * h >= RECT_MIN_AREA) {
-        rects.push([x, y, w, h]);
-        clearRect(grid, x, y, w, h);
-      }
-      // Otherwise leave the cell alone for run/point extraction.
-    }
-  }
-
-  // Pass 2 — horizontal runs (length ≥ RUN_MIN_LENGTH).
-  for (let y = 0; y < grid.heightBlocks; y++) {
-    let x = 0;
-    while (x < grid.widthBlocks) {
-      if (grid.cells[gridIndex(grid, x, y)] !== 1) { x += 1; continue; }
-      let end = x + 1;
-      while (end < grid.widthBlocks && grid.cells[gridIndex(grid, end, y)] === 1) end += 1;
-      const len = end - x;
-      if (len >= RUN_MIN_LENGTH) {
-        runs.push([y, x, end]);
-        for (let i = x; i < end; i++) grid.cells[gridIndex(grid, i, y)] = 0;
-      }
-      x = end;
-    }
-  }
-
-  // Pass 3 — remaining single cells.
-  for (let y = 0; y < grid.heightBlocks; y++) {
-    for (let x = 0; x < grid.widthBlocks; x++) {
-      if (grid.cells[gridIndex(grid, x, y)] === 1) {
-        points.push([x, y]);
-        grid.cells[gridIndex(grid, x, y)] = 0;
-      }
-    }
-  }
-
-  // Deterministic sort: rects by (y, x, w, h); runs by (y, xStart); points by (y, x).
-  rects.sort((a, b) => a[1] - b[1] || a[0] - b[0] || a[2] - b[2] || a[3] - b[3]);
-  runs.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  points.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-
-  const layer: SavedSolidLayer = {};
-  if (rects.length > 0) layer.rects = rects;
-  if (runs.length > 0) layer.runs = runs;
-  if (points.length > 0) layer.points = points;
-  return layer;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // DEHYDRATE / HYDRATE  solids by theme
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Pick the theme-grouping key for a wall (sentinel for room-default theme). */
 function themeKeyForWall(wallTheme: BlockTheme | undefined, defaultTheme: BlockTheme): string {
-  return wallTheme && wallTheme !== defaultTheme ? wallTheme : DEFAULT_THEME_KEY;
+  return wallTheme && wallTheme !== defaultTheme ? blockThemeToId(wallTheme) : DEFAULT_THEME_KEY;
 }
 
 /**
@@ -462,7 +325,7 @@ export function hydrateSolidsByTheme(
     const layer = solids.byTheme[themeKey];
     const theme: BlockTheme | undefined = themeKey === DEFAULT_THEME_KEY
       ? undefined
-      : (themeKey as BlockTheme);
+      : blockThemeRefToTheme(themeKey as BlockTheme | BlockThemeId);
 
     if (layer.rects) {
       for (const [x, y, w, h] of layer.rects) {
@@ -504,12 +367,14 @@ export function isSavedRoomV2(data: unknown): data is SavedRoomV2 {
  * The editor saves in this format; the runtime never has to see it.
  */
 export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
-  const defaultTheme: BlockTheme = json.blockTheme ?? 'blackRock';
+  const defaultTheme: BlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme ?? 'blackRock';
 
   // Partition walls: uniform vs. special.
   const uniformWalls: RoomJsonWall[] = [];
   const specialWallsRaw: RoomJsonWall[] = [];
   for (const w of json.interiorWalls) {
+    const wallTheme = blockThemeRefToTheme(w.blockThemeId);
+    if (wallTheme && w.blockTheme === undefined) w.blockTheme = wallTheme;
     if (isUniformSolidWall(w)) uniformWalls.push(w);
     else specialWallsRaw.push(w);
   }
@@ -518,7 +383,7 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
 
   const specialWalls: SavedSpecialWall[] = specialWallsRaw.map(w => {
     const sw: SavedSpecialWall = { r: [w.xBlock, w.yBlock, w.wBlock, w.hBlock] };
-    if (w.blockTheme && w.blockTheme !== defaultTheme) sw.theme = w.blockTheme;
+    if (w.blockTheme && w.blockTheme !== defaultTheme) sw.theme = blockThemeToId(w.blockTheme);
     if (w.isPlatform) {
       sw.plat = 1;
       if (w.platformEdge !== undefined && w.platformEdge !== 0) sw.edge = w.platformEdge;
@@ -542,7 +407,7 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   };
 
   if (json.mapX !== undefined || json.mapY !== undefined) out.map = [json.mapX ?? 0, json.mapY ?? 0];
-  if (json.blockTheme)     out.theme = json.blockTheme;
+  out.theme = blockThemeToId(defaultTheme);
   if (json.backgroundId)   out.bg = json.backgroundId;
   if (json.lightingEffect) out.light = json.lightingEffect;
   if (json.songId && json.songId !== '_continue') out.song = json.songId;
@@ -601,12 +466,33 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
     out.ambientDir = json.ambientLightDirection;
   }
   if (json.ambientLightBlockers && json.ambientLightBlockers.length > 0) {
-    out.ambientBlockers = json.ambientLightBlockers.map(b => [b.xBlock, b.yBlock] as [number, number]);
+    out.ambientBlockers = json.ambientLightBlockers.map(b =>
+      b.isDark
+        ? ([b.xBlock, b.yBlock, 1] as [number, number, 1])
+        : ([b.xBlock, b.yBlock] as [number, number]),
+    );
   }
   if (json.lightSources && json.lightSources.length > 0) {
-    out.lights = json.lightSources.map(l => [
-      l.xBlock, l.yBlock, l.radiusBlocks, l.colorR, l.colorG, l.colorB, l.brightnessPct,
-    ] as [number, number, number, number, number, number, number]);
+    const hasExtendedLightSources = json.lightSources.some(l => (l.dustMoteCount ?? 0) > 0 || (l.dustMoteSpreadBlocks ?? 0) > 0);
+    if (hasExtendedLightSources) {
+      out.lightSourcesExt = json.lightSources.map(l => ({ ...l }));
+    } else {
+      out.lights = json.lightSources.map(l => [
+        l.xBlock, l.yBlock, l.radiusBlocks, l.colorR, l.colorG, l.colorB, l.brightnessPct,
+      ] as [number, number, number, number, number, number, number]);
+    }
+  }
+  if (json.sunbeams && json.sunbeams.length > 0) {
+    out.sunbeams = json.sunbeams.map(s => ({ ...s }));
+  }
+  if (json.fallingBlocks && json.fallingBlocks.length > 0) {
+    // Compact format: [xBlock, yBlock, variant_shortchar]
+    // 't' = tough, 's' = sensitive, 'c' = crumbling
+    out.fallingBlocks = json.fallingBlocks.map(fb => {
+      const v = fb.variant ?? 'tough';
+      const code = v === 'sensitive' ? 's' : v === 'crumbling' ? 'c' : 't';
+      return [fb.xBlock, fb.yBlock, code] as [number, number, string];
+    });
   }
 
   return out;
@@ -652,7 +538,10 @@ export function hydrateV2Room(saved: SavedRoomV2): RoomJsonDef {
   const specialWalls: RoomJsonWall[] = (saved.specialWalls ?? []).map(sw => {
     const [x, y, w, h] = sw.r;
     const wall: RoomJsonWall = { xBlock: x, yBlock: y, wBlock: w, hBlock: h };
-    if (sw.theme) wall.blockTheme = sw.theme;
+    if (sw.theme) {
+      const wallTheme = blockThemeRefToTheme(sw.theme);
+      if (wallTheme) wall.blockTheme = wallTheme;
+    }
     if (sw.plat === 1) {
       wall.isPlatform = true;
       if (sw.edge !== undefined && sw.edge !== 0) wall.platformEdge = sw.edge;
@@ -704,7 +593,10 @@ export function hydrateV2Room(saved: SavedRoomV2): RoomJsonDef {
     skillTombs,
   };
 
-  if (saved.theme) json.blockTheme = saved.theme;
+  if (saved.theme) {
+    const roomTheme = blockThemeRefToTheme(saved.theme);
+    if (roomTheme) json.blockTheme = roomTheme;
+  }
   if (saved.bg)    json.backgroundId = saved.bg;
   if (saved.light) json.lightingEffect = saved.light;
   if (saved.song)  json.songId = saved.song;
@@ -726,12 +618,28 @@ export function hydrateV2Room(saved: SavedRoomV2): RoomJsonDef {
     json.ambientLightDirection = saved.ambientDir as RoomJsonDef['ambientLightDirection'];
   }
   if (saved.ambientBlockers && saved.ambientBlockers.length > 0) {
-    json.ambientLightBlockers = saved.ambientBlockers.map(([x, y]) => ({ xBlock: x, yBlock: y }));
+    json.ambientLightBlockers = saved.ambientBlockers.map(entry => ({
+      xBlock: entry[0],
+      yBlock: entry[1],
+      isDark: entry[2] === 1,
+    }));
   }
-  if (saved.lights && saved.lights.length > 0) {
+  if (saved.lightSourcesExt && saved.lightSourcesExt.length > 0) {
+    json.lightSources = saved.lightSourcesExt.map(l => ({ ...l }));
+  } else if (saved.lights && saved.lights.length > 0) {
     json.lightSources = saved.lights.map(([x, y, r, cr, cg, cb, br]) => ({
       xBlock: x, yBlock: y, radiusBlocks: r,
       colorR: cr, colorG: cg, colorB: cb, brightnessPct: br,
+    }));
+  }
+  if (saved.sunbeams && saved.sunbeams.length > 0) {
+    json.sunbeams = saved.sunbeams.map(s => ({ ...s }));
+  }
+  if (saved.fallingBlocks && saved.fallingBlocks.length > 0) {
+    json.fallingBlocks = saved.fallingBlocks.map(([x, y, code]) => ({
+      xBlock: x,
+      yBlock: y,
+      variant: code === 's' ? 'sensitive' : code === 'c' ? 'crumbling' : 'tough',
     }));
   }
 
@@ -843,7 +751,7 @@ export function validateSolidsRoundtrip(
 export function validateRoomRoundtrip(json: RoomJsonDef): string[] {
   const saved = dehydrateRoom(json);
   const rebuilt = hydrateV2Room(saved);
-  const defaultTheme: BlockTheme = json.blockTheme ?? 'blackRock';
+  const defaultTheme: BlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme ?? 'blackRock';
 
   const errors = validateSolidsRoundtrip(
     json.interiorWalls, json.widthBlocks, json.heightBlocks, defaultTheme,

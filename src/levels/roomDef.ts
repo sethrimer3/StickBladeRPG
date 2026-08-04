@@ -29,25 +29,86 @@ import type { RoomSongId } from '../audio/musicManager';
 /**
  * Visual theme for block sprites in a room.
  * Controls which sprite set is used by the block renderer.
+ *
+ * Legacy values: 'blackRock', 'brownRock', 'dirt'.
+ * Folder-based themes: any folder name under ASSETS/SPRITES/BLOCKS/ (e.g. 'grayStone').
  */
-export type BlockTheme = 'blackRock' | 'brownRock' | 'dirt';
+export type BlockTheme = string;
 
-/** Maps a BlockTheme string to a compact numeric index for typed arrays. */
-export function blockThemeToIndex(theme: BlockTheme): number {
+/**
+ * Short stable theme IDs used by compact room JSON.
+ *
+ * Legacy themes use 2-letter codes: 'bk' (blackRock), 'br' (brownRock), 'dt' (dirt).
+ * Folder-based themes use their folder name directly as the ID (e.g. 'grayStone').
+ */
+export type BlockThemeId = string;
+
+/** Maps a BlockTheme string to its compact JSON ID. */
+export function blockThemeToId(theme: string): string {
   switch (theme) {
-    case 'blackRock': return 0;
-    case 'brownRock': return 1;
-    case 'dirt':      return 2;
+    case 'blackRock': return 'bk';
+    case 'brownRock': return 'br';
+    case 'dirt':      return 'dt';
+    default:          return theme; // folder-based themes: folder name IS the stable ID
   }
 }
 
-/** Maps a numeric theme index back to a BlockTheme string. */
-export function indexToBlockTheme(index: number): BlockTheme {
-  switch (index) {
-    case 1:  return 'brownRock';
-    case 2:  return 'dirt';
-    default: return 'blackRock';
+/** Maps a compact JSON theme ID back to a BlockTheme string. */
+export function blockThemeIdToTheme(themeId: string): string {
+  switch (themeId) {
+    case 'br': return 'brownRock';
+    case 'dt': return 'dirt';
+    case 'bk': return 'blackRock';
+    default:   return themeId; // folder-based/unknown IDs pass through as-is
   }
+}
+
+/** Parses either the legacy long theme name or compact JSON theme ID. */
+export function blockThemeRefToTheme(themeRef: string | undefined): string | undefined {
+  if (themeRef === undefined) return undefined;
+  switch (themeRef) {
+    case 'blackRock':
+    case 'brownRock':
+    case 'dirt':
+      return themeRef;
+    case 'bk': return 'blackRock';
+    case 'br': return 'brownRock';
+    case 'dt': return 'dirt';
+    default:
+      // For folder-based themes and any other non-empty string, pass through as-is.
+      // This ensures rooms saved with folder-name IDs (e.g. 'grayStone') reload correctly.
+      return themeRef;
+  }
+}
+
+// ── Dynamic theme index registry ──────────────────────────────────────────────
+//
+// Wall snapshots store themes as Uint8Array indices (0–254) for compact storage.
+// Indices 0-2 are reserved for the three legacy themes; new folder-based themes
+// are registered lazily starting at index 3. The registry is consistent within
+// a single session; it is NOT persisted (rooms are saved by theme name, not index).
+//
+const _themeToIndex = new Map<string, number>([
+  ['blackRock', 0],
+  ['brownRock', 1],
+  ['dirt', 2],
+]);
+const _indexToThemeArr: string[] = ['blackRock', 'brownRock', 'dirt'];
+let _nextThemeIndex = 3;
+
+/** Maps a BlockTheme string to a compact numeric index for typed arrays. */
+export function blockThemeToIndex(theme: string): number {
+  const existing = _themeToIndex.get(theme);
+  if (existing !== undefined) return existing;
+  const idx = _nextThemeIndex++;
+  _themeToIndex.set(theme, idx);
+  _indexToThemeArr[idx] = theme;
+  return idx;
+}
+
+/** Maps a numeric theme index back to a BlockTheme string. */
+export function indexToBlockTheme(index: number): string {
+  return _indexToThemeArr[index] ?? 'blackRock';
 }
 
 /** Sentinel value: wall uses room-level default theme. */
@@ -134,6 +195,13 @@ export type AmbientLightDirection =
 export interface RoomAmbientLightBlockerDef {
   readonly xBlock: number;
   readonly yBlock: number;
+  /**
+   * When true, this blocker also draws a solid black overlay over the air cell,
+   * hiding the room background (procedural effects, parallax) from view.
+   * Use this to conceal secret tunnels and off-screen areas.
+   * The ambient-light propagation effect is identical to the default (clear) blocker.
+   */
+  readonly isDark?: boolean;
 }
 
 /**
@@ -157,6 +225,33 @@ export interface RoomLightSourceDef {
   readonly colorB: number;
   /** Brightness as a percent in 0-100. 100 = full lamp, 0 = off. */
   readonly brightnessPct: number;
+  /** Number of atmospheric dust motes hovering near this source (0 = none). */
+  readonly dustMoteCount?: number;
+  /** Radius (blocks) within which dust motes spawn; defaults to radiusBlocks. */
+  readonly dustMoteSpreadBlocks?: number;
+}
+
+/**
+ * A pixel-art sunbeam authored in the editor.
+ *
+ * The beam originates at (`xBlock`, `yBlock`) and travels in `angleRad` direction,
+ * forming a tapered rectangle.  Rendered behind walls so shafts appear to pierce
+ * through openings.
+ */
+export interface RoomSunbeamDef {
+  readonly xBlock: number;
+  readonly yBlock: number;
+  /** Angle (radians) the beam travels — 0 = right, π/2 = down. */
+  readonly angleRad: number;
+  /** Width of the beam base in blocks. */
+  readonly widthBlocks: number;
+  /** Length of the beam shaft in blocks. */
+  readonly lengthBlocks: number;
+  readonly colorR: number;
+  readonly colorG: number;
+  readonly colorB: number;
+  /** Intensity as 0–100 percent (controls peak alpha). */
+  readonly intensityPct: number;
 }
 
 /** Small block size in world units (8×8 virtual px, 32×32 physical px @ 4×). */
@@ -259,6 +354,12 @@ export interface RoomEnemyDef {
    * Only meaningful when isGoldenMimicFlag === 1.
    */
   isGoldenMimicYFlippedFlag?: 0 | 1;
+  /**
+   * 1 if this enemy is a bee swarm — 10 bees that orbit a spawn area until the
+   * player comes close or the swarm takes damage, then charge the player.
+   * Each bee is killed by 1 golden mote (1 Physical particle hit).
+   */
+  isBeeSwarmFlag?: 0 | 1;
 }
 
 /** An axis-aligned wall rectangle inside a room (block units). */
@@ -336,6 +437,16 @@ export interface RoomTransitionDef {
    * interior transition that can be placed anywhere inside the room.
    */
   depthBlock?: number;
+  /**
+   * When true, this transition is a secret door: the fade gradient begins
+   * invisible and only activates when the player is very close.
+   */
+  isSecretDoor?: boolean;
+  /**
+   * Width of the fade gradient in blocks (default: 3). Larger values create
+   * a slower, more gradual fade-to-black effect at the tunnel entrance.
+   */
+  gradientWidthBlocks?: number;
 }
 
 /** Direction a spike faces (the pointy end). */
@@ -369,6 +480,123 @@ export interface RoomBreakableBlockDef {
   yBlock: number;
 }
 
+/**
+ * Which elemental substance a crumble block is specifically weak to.
+ * - `'normal'`    — standard crumble block (no elemental weakness).
+ * - `'fire'`      — weak to fire.
+ * - `'water'`     — weak to water.
+ * - `'void'`      — weak to void energy.
+ * - `'ice'`       — weak to ice.
+ * - `'lightning'` — weak to lightning.
+ * - `'poison'`    — weak to poison.
+ * - `'shadow'`    — weak to shadow.
+ * - `'nature'`    — weak to nature.
+ */
+export type CrumbleVariant =
+  | 'normal'
+  | 'fire'
+  | 'water'
+  | 'void'
+  | 'ice'
+  | 'lightning'
+  | 'poison'
+  | 'shadow'
+  | 'nature';
+
+/** A crumble block that collapses as soon as the player touches it. */
+export interface RoomCrumbleBlockDef {
+  xBlock: number;
+  yBlock: number;
+  /** Width in blocks (default 1). */
+  wBlock?: number;
+  /** Height in blocks (default 1). */
+  hBlock?: number;
+  /**
+   * Ramp orientation (0-3). Undefined or absent = not a ramp.
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
+   */
+  rampOrientation?: 0 | 1 | 2 | 3;
+  /** Which elemental type this crumble block is weak to. Defaults to `'normal'`. */
+  variant?: CrumbleVariant;
+  /** Per-block theme override. When set, overrides the room-level default. */
+  blockTheme?: BlockTheme;
+}
+
+/** A bounce pad that reflects the player's velocity on contact.
+ *
+ * speedFactorIndex:
+ *   0 = 50 % restitution (dim 2×2-pixel glowing core)
+ *   1 = 100 % restitution (bright 4×4-pixel glowing core)
+ *
+ * The player cannot grapple to it, jump off it, or wall-jump off it.
+ */
+export interface RoomBouncePadDef {
+  xBlock: number;
+  yBlock: number;
+  /** Width in blocks (default 1). */
+  wBlock?: number;
+  /** Height in blocks (default 1). */
+  hBlock?: number;
+  /**
+   * Ramp orientation (0-3). Undefined or absent = not a ramp.
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
+   */
+  rampOrientation?: 0 | 1 | 2 | 3;
+  /** 0 = 50 % bounce (dim core), 1 = 100 % bounce (bright core). Default 0. */
+  speedFactorIndex?: 0 | 1;
+}
+
+/**
+ * How the rope can be destroyed.
+ * - 'indestructible' — cannot be destroyed.
+ * - 'playerOnly'     — destroyed only by player dust particles.
+ * - 'any'            — destroyed by any dust particle contact.
+ */
+export type RopeDestructibility = 'indestructible' | 'playerOnly' | 'any';
+
+/** Default number of rope segments when not explicitly specified. */
+export const DEFAULT_ROPE_SEGMENT_COUNT = 8;
+
+/** Minimum distance between rope anchors (in block units) for placement to be valid. */
+export const MIN_ROPE_LENGTH_BLOCKS = 0.5;
+
+/**
+ * Pre-computed half-thickness (world units) for each rope thickness index.
+ * Index 0 = 8 px wide  (half = 4),
+ * Index 1 = 16 px wide (half = 8),
+ * Index 2 = 24 px wide (half = 12).
+ */
+export const ROPE_THICKNESS_HALF_WORLD: readonly number[] = [4, 8, 12] as const;
+
+/** A hanging rope between two world-space anchor points. */
+export interface RoomRopeDef {
+  /** X position of the fixed top anchor (block units). */
+  anchorAXBlock: number;
+  /** Y position of the fixed top anchor (block units). */
+  anchorAYBlock: number;
+  /** X position of the bottom anchor (block units). */
+  anchorBXBlock: number;
+  /** Y position of the bottom anchor (block units). */
+  anchorBYBlock: number;
+  /** Number of rope segments (default 8, clamped to MAX_ROPE_SEGMENTS at load). */
+  segmentCount?: number;
+  /**
+   * Whether anchor B is also fixed.
+   * true  = both ends pinned (bridge rope between two wall points).
+   * false = only anchor A is pinned (dangling rope).
+   * Defaults to true.
+   */
+  isAnchorBFixed?: boolean;
+  /** How this rope can be destroyed. Defaults to 'indestructible'. */
+  destructibility?: RopeDestructibility;
+  /**
+   * Visual and collision thickness index.
+   * 0 = 8 px (thin),  1 = 16 px (medium),  2 = 24 px (thick).
+   * Defaults to 0.
+   */
+  thicknessIndex?: 0 | 1 | 2;
+}
+
 /** A jar that grants temporary dust particles when broken. */
 export interface RoomDustBoostJarDef {
   xBlock: number;
@@ -391,6 +619,12 @@ export interface RoomDustPileDef {
   yBlock: number;
   /** Number of dust particles in this pile (default: 5). */
   dustCount: number;
+  /**
+   * Full spread width (block units). The pile spawns with a triangle-distributed
+   * random offset in the range ±(spreadBlocks / 2) blocks from the anchor position.
+   * Default: 0 (no spread).
+   */
+  spreadBlocks?: number;
 }
 
 // ── Decorations ───────────────────────────────────────────────────────────────
@@ -413,6 +647,26 @@ export interface RoomDecorationDef {
   kind: DecorationKind;
 }
 
+// ── Falling blocks ────────────────────────────────────────────────────────────
+
+/**
+ * The three falling block variants:
+ * - 'tough'     — only triggers from strong downward force or downward grapple pull.
+ * - 'sensitive' — triggers from almost any contact.
+ * - 'crumbling' — like sensitive, but disappears after falling to top speed.
+ */
+export type FallingBlockVariant = 'tough' | 'sensitive' | 'crumbling';
+
+/** An individual falling block tile placed by the editor. */
+export interface RoomFallingBlockDef {
+  /** Block column (X). */
+  xBlock: number;
+  /** Block row (Y). */
+  yBlock: number;
+  /** Which falling block variant this tile belongs to. */
+  variant: FallingBlockVariant;
+}
+
 /** A rectangular area where grasshopper critters spawn randomly. */
 export interface RoomGrasshopperAreaDef {
   /** Left edge X (block units). */
@@ -424,6 +678,15 @@ export interface RoomGrasshopperAreaDef {
   /** Height (block units). */
   hBlock: number;
   /** Number of grasshoppers to spawn in this area. */
+  count: number;
+}
+
+/** A rectangular area where fireflies spawn directly (free-roaming, not from jars). */
+export interface RoomFireflyAreaDef {
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
   count: number;
 }
 
@@ -472,6 +735,8 @@ export interface RoomDef {
   ambientLightBlockers?: readonly RoomAmbientLightBlockerDef[];
   /** Designer-placed local light sources (see {@link RoomLightSourceDef}). */
   lightSources?: readonly RoomLightSourceDef[];
+  /** Designer-placed sunbeams (see {@link RoomSunbeamDef}). */
+  sunbeams?: readonly RoomSunbeamDef[];
   /** Room width in blocks. */
   widthBlocks: number;
   /** Room height in blocks. */
@@ -493,6 +758,11 @@ export interface RoomDef {
    * Each pickup grants +4 dust particles to the player.
    */
   dustContainers?: readonly { xBlock: number; yBlock: number }[];
+  /**
+   * Collectible dust container piece positions (block units).
+   * Pieces accumulate; when enough are collected they grant a full container.
+   */
+  dustContainerPieces?: readonly { xBlock: number; yBlock: number }[];
 
   // ── Environmental hazards ────────────────────────────────────────────────
   /** Spike tiles that damage the player on contact. */
@@ -505,6 +775,12 @@ export interface RoomDef {
   lavaZones?: readonly RoomZoneDef[];
   /** Breakable blocks that shatter from high-momentum player impact. */
   breakableBlocks?: readonly RoomBreakableBlockDef[];
+  /** Crumble blocks that collapse on first player contact. */
+  crumbleBlocks?: readonly RoomCrumbleBlockDef[];
+  /** Bounce pad blocks that reflect the player's velocity on contact. */
+  bouncePads?: readonly RoomBouncePadDef[];
+  /** Ropes hanging between anchor points in the room. */
+  ropes?: readonly RoomRopeDef[];
   /** Jars that grant temporary dust particles when broken by the player. */
   dustBoostJars?: readonly RoomDustBoostJarDef[];
   /** Jars that release golden fireflies when broken by the player. */
@@ -513,8 +789,12 @@ export interface RoomDef {
   dustPiles?: readonly RoomDustPileDef[];
   /** Grasshopper critter spawn zones. */
   grasshopperAreas?: readonly RoomGrasshopperAreaDef[];
+  /** Firefly spawn areas (free-roaming fireflies, not jar-based). */
+  fireflyAreas?: readonly RoomFireflyAreaDef[];
   /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
   decorations?: readonly RoomDecorationDef[];
+  /** Falling block tiles — grouped into rigid falling units at load time. */
+  fallingBlocks?: readonly RoomFallingBlockDef[];
   /**
    * Background music for this room.
    * '_continue' = keep playing the previous room's song (default / undefined).

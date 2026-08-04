@@ -52,10 +52,14 @@ import {
   VAR_JUMP_TIME_TICKS,
   COYOTE_TIME_TICKS,
   WALL_SLIDE_MAX_FALL_SPEED,
+  WALL_JUMP_GRACE_TICKS,
   SKID_JUMP_MULTIPLIER,
+  GRAPPLE_SUPER_JUMP_MULTIPLIER,
   ROLLING_ENEMY_SPRITE_RADIUS_WORLD,
   FLYING_EYE_VERTICAL_MARGIN_WORLD,
   CLUSTER_EDGE_MARGIN_WORLD,
+  LANDING_SKID_SPEED_THRESHOLD_WORLD,
+  LANDING_SKID_SPEED_FACTOR_MAX,
 } from './movementConstants';
 
 // ============================================================================
@@ -68,8 +72,9 @@ import {
   resolveClusterSolidWallCollision,
   resolveRampSurfaces,
 } from './movementCollision';
+import { resolvePlayerRopeCollisions } from '../ropes/ropeCollision';
 
-export { debugSpeedOverrides, PLAYER_JUMP_SPEED_WORLD, VAR_JUMP_TIME_TICKS };
+export { debugSpeedOverrides, PLAYER_JUMP_SPEED_WORLD, VAR_JUMP_TIME_TICKS, GRAPPLE_SUPER_JUMP_MULTIPLIER };
 
 // ============================================================================
 // Main cluster movement update (step 0 of tick pipeline)
@@ -77,6 +82,9 @@ export { debugSpeedOverrides, PLAYER_JUMP_SPEED_WORLD, VAR_JUMP_TIME_TICKS };
 
 export function applyClusterMovement(world: WorldState): void {
   const dtSec = world.dtMs / 1000.0;
+
+  // Reset per-tick landing skid factor (set again below if player just landed at high speed).
+  world.playerLandingSkidSpeedFactor = 0.0;
 
   // ── Locate the player cluster position (needed by enemy AI) ───────────────
   let playerX = 0.0;
@@ -202,12 +210,20 @@ export function applyClusterMovement(world: WorldState): void {
       const wasGrounded = cluster.isGroundedFlag === 1;
       // Grounding for this tick is rebuilt by collision passes below.
       resetClusterGroundedFlag(cluster);
-      const thickLanded = resolveClusterSolidWallCollision(cluster, world, prevX, prevY, dtSec, wasGrounded);
+      const wallResult  = resolveClusterSolidWallCollision(cluster, world, prevX, prevY, dtSec, wasGrounded);
+      const thickLanded = wallResult.landed;
       const rampLanded  = resolveRampSurfaces(cluster, world);
 
       // Thin platform / world floor check (position already integrated by solid wall resolver)
       const thinLanded  = resolveClusterFloorCollision(cluster, world);
-      const justLanded  = thinLanded || thickLanded || rampLanded;
+
+      // Rope collision — player can stand on and collide with rope capsules.
+      // prevY from before integration is used for directional landing detection.
+      if (cluster.isPlayerFlag === 1) {
+        resolvePlayerRopeCollisions(cluster, world, prevY);
+      }
+
+      const justLanded  = thinLanded || thickLanded || rampLanded || cluster.isGroundedFlag === 1;
 
       if (cluster.isPlayerFlag === 1) {
         // ── Wall slide: cap downward velocity when pressing into a wall ─────
@@ -233,6 +249,9 @@ export function applyClusterMovement(world: WorldState): void {
         if (justLanded) {
           // Reset variable jump sustain on landing
           cluster.varJumpTimerTicks = 0;
+          // Clear wall grace timers — grounded cancels wall coyote time.
+          cluster.wallJumpGraceLeftTicks  = 0;
+          cluster.wallJumpGraceRightTicks = 0;
           // Fire buffered jump immediately on landing
           if (cluster.jumpBufferTicks > 0) {
             const baseJumpSpeedLand = ov(debugSpeedOverrides.jumpSpeedWorld, PLAYER_JUMP_SPEED_WORLD);
@@ -244,6 +263,19 @@ export function applyClusterMovement(world: WorldState): void {
             cluster.jumpBufferTicks     = 0;
             cluster.varJumpTimerTicks   = VAR_JUMP_TIME_TICKS;
             cluster.varJumpSpeedWorld   = -landJumpSpeed;
+          }
+
+          // ── Landing skid dust at high horizontal speed ───────────────────
+          // When the player touches the ground at above-sprint horizontal speed,
+          // trigger skid-dust scaled to the excess speed.
+          // factor = 0 at threshold, increasing linearly:
+          //   factor = (speed − threshold) / threshold
+          // So factor = 1.0 at 2× threshold, 4.0 (max) at 5× threshold.
+          const absVx = Math.abs(cluster.velocityXWorld);
+          if (absVx > LANDING_SKID_SPEED_THRESHOLD_WORLD) {
+            const rawFactor = (absVx - LANDING_SKID_SPEED_THRESHOLD_WORLD)
+              / LANDING_SKID_SPEED_THRESHOLD_WORLD;
+            world.playerLandingSkidSpeedFactor = Math.min(rawFactor, LANDING_SKID_SPEED_FACTOR_MAX);
           }
         } else if (wasGrounded && cluster.isGroundedFlag === 0) {
           // Player walked off a ledge — start coyote time
@@ -258,6 +290,17 @@ export function applyClusterMovement(world: WorldState): void {
         }
         if (cluster.isGroundedFlag === 1) {
           cluster.hasUsedWallJumpSinceResetFlag = 0;
+        }
+
+        // ── Wall jump grace timers: refresh when touching a wall ─────────────
+        // Set each frame the wall-touch flag is active so the timer resets to
+        // its full window; counts down in tickPlayerMovement via the timer block.
+        const graceTicks = ov(debugSpeedOverrides.wallJumpGraceTicks, WALL_JUMP_GRACE_TICKS);
+        if (cluster.isTouchingWallLeftFlag === 1) {
+          cluster.wallJumpGraceLeftTicks = graceTicks;
+        }
+        if (cluster.isTouchingWallRightFlag === 1) {
+          cluster.wallJumpGraceRightTicks = graceTicks;
         }
       }
 
@@ -289,16 +332,21 @@ export function applyClusterMovement(world: WorldState): void {
   } // end for (clusters)
 
   // ── Update skid debris flag for renderer ──────────────────────────────────
+  // playerLandingSkidSpeedFactor is written above per-tick; read here and by renderer.
   const player = world.clusters[0];
   if (
     player !== undefined &&
     player.isAliveFlag === 1 &&
-    (player.isSkiddingFlag === 1 || world.wallJumpSkidDebrisBurstFlag === 1)
+    (player.isSkiddingFlag === 1 || world.wallJumpSkidDebrisBurstFlag === 1
+     || world.playerLandingSkidSpeedFactor > 0)
   ) {
     world.isPlayerSkiddingFlag = 1;
-    // Front corner = bottom edge, in the direction the player is sliding
-    // (opposite to facing direction since they are skidding)
-    if (player.isSkiddingFlag === 1) {
+    if (world.playerLandingSkidSpeedFactor > 0) {
+      // Landing skid: center the debris on the player's feet, not just a front corner.
+      world.skidDebrisXWorld = player.positionXWorld;
+      world.skidDebrisYWorld = player.positionYWorld + player.halfHeightWorld;
+    } else if (player.isSkiddingFlag === 1) {
+      // Normal skid: front corner = bottom edge in the direction the player is sliding
       const isMovingRight = player.velocityXWorld > 0;
       world.skidDebrisXWorld = isMovingRight
         ? player.positionXWorld + player.halfWidthWorld
@@ -311,11 +359,13 @@ export function applyClusterMovement(world: WorldState): void {
   world.wallJumpSkidDebrisBurstFlag = 0;
 
   // Clear per-tick player inputs (consumed this tick).
-  // playerJumpTriggeredFlag is preserved when grappling so applyGrappleClusterConstraint
-  // (step 0.25) can detect the rising edge of a jump press for tap/hold detection.
+  // playerJumpTriggeredFlag and playerDownTriggeredFlag are preserved when
+  // grappling so applyGrappleClusterConstraint (step 0.25) can detect the
+  // rising edge of these inputs for tap/hold detection.
   world.playerMoveInputDxWorld  = 0.0;
   world.playerMoveInputDyWorld  = 0.0;
   if (world.isGrappleActiveFlag === 0) {
     world.playerJumpTriggeredFlag = 0;
+    world.playerDownTriggeredFlag = 0;
   }
 }

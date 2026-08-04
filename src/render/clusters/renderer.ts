@@ -1,10 +1,10 @@
-import { WorldSnapshot, ClusterSnapshot } from '../snapshot';
+import { WorldSnapshot } from '../snapshot';
 import { DASH_RECHARGE_ANIM_TICKS } from '../../sim/clusters/dashConstants';
 import { renderWallSprites } from '../walls/blockSpriteRenderer';
 import { BLOCK_SIZE_MEDIUM, PLAYER_HALF_WIDTH_WORLD } from '../../levels/roomDef';
 import type { PlayerCloak } from './playerCloak';
 import type { PhantomCloakExtension } from './phantomCloak';
-import { loadImg, isSpriteReady } from '../imageCache';
+import { isSpriteReady } from '../imageCache';
 import {
   getCharacterSprites,
   getOrCreateOuterOutlineMask,
@@ -34,15 +34,8 @@ import {
   renderSquareStampede,
   renderWaterBubbleBody,
   renderIceBubbleBody,
+  renderBeeSwarm,
 } from './enemyRenderers';
-
-// ── Grapple dust sprites ─────────────────────────────────────────────────────
-
-const _grappleDustSprite = loadImg('SPRITES/DUST/grapplingHook/grapplingHookDust.png');
-const _grappleDustEndSprite = loadImg('SPRITES/DUST/grapplingHook/grapplingHookDust_end.png');
-const GRAPPLE_DUST_SEGMENT_PX = 4;
-const GRAPPLE_DUST_SIZE_PX = 4;
-const GRAPPLE_DUST_END_SIZE_PX = 4;
 
 /**
  * Renders walls (level geometry) from the snapshot on the 2D canvas using
@@ -168,7 +161,15 @@ export function renderClusters(
       // ── Player: character sprite (no rotation; flip when facing left) ────
       const charSprites = getCharacterSprites(snapshot.characterId);
       const isGrappling = snapshot.isGrappleActiveFlag === 1;
-      const sprite = getPlayerSprite(charSprites, cluster, isGrappling);
+      // Proximity-bounce stub sprite: while the bounce timer is active, override
+      // the sprite with the jumping sprite and apply a surface-aligned rotation.
+      const isBouncing = snapshot.grappleProximityBounceTicksLeft > 0;
+      const sprite = isBouncing
+        ? charSprites.jumping
+        : getPlayerSprite(charSprites, cluster, isGrappling);
+      const bounceRotationAngleRad = isBouncing
+        ? snapshot.grappleProximityBounceRotationAngleRad
+        : 0;
       // spritePivotX is the x-offset from the flip-pivot (hitbox centre, screenX) to
       // the sprite's left edge.  Pixel 9.5 from the sprite left aligns with screenX,
       // so the sprite left is 9.5px to the left of screenX.
@@ -262,6 +263,10 @@ export function renderClusters(
         ctx.translate(screenX - 0.5, spriteCenterY);
         if (cluster.isFacingLeftFlag === 1) {
           ctx.scale(-1, 1);
+        }
+        // Proximity-bounce stub: rotate the jumping sprite to face the surface.
+        if (bounceRotationAngleRad !== 0) {
+          ctx.rotate(bounceRotationAngleRad);
         }
         // Draw black outer silhouette first, then the original sprite on top.
         ctx.drawImage(
@@ -416,12 +421,13 @@ export function renderClusters(
     } else if (cluster.isBeetleFlag === 1) {
       // ── Golden Beetle: stub graphics — oval body with wing hints ─────────
       if (cluster.beetleIsFlightModeFlag === 1) {
-        renderBeetleFlying(ctx, screenX, screenY, boxHalfW);
+        renderBeetleFlying(ctx, screenX, screenY, boxHalfW, cluster.beetleAiState);
       } else {
         renderBeetleCrawling(
           ctx, screenX, screenY, boxHalfW,
           cluster.beetleSurfaceNormalXWorld,
           cluster.beetleSurfaceNormalYWorld,
+          cluster.beetleAiState,
         );
       }
     } else if (cluster.isBubbleEnemyFlag === 1) {
@@ -442,6 +448,9 @@ export function renderClusters(
     } else if (cluster.isGoldenMimicFlag === 1) {
       // ── Golden Mimic: golden silhouette of the player sprite ──────────────
       renderGoldenMimic(ctx, screenX, screenY, cluster, snapshot.tick, scalePx, snapshot.characterId);
+    } else if (cluster.isBeeSwarmFlag === 1) {
+      // ── Bee Swarm: individual bees rendered as 4×2 pixel sprites ─────────
+      renderBeeSwarm(ctx, cluster, snapshot, scalePx, offsetXPx, offsetYPx);
     } else {
       // ── Regular cluster box body ─────────────────────────────────────────
       const bodyColor = '#ff6600';
@@ -515,6 +524,8 @@ export function renderClusters(
       barColor = '#dd44ff'; // vivid magenta-purple for square stampede
     } else if (cluster.isGoldenMimicFlag === 1) {
       barColor = '#ffd700'; // bright gold for golden mimic
+    } else if (cluster.isBeeSwarmFlag === 1) {
+      barColor = '#ffcc00'; // amber-gold for bee swarm
     } else if (isPlayer) {
       barColor = '#00ff99';
     } else {
@@ -522,165 +533,6 @@ export function renderClusters(
     }
     ctx.fillStyle = barColor;
     ctx.fillRect(barXPx, barYPx, barWidthPx * healthRatio, barHeightPx);
-  }
-
-  ctx.restore();
-}
-
-export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnapshot, offsetXPx: number, offsetYPx: number, scalePx: number): void {
-  const hasActiveOrMiss = snapshot.isGrappleActiveFlag === 1 || snapshot.isGrappleMissActiveFlag === 1;
-  if (!hasActiveOrMiss && snapshot.grappleAttachFxTicks <= 0) return;
-
-  let playerCluster: (typeof snapshot.clusters)[0] | undefined;
-  for (let ci = 0; ci < snapshot.clusters.length; ci++) {
-    if (snapshot.clusters[ci].isPlayerFlag === 1 && snapshot.clusters[ci].isAliveFlag === 1) {
-      playerCluster = snapshot.clusters[ci];
-      break;
-    }
-  }
-  if (playerCluster === undefined && snapshot.grappleAttachFxTicks <= 0) return;
-
-  // Grapple visually originates from right-middle (or left-middle when facing left) of the sprite
-  let px = 0;
-  let py = 0;
-  if (playerCluster !== undefined) {
-    const halfW = playerCluster.halfWidthWorld * scalePx;
-    const offsetDir = playerCluster.isFacingLeftFlag === 1 ? -1 : 1;
-    px = playerCluster.positionXWorld * scalePx + offsetXPx + offsetDir * halfW;
-    py = playerCluster.positionYWorld * scalePx + offsetYPx;
-  }
-  let ax = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
-  let ay = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
-  if (snapshot.isGrappleMissActiveFlag === 1 && snapshot.grappleParticleStartIndex >= 0) {
-    const tipIndex = snapshot.grappleParticleStartIndex + 9;
-    const isTipAlive = tipIndex < snapshot.particles.particleCount && snapshot.particles.isAliveFlag[tipIndex] === 1;
-    if (isTipAlive) {
-      ax = snapshot.particles.positionXWorld[tipIndex] * scalePx + offsetXPx;
-      ay = snapshot.particles.positionYWorld[tipIndex] * scalePx + offsetYPx;
-    }
-  }
-
-  ctx.save();
-
-  if (hasActiveOrMiss && playerCluster !== undefined) {
-    // Faint guide glow only — the "rope" itself is represented by gold particles.
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(ax, ay);
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.08)';
-    ctx.lineWidth = 2.0;
-    ctx.setLineDash([1, 10]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  if (hasActiveOrMiss && playerCluster !== undefined) {
-    const dx = ax - px;
-    const dy = ay - py;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const segmentCount = Math.max(1, Math.floor(dist / GRAPPLE_DUST_SEGMENT_PX));
-    const dustSizePx = GRAPPLE_DUST_SIZE_PX * Math.max(1, scalePx * 0.5);
-
-    if (isSpriteReady(_grappleDustSprite)) {
-      for (let segmentIndex = 0; segmentIndex <= segmentCount; segmentIndex++) {
-        const t = segmentCount > 0 ? segmentIndex / segmentCount : 0;
-        const sx = px + dx * t;
-        const sy = py + dy * t;
-        ctx.drawImage(_grappleDustSprite, sx - dustSizePx * 0.5, sy - dustSizePx * 0.5, dustSizePx, dustSizePx);
-      }
-    } else {
-      for (let segmentIndex = 0; segmentIndex <= segmentCount; segmentIndex++) {
-        const t = segmentCount > 0 ? segmentIndex / segmentCount : 0;
-        const sx = px + dx * t;
-        const sy = py + dy * t;
-        ctx.fillStyle = 'rgba(255, 215, 0, 0.75)';
-        ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
-      }
-    }
-  }
-
-  const endSizePx = GRAPPLE_DUST_END_SIZE_PX * Math.max(1, scalePx * 0.5);
-  if (isSpriteReady(_grappleDustEndSprite)) {
-    ctx.drawImage(_grappleDustEndSprite, ax - endSizePx * 0.5, ay - endSizePx * 0.5, endSizePx, endSizePx);
-    if (hasActiveOrMiss && playerCluster !== undefined) {
-      ctx.drawImage(_grappleDustEndSprite, px - endSizePx * 0.5, py - endSizePx * 0.5, endSizePx, endSizePx);
-    }
-  } else {
-    ctx.beginPath();
-    ctx.arc(ax, ay, 7, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 215, 0, 0.85)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255, 255, 200, 0.95)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
-
-  if (snapshot.grappleAttachFxTicks > 0) {
-    const fxProgress = 1.0 - snapshot.grappleAttachFxTicks / 14.0;
-    const fxRadius = 6 + fxProgress * 24;
-    const fxAlpha = 0.4 * (1.0 - fxProgress);
-    ctx.beginPath();
-    ctx.arc(
-      snapshot.grappleAttachFxXWorld * scalePx + offsetXPx,
-      snapshot.grappleAttachFxYWorld * scalePx + offsetYPx,
-      fxRadius,
-      0,
-      Math.PI * 2,
-    );
-    ctx.strokeStyle = `rgba(255, 236, 170, ${fxAlpha})`;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-
-  // ── Top-surface grapple special effect: rotating golden starburst at anchor ─
-  if (snapshot.isGrappleTopSurfaceFlag === 1 && snapshot.isGrappleActiveFlag === 1) {
-    /** Tick-to-radians scale for starburst rotation speed. */
-    const STARBURST_TIME_SCALE = 0.12;
-    /** Number of radiating rays in the starburst. */
-    const STARBURST_RAY_COUNT = 8;
-    /** Inner radius (px) where rays begin — keeps the center clear. */
-    const STARBURST_INNER_RADIUS_PX = 2;
-    /** Base outer radius (px) of the starburst rays. */
-    const STARBURST_OUTER_BASE_PX = 8;
-    /** Frequency of the pulsing outer-radius oscillation. */
-    const STARBURST_PULSE_FREQUENCY = 3.0;
-    /** Amplitude (px) of the pulsing oscillation on the outer radius. */
-    const STARBURST_PULSE_AMPLITUDE_PX = 3;
-    /** Radius (px) of the bright center glow circle. */
-    const STARBURST_CENTER_GLOW_RADIUS_PX = 3;
-
-    const starAx = snapshot.grappleAnchorXWorld * scalePx + offsetXPx;
-    const starAy = snapshot.grappleAnchorYWorld * scalePx + offsetYPx;
-    const time = snapshot.tick * STARBURST_TIME_SCALE;
-    const pulseOuter = STARBURST_OUTER_BASE_PX +
-      Math.sin(time * STARBURST_PULSE_FREQUENCY) * STARBURST_PULSE_AMPLITUDE_PX;
-
-    // Radiating golden rays
-    for (let r = 0; r < STARBURST_RAY_COUNT; r++) {
-      const angle = time + (r / STARBURST_RAY_COUNT) * Math.PI * 2;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-      ctx.beginPath();
-      ctx.moveTo(starAx + cosA * STARBURST_INNER_RADIUS_PX, starAy + sinA * STARBURST_INNER_RADIUS_PX);
-      ctx.lineTo(starAx + cosA * pulseOuter, starAy + sinA * pulseOuter);
-      ctx.strokeStyle = 'rgba(255, 215, 0, 0.85)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    // Bright center glow
-    ctx.beginPath();
-    ctx.arc(starAx, starAy, STARBURST_CENTER_GLOW_RADIUS_PX, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 220, 0.95)';
-    ctx.fill();
-
-    // Outer pulsing ring (brighter when stuck / decelerating)
-    const ringAlpha = snapshot.isGrappleStuckFlag === 1 ? 0.7 : 0.4;
-    ctx.beginPath();
-    ctx.arc(starAx, starAy, pulseOuter + 2, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255, 236, 170, ${ringAlpha})`;
-    ctx.lineWidth = 1;
-    ctx.stroke();
   }
 
   ctx.restore();

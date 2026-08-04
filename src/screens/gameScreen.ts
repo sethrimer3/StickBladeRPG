@@ -1,86 +1,89 @@
 import { createWorldState } from '../sim/world';
 import { createClusterState } from '../sim/clusters/state';
-import { initGrappleChainParticles, fireGrapple, releaseGrapple } from '../sim/clusters/grapple';
+import { initGrappleChainParticles } from '../sim/clusters/grapple';
 import { ParticleKind } from '../sim/particles/kinds';
 import { tick } from '../sim/tick';
-import { createRng, nextFloat } from '../sim/rng';
-import { createSnapshot, createReusableSnapshot, updateSnapshotInPlace, resetReusableSnapshot } from '../render/snapshot';
+import { createRng } from '../sim/rng';
+import { createReusableSnapshot, updateSnapshotInPlace, resetReusableSnapshot } from '../render/snapshot';
 import { renderParticles } from '../render/particles/renderer';
-import { renderClusters, renderWalls, renderGrapple } from '../render/clusters/renderer';
+import { renderClusters, renderWalls } from '../render/clusters/renderer';
+import { renderGrapple } from '../render/clusters/grappleRenderer';
 import { PlayerCloak } from '../render/clusters/playerCloak';
 import { PhantomCloakExtension } from '../render/clusters/phantomCloak';
 import { renderHudOverlay, HudState, HudDebugState } from '../render/hud/overlay';
 import { EnvironmentalDustLayer } from '../render/environmentalDust';
+import { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
+import { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
 import { SkidDebrisRenderer } from '../render/skidDebrisRenderer';
+import { CrumbleDebrisRenderer } from '../render/crumbleDebrisRenderer';
+import { ArrowWeaveRenderer } from '../render/effects/arrowWeaveRenderer';
+import { SwordWeaveRenderer } from '../render/effects/swordWeaveRenderer';
+import { FallingBlockDustRenderer } from '../render/fallingBlocks/fallingBlockRenderer';
 import { WebGLParticleRenderer } from '../render/particles/webglRenderer';
-import { createInputState, attachInputListeners, collectCommands } from '../input/handler';
-import { CommandKind } from '../input/commands';
-import { RoomDef, RoomTransitionDef, TransitionDirection, BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL } from '../levels/roomDef';
+import { createInputState, attachInputListeners } from '../input/handler';
+import { RoomDef, BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL } from '../levels/roomDef';
 import { ROOM_REGISTRY, STARTING_ROOM_ID } from '../levels/rooms';
 import { renderHazards } from '../render/hazards';
 import { createCameraState, snapCamera, updateCamera, getCameraOffset } from '../render/camera';
-import { setActiveBlockSpriteWorld, setActiveBlockSpriteTheme, setActiveBlockLighting } from '../render/walls/blockSpriteRenderer';
+import { setActiveBlockSpriteWorld, setActiveBlockSpriteTheme, setActiveBlockLighting, setActiveDarkAmbientBlockers } from '../render/walls/blockSpriteRenderer';
 import { showPauseMenu, PauseMenuState } from '../ui/pauseMenu';
 import { createDebugPanel, DebugPanel } from '../ui/debugPanel';
 import { renderWorldBackground } from '../render/backgroundRenderer';
 import { showDeathScreen } from '../ui/deathScreen';
-import { showSkillTombMenu } from '../ui/skillTombMenu';
+import { showSkillTombMenu, showMapOnlyModal } from '../ui/skillTombMenu';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
 import { PlayerProgress } from '../progression/playerProgress';
 import { createEditorController, EditorController } from '../editor/editorController';
 import { PlayerWeaveLoadout, createDefaultWeaveLoadout } from '../sim/weaves/playerLoadout';
+import { WEAVE_STORM } from '../sim/weaves/weaveDefinition';
 import { resetRadiantTetherState } from '../sim/clusters/radiantTetherAi';
 import { initGrappleHunterChainParticles } from '../sim/clusters/grappleHunterAi';
 import { renderRadiantTether } from '../render/clusters/radiantTetherRenderer';
-import { getSelectedRenderSize, getMusicVolume, getSfxVolume } from '../ui/renderSettings';
+import { getSelectedRenderSize, getMusicVolume, getSfxVolume, getGraphicsQuality } from '../ui/renderSettings';
 import { createMusicManager, MusicManager } from '../audio/musicManager';
 import { isTheroShowcaseRoom, renderTheroShowcaseEffect, renderCrystallineCracksBackground } from '../render/effects/theroEffectManager';
 import { BloomSystem } from '../render/effects/bloomSystem';
 import { DarkRoomOverlay } from '../render/effects/darkRoomOverlay';
 import { DEFAULT_BLOOM_CONFIG } from '../render/effects/bloomConfig';
+import { RenderProfiler } from '../render/hud/renderProfiler';
 import { getTotalCapacity, getMaxParticlesForDust } from '../progression/dustCapacity';
-import { unlockActiveWeave } from '../progression/unlocks';
+import { getElementProfile } from '../sim/particles/elementProfiles';
 import {
   spawnClusterParticles,
-  spawnLoadoutParticles,
   spawnWeaveLoadoutParticles,
   spawnBackgroundFluidParticles,
-  spawnDustPileParticles,
+  spawnEnemyClusters,
+  spawnAllDustPiles,
   PARTICLE_COUNT_PER_CLUSTER,
   BACKGROUND_FLUID_COUNT,
-  BOSS_HP_MULTIPLIER,
   PLAYER_INITIAL_HEALTH,
 } from './gameSpawn';
 import {
   loadRoomWalls,
   loadRoomHazards,
+  loadRoomRopes,
+  loadRoomFallingBlocks,
+  loadRoomGrasshoppers,
   worldBgColor,
   drawTunnelDarkness,
-  screenToWorld,
   resolveSpawnBlock,
-  TUNNEL_DETECT_MARGIN_WORLD,
-  DUST_CONTAINER_PICKUP_RADIUS_WORLD,
-  DUST_CONTAINER_DUST_GAIN,
-  FLYING_EYE_HALF_SIZE_WORLD,
 } from './gameRoom';
 import { renderFrame } from './gameRender';
 import { createCombatTextSystem } from '../render/hud/combatText';
-import { processLargeSlimeSplits, SLIME_HALF_SIZE_WORLD, LARGE_SLIME_HALF_SIZE_WORLD } from '../sim/clusters/slimeAi';
-import { WHEEL_ENEMY_HALF_SIZE_WORLD } from '../sim/clusters/wheelEnemyAi';
-import { BEETLE_HALF_SIZE_WORLD } from '../sim/clusters/beetleAi';
-import { BUBBLE_HALF_SIZE_WORLD, WATER_BUBBLE_REGEN_INTERVAL_TICKS } from '../sim/clusters/bubbleAi';
-import { SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD, SQUARE_STAMPEDE_LAYER_COUNT, TRAIL_UPDATE_INTERVAL_TICKS } from '../sim/clusters/squareStampedeAi';
-import { GOLDEN_MIMIC_HALF_WIDTH_WORLD, GOLDEN_MIMIC_HALF_HEIGHT_WORLD } from '../sim/clusters/goldenMimicAi';
+import { processLargeSlimeSplits } from '../sim/clusters/slimeAi';
 import { DecorationWaveState, buildRoomDecorations } from '../render/effects/wallDecorations';
 import type { WallDecoration } from '../render/effects/wallDecorations';
 import { renderGrasshoppers } from '../render/critters/grasshopperRenderer';
-import { MAX_GRASSHOPPERS, GRASSHOPPER_INITIAL_TIMER_MAX_TICKS, MAX_SQUARE_STAMPEDE } from '../sim/world';
+import { MAX_CRUMBLE_BLOCKS } from '../sim/world';
+import { processPlayerCommands } from './gameCommandProcessor';
+import { initMoteQueueFromParticles } from '../sim/motes/orderedMoteQueue';
+import {
+  checkRoomTransitions,
+} from './gameTransitions';
+import { processRoomPickups } from './gamePickups';
 
 const FIXED_DT_MS = 16.666;
-
-const SLIME_HOP_INTERVAL_INITIAL_TICKS = 30;
-const LARGE_SLIME_HOP_INTERVAL_INITIAL_TICKS = 45;
 
 /** Baseline virtual width at 16:9; height is authoritative for fixed zoom. */
 const BASE_VIRTUAL_WIDTH_PX = 480;
@@ -127,8 +130,9 @@ export function startGameScreen(
   progress?: PlayerProgress,
 ): () => void {
   const webglRenderer = new WebGLParticleRenderer();
-  const bloomSystem = new BloomSystem(DEFAULT_BLOOM_CONFIG);
+  const bloomSystem = new BloomSystem({ ...DEFAULT_BLOOM_CONFIG });
   const darkRoomOverlay = new DarkRoomOverlay();
+  const renderProfiler = new RenderProfiler();
 
   // ── Weave loadout (replaces flat particle loadout for combat) ──────────
   // Initialize from progress if available, otherwise create default
@@ -210,6 +214,8 @@ export function startGameScreen(
   dustContainerSprite.onload = () => { isDustContainerSpriteLoaded = true; };
   /** Keys in the format `${roomId}:${containerIndex}` for already-collected dust containers. */
   const collectedDustContainerKeySet: Set<string> = new Set();
+  /** Keys in the format `${roomId}:${xBlock}:${yBlock}` for already-consumed skill tombs. */
+  const consumedSkillTombKeySet: Set<string> = new Set();
 
   /** Initialises (or re-initialises) world state for the given room. */
   function loadRoom(room: RoomDef, spawnXBlock: number, spawnYBlock: number, preserveCamera = false): void {
@@ -229,10 +235,16 @@ export function startGameScreen(
     // `blockSpriteRenderer` (but NOT to collision and NOT to local lights
     // — see `roomDef.ts` for the full authoring model).
     let blockerKeys: Set<string> | undefined;
+    let darkBlockerKeys: Set<string> | undefined;
     if (room.ambientLightBlockers && room.ambientLightBlockers.length > 0) {
       blockerKeys = new Set<string>();
       for (const b of room.ambientLightBlockers) {
-        blockerKeys.add(`${b.xBlock},${b.yBlock}`);
+        const key = `${b.xBlock},${b.yBlock}`;
+        blockerKeys.add(key);
+        if (b.isDark) {
+          if (!darkBlockerKeys) darkBlockerKeys = new Set<string>();
+          darkBlockerKeys.add(key);
+        }
       }
     }
     setActiveBlockLighting(
@@ -242,9 +254,17 @@ export function startGameScreen(
       room.ambientLightDirection,
       blockerKeys,
     );
+    setActiveDarkAmbientBlockers(darkBlockerKeys);
 
     // Notify the music manager about the new room
     musicManager.notifyRoomEntered(room.songId ?? '_continue');
+
+    // Preserve the player's current health across room transitions.
+    // On the very first load there is no existing player, so fall back to full health.
+    let carryHealthPoints = PLAYER_INITIAL_HEALTH;
+    if (world.clusters.length > 0 && world.clusters[0].isPlayerFlag === 1) {
+      carryHealthPoints = world.clusters[0].healthPoints;
+    }
 
     // Reset world state
     world.tick = 0;
@@ -258,7 +278,7 @@ export function startGameScreen(
     world.isGrappleActiveFlag     = 0;
     world.isGrappleMissActiveFlag = 0;
     world.isGrappleRetractingFlag = 0;
-    world.isGrappleTopSurfaceFlag = 0;
+    world.isGrappleZipActiveFlag = 0;
     world.isGrappleStuckFlag      = 0;
     world.hasGrappleChargeFlag    = 1;
     world.grappleParticleStartIndex = -1;
@@ -270,6 +290,11 @@ export function startGameScreen(
     const spawnXWorld = spawnXBlock * BLOCK_SIZE_MEDIUM;
     const spawnYWorld = spawnYBlock * BLOCK_SIZE_MEDIUM;
     const playerCluster = createClusterState(1, spawnXWorld, spawnYWorld, 1, PLAYER_INITIAL_HEALTH);
+    // Restore health carried from the previous room (createClusterState sets both
+    // healthPoints and maxHealthPoints to PLAYER_INITIAL_HEALTH; we only override
+    // healthPoints so the health bar displays correctly).
+    // Clamp to maxHealthPoints so an out-of-range carry value cannot violate the invariant.
+    playerCluster.healthPoints = Math.min(carryHealthPoints, playerCluster.maxHealthPoints);
     world.clusters.push(playerCluster);
 
     // Spawn player dust particles based on capacity model.
@@ -297,142 +322,16 @@ export function startGameScreen(
     // Apply weave IDs to world state for combat dispatch
     world.playerPrimaryWeaveId = playerWeaveLoadout.primary.weaveId;
     world.playerSecondaryWeaveId = playerWeaveLoadout.secondary.weaveId;
+    // Phase 8: set orbit source flag — 1 if Storm is primary, 0 for inventory source
+    world.isMoteSourceOrbitFlag = world.playerPrimaryWeaveId === WEAVE_STORM ? 1 : 0;
+
+    // Initialise the ordered mote queue from the player particles just spawned.
+    // Must be called after player particle spawning and before enemy spawning
+    // (enemy particles are excluded by ownerEntityId, but calling early is safer).
+    initMoteQueueFromParticles(world, playerCluster.entityId);
 
     // Spawn enemies
-    let nextEntityId = 2;
-    for (let ei = 0; ei < room.enemies.length; ei++) {
-      const enemyDef = room.enemies[ei];
-      const ex = enemyDef.xBlock * BLOCK_SIZE_MEDIUM;
-      const ey = enemyDef.yBlock * BLOCK_SIZE_MEDIUM;
-      const hp = enemyDef.isBossFlag === 1 ? enemyDef.particleCount * BOSS_HP_MULTIPLIER : enemyDef.particleCount;
-      const enemyCluster = createClusterState(nextEntityId++, ex, ey, 0, hp);
-
-      if (enemyDef.isFlyingEyeFlag === 1) {
-        enemyCluster.isFlyingEyeFlag     = 1;
-        enemyCluster.flyingEyeElementKind = enemyDef.kinds.length > 0
-          ? enemyDef.kinds[0]
-          : ParticleKind.Wind;
-        // Flying eyes are larger than ground enemies
-        enemyCluster.halfWidthWorld  = FLYING_EYE_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld = FLYING_EYE_HALF_SIZE_WORLD;
-      } else if (enemyDef.isRollingEnemyFlag === 1) {
-        enemyCluster.isRollingEnemyFlag    = 1;
-        enemyCluster.rollingEnemySpriteIndex = enemyDef.rollingEnemySpriteIndex ?? 1;
-        enemyCluster.rollingEnemyRollAngleRad = 0;
-      } else if (enemyDef.isRockElementalFlag === 1) {
-        enemyCluster.isRockElementalFlag = 1;
-        enemyCluster.rockElementalSpawnXWorld = ex;
-        enemyCluster.rockElementalSpawnYWorld = ey;
-        enemyCluster.rockElementalState = 0; // start inactive
-        // Rock Elemental is slightly larger than regular enemies
-        enemyCluster.halfWidthWorld = 4.5;
-        enemyCluster.halfHeightWorld = 4.5;
-      } else if (enemyDef.isRadiantTetherFlag === 1) {
-        enemyCluster.isRadiantTetherFlag = 1;
-        enemyCluster.radiantTetherState = 0; // start inactive
-        enemyCluster.halfWidthWorld = 6.0;
-        enemyCluster.halfHeightWorld = 6.0;
-      } else if (enemyDef.isGrappleHunterFlag === 1) {
-        enemyCluster.isGrappleHunterFlag = 1;
-        enemyCluster.grappleHunterState = 0;
-        enemyCluster.halfWidthWorld = 5.0;
-        enemyCluster.halfHeightWorld = 5.0;
-      } else if (enemyDef.isSlimeFlag === 1) {
-        enemyCluster.isSlimeFlag = 1;
-        enemyCluster.halfWidthWorld = SLIME_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld = SLIME_HALF_SIZE_WORLD;
-        enemyCluster.slimeHopTimerTicks = SLIME_HOP_INTERVAL_INITIAL_TICKS;
-      } else if (enemyDef.isLargeSlimeFlag === 1) {
-        enemyCluster.isLargeSlimeFlag = 1;
-        enemyCluster.halfWidthWorld = LARGE_SLIME_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld = LARGE_SLIME_HALF_SIZE_WORLD;
-        enemyCluster.slimeHopTimerTicks = LARGE_SLIME_HOP_INTERVAL_INITIAL_TICKS;
-      } else if (enemyDef.isWheelEnemyFlag === 1) {
-        enemyCluster.isWheelEnemyFlag = 1;
-        enemyCluster.halfWidthWorld = WHEEL_ENEMY_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld = WHEEL_ENEMY_HALF_SIZE_WORLD;
-      } else if (enemyDef.isBeetleFlag === 1) {
-        enemyCluster.isBeetleFlag              = 1;
-        enemyCluster.halfWidthWorld            = BEETLE_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld           = BEETLE_HALF_SIZE_WORLD;
-        // Start in a crawl state; AI will pick the first real state on the first tick.
-        enemyCluster.beetleAiState             = 2; // idle briefly so it lands on a surface first
-        enemyCluster.beetleAiStateTicks        = 30;
-        enemyCluster.beetleSurfaceNormalXWorld = 0;
-        enemyCluster.beetleSurfaceNormalYWorld = -1; // assume floor initially
-        enemyCluster.beetleIsFlightModeFlag    = 0;
-        enemyCluster.beetlePrevHealthPoints    = enemyCluster.healthPoints;
-      } else if (enemyDef.isBubbleEnemyFlag === 1) {
-        enemyCluster.isBubbleEnemyFlag      = 1;
-        enemyCluster.isIceBubbleFlag        = (enemyDef.isIceBubbleFlag ?? 0) as 0 | 1;
-        enemyCluster.halfWidthWorld         = BUBBLE_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld        = BUBBLE_HALF_SIZE_WORLD;
-        enemyCluster.bubbleState            = 0;
-        enemyCluster.bubbleMaxParticleCount = enemyDef.particleCount;
-        enemyCluster.bubbleOrbitAngleRad    = 0;
-        enemyCluster.bubbleRegenTicks       = WATER_BUBBLE_REGEN_INTERVAL_TICKS;
-        enemyCluster.bubbleDriftPhaseRad    = 0;
-        enemyCluster.bubblePrevHealthPoints = enemyCluster.healthPoints;
-      } else if (enemyDef.isSquareStampedeFlag === 1) {
-        // Allocate a trail ring-buffer slot for this enemy
-        let slotIndex = -1;
-        for (let si = 0; si < MAX_SQUARE_STAMPEDE; si++) {
-          let taken = false;
-          for (let ci2 = 0; ci2 < world.clusters.length; ci2++) {
-            if (world.clusters[ci2].squareStampedeSlotIndex === si) {
-              taken = true;
-              break;
-            }
-          }
-          if (!taken) {
-            slotIndex = si;
-            // Clear the slot's trail data
-            const base = si * world.squareStampedeTrailStride;
-            world.squareStampedeTrailXWorld.fill(0, base, base + world.squareStampedeTrailStride);
-            world.squareStampedeTrailYWorld.fill(0, base, base + world.squareStampedeTrailStride);
-            world.squareStampedeTrailHead[si]  = 0;
-            world.squareStampedeTrailCount[si] = 0;
-            break;
-          }
-        }
-        enemyCluster.isSquareStampedeFlag            = 1;
-        enemyCluster.squareStampedeSlotIndex         = slotIndex;
-        enemyCluster.squareStampedeBaseHalfSizeWorld = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
-        enemyCluster.halfWidthWorld                  = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
-        enemyCluster.halfHeightWorld                 = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
-        enemyCluster.healthPoints                    = SQUARE_STAMPEDE_LAYER_COUNT;
-        enemyCluster.maxHealthPoints                 = SQUARE_STAMPEDE_LAYER_COUNT;
-        enemyCluster.squareStampedeAiState           = 0;
-        enemyCluster.squareStampedeAiStateTicks      = 20;
-        enemyCluster.squareStampedeTrailTimerTicks   = TRAIL_UPDATE_INTERVAL_TICKS;
-      } else if (enemyDef.isGoldenMimicFlag === 1) {
-        const isYFlipped = enemyDef.isGoldenMimicYFlippedFlag === 1;
-        enemyCluster.isGoldenMimicFlag               = 1;
-        enemyCluster.isGoldenMimicYFlippedFlag       = isYFlipped ? 1 : 0;
-        enemyCluster.halfWidthWorld                  = GOLDEN_MIMIC_HALF_WIDTH_WORLD;
-        enemyCluster.halfHeightWorld                 = GOLDEN_MIMIC_HALF_HEIGHT_WORLD;
-        enemyCluster.goldenMimicState                = 0;
-        enemyCluster.goldenMimicStateTicks           = 0;
-        enemyCluster.goldenMimicFadeAlpha            = 1.0;
-        // goldenMimicInitialParticleCount is filled in after spawnLoadoutParticles below
-      }
-
-      world.clusters.push(enemyCluster);
-      const particleStartIdx = world.particleCount;
-      spawnLoadoutParticles(world, enemyCluster.entityId, ex, ey, enemyDef.kinds, enemyDef.particleCount, levelRng);
-
-      // Post-spawn: mark golden mimic particles as non-regenerating (isTransientFlag=1)
-      // and record initial particle count for half-dead threshold detection.
-      if (enemyCluster.isGoldenMimicFlag === 1) {
-        const spawnedCount = world.particleCount - particleStartIdx;
-        enemyCluster.goldenMimicInitialParticleCount = spawnedCount;
-        enemyCluster.healthPoints    = spawnedCount;
-        enemyCluster.maxHealthPoints = spawnedCount;
-        for (let pi = particleStartIdx; pi < world.particleCount; pi++) {
-          world.isTransientFlag[pi] = 1;
-        }
-      }
-    }
+    spawnEnemyClusters(world, room.enemies, 2, levelRng);
 
     // Spawn background Fluid particles
     spawnBackgroundFluidParticles(world, BACKGROUND_FLUID_COUNT, levelRng);
@@ -454,39 +353,22 @@ export function startGameScreen(
     // Load environmental hazards (after walls so breakable blocks can be added as walls)
     loadRoomHazards(world, room);
 
+    // Load ropes
+    loadRoomRopes(world, room);
+
+    // Load falling block groups (after walls so group wall slots come after static geometry)
+    loadRoomFallingBlocks(world, room);
+
     // Reset and spawn grasshoppers
-    world.grasshopperCount = 0;
-    if (room.grasshopperAreas) {
-      for (const area of room.grasshopperAreas) {
-        const areaXWorld = area.xBlock * BLOCK_SIZE_MEDIUM;
-        const areaYWorld = area.yBlock * BLOCK_SIZE_MEDIUM;
-        const areaWidthWorld = area.wBlock * BLOCK_SIZE_MEDIUM;
-        const areaHeightWorld = area.hBlock * BLOCK_SIZE_MEDIUM;
-        for (let g = 0; g < area.count && world.grasshopperCount < MAX_GRASSHOPPERS; g++) {
-          const gi = world.grasshopperCount++;
-          world.grasshopperXWorld[gi] = areaXWorld + nextFloat(world.rng) * areaWidthWorld;
-          world.grasshopperYWorld[gi] = areaYWorld + nextFloat(world.rng) * areaHeightWorld;
-          world.grasshopperVelXWorld[gi] = 0;
-          world.grasshopperVelYWorld[gi] = 0;
-          world.grasshopperHopTimerTicks[gi] = nextFloat(world.rng) * GRASSHOPPER_INITIAL_TIMER_MAX_TICKS;
-          world.isGrasshopperAliveFlag[gi] = 1;
-        }
-      }
-    }
+    loadRoomGrasshoppers(world, room);
 
     // Spawn dust pile particles (unowned Gold Dust for Storm Weave attraction)
-    for (let i = 0; i < world.dustPileCount; i++) {
-      spawnDustPileParticles(
-        world,
-        world.dustPileXWorld[i],
-        world.dustPileYWorld[i],
-        world.dustPileDustCount[i],
-        world.rng,
-      );
-    }
+    spawnAllDustPiles(world);
 
     // Init dust
     environmentalDust.initFromWorld(world, room.worldNumber);
+    sunbeamRenderer.initFromRoom(room);
+    atmosphericLightDust.initFromRoom(room);
 
     // Reset procedural cloak on room transition
     playerCloak.reset();
@@ -509,11 +391,33 @@ export function startGameScreen(
     // count so updateSnapshotInPlace() never needs to grow the pool mid-frame.
     resetReusableSnapshot(reusableSnapshot, world);
 
+    // Seed the render-interpolation buffers with the freshly spawned cluster
+    // positions so the very first rendered frame has a valid prevPos baseline.
+    // Without this, prevPos stays at zero until the first physics tick runs,
+    // which can show a one-frame teleport glitch on high-refresh-rate displays.
+    if (prevClusterPosX.length < world.clusters.length) {
+      prevClusterPosX = new Float32Array(world.clusters.length * 2);
+      prevClusterPosY = new Float32Array(world.clusters.length * 2);
+    }
+    for (let ci = 0; ci < world.clusters.length; ci++) {
+      prevClusterPosX[ci] = world.clusters[ci].positionXWorld;
+      prevClusterPosY[ci] = world.clusters[ci].positionYWorld;
+    }
+
     // Init save tomb renderer (with room walls for floor detection)
     skillTombRenderer.init(room.saveTombs, room.walls);
 
     // Init skill tomb effect renderer
     skillTombEffectRenderer.init(room.skillTombs);
+    // Remove any skill tombs that were already consumed in this session.
+    // Iterate in reverse so splice indices remain valid.
+    const roomSkillTombsForInit = room.skillTombs ?? [];
+    for (let i = roomSkillTombsForInit.length - 1; i >= 0; i--) {
+      const st = roomSkillTombsForInit[i];
+      if (consumedSkillTombKeySet.has(`${room.id}:${st.xBlock}:${st.yBlock}`)) {
+        skillTombEffectRenderer.removeTomb(i);
+      }
+    }
 
     // Track explored room
     if (progress && !progress.exploredRoomIds.includes(room.id)) {
@@ -531,12 +435,18 @@ export function startGameScreen(
   world.characterId = progress?.characterId ?? 'knight';
   const levelRng = createRng(12345);
   const environmentalDust = new EnvironmentalDustLayer();
+  const sunbeamRenderer = new SunbeamRenderer();
+  const atmosphericLightDust = new AtmosphericLightDust();
   const skidDebris = new SkidDebrisRenderer();
+  const crumbleDebris = new CrumbleDebrisRenderer();
   const skillTombRenderer = new SkillTombRenderer();
   const skillTombEffectRenderer = new SkillTombEffectRenderer();
   const playerCloak = new PlayerCloak();
   const phantomCloak = new PhantomCloakExtension();
   const decorationWaveState = new DecorationWaveState();
+  const arrowWeaveRenderer = new ArrowWeaveRenderer();
+  const swordWeaveRenderer = new SwordWeaveRenderer();
+  const fallingBlockDust = new FallingBlockDustRenderer();
 
   // ── Per-frame allocation-free state ─────────────────────────────────────
   // All three are populated once per room load in loadRoom() and reused every
@@ -545,6 +455,12 @@ export function startGameScreen(
   const cachedDecorationCenterX = new Float32Array(DecorationWaveState.MAX_DECORATIONS);
   const cachedDecorationCenterY = new Float32Array(DecorationWaveState.MAX_DECORATIONS);
   const reusableSnapshot = createReusableSnapshot(world);
+
+  // ── Crumble block prev-state tracking ───────────────────────────────────
+  // Snapshot of per-block hit state from the previous tick so we can detect
+  // damage and destruction transitions and fire visual events + lighting rebuild.
+  const prevCrumbleActive = new Uint8Array(MAX_CRUMBLE_BLOCKS);
+  const prevCrumbleHits   = new Uint8Array(MAX_CRUMBLE_BLOCKS);
 
   // ── Render-interpolation buffers ─────────────────────────────────────────
   // Cluster positions captured immediately before the physics tick loop each
@@ -691,11 +607,11 @@ export function startGameScreen(
     isDebugOn: false,
     musicVolume: getMusicVolume(),
     sfxVolume: getSfxVolume(),
-    graphicsQuality: 'med',
+    graphicsQuality: getGraphicsQuality(),
   };
 
   function openPauseMenu(): void {
-    if (isPaused || isPlayerDead || isSkillTombMenuOpen) return;
+    if (isPaused || isPlayerDead || isSkillTombMenuOpen || isMapOnlyOpen) return;
     isPaused = true;
     pauseMenuCleanup = showPauseMenu(uiRoot, pauseMenuState, {
       onResume: () => {
@@ -757,8 +673,18 @@ export function startGameScreen(
   let isSkillTombMenuOpen = false;
   let skillTombMenuCleanup: (() => void) | null = null;
 
+  // ── Map-only modal state ────────────────────────────────────────────────
+  let isMapOnlyOpen = false;
+  let mapOnlyCleanup: (() => void) | null = null;
+
   function openSkillTombMenu(): void {
     if (isSkillTombMenuOpen || !progress) return;
+    // Close the map-only modal if it's open before opening the full menu.
+    if (mapOnlyCleanup !== null) {
+      mapOnlyCleanup();
+      isMapOnlyOpen = false;
+      mapOnlyCleanup = null;
+    }
     isSkillTombMenuOpen = true;
 
     // Save progress
@@ -766,7 +692,12 @@ export function startGameScreen(
 
     // Record save point
     const player = world.clusters[0];
+    let playerXWorld = 0;
+    let playerYWorld = 0;
     if (player) {
+      playerXWorld = player.positionXWorld;
+      playerYWorld = player.positionYWorld;
+
       const nearbyIndex = skillTombRenderer.getNearbyTombIndex(player.positionXWorld, player.positionYWorld);
       if (nearbyIndex >= 0) {
         const tombPos = skillTombRenderer.getTombPosition(nearbyIndex);
@@ -778,9 +709,25 @@ export function startGameScreen(
           ];
         }
       }
+
+      // Heal player to full and restore all dust motes.
+      player.healthPoints = player.maxHealthPoints;
+      for (let i = 0; i < world.particleCount; i++) {
+        if (world.ownerEntityId[i] !== player.entityId) continue;
+        if (world.isTransientFlag[i] === 1) continue;
+        if (world.isAliveFlag[i] === 0 && world.respawnDelayTicks[i] > 0) {
+          // Instant respawn: set delay to 1 so the next tick's lifetime update
+          // will decrement it to 0 and trigger the respawn logic.
+          world.respawnDelayTicks[i] = 1;
+        }
+        if (world.isAliveFlag[i] === 1) {
+          // Restore durability to the particle's maximum toughness.
+          world.particleDurability[i] = getElementProfile(world.kindBuffer[i]).toughness;
+        }
+      }
     }
 
-    skillTombMenuCleanup = showSkillTombMenu(uiRoot, progress, currentRoom.id, {
+    skillTombMenuCleanup = showSkillTombMenu(uiRoot, progress, currentRoom.id, playerXWorld, playerYWorld, player.healthPoints, player.maxHealthPoints, {
       onClose: (updatedLoadout, updatedWeaveLoadout) => {
         isSkillTombMenuOpen = false;
         skillTombMenuCleanup = null;
@@ -793,102 +740,31 @@ export function startGameScreen(
     });
   }
 
+  function openMapOnly(): void {
+    if (isMapOnlyOpen || isSkillTombMenuOpen || !progress) return;
+    const player = world.clusters[0];
+    if (!player) return;
+    isMapOnlyOpen = true;
+    mapOnlyCleanup = showMapOnlyModal(
+      uiRoot,
+      progress,
+      currentRoom.id,
+      player.positionXWorld,
+      player.positionYWorld,
+      {
+        onClose: () => {
+          isMapOnlyOpen = false;
+          mapOnlyCleanup = null;
+          lastTimestampMs = 0;
+        },
+      },
+    );
+  }
+
   function onResize(): void {
     resizeCanvas();
   }
   window.addEventListener('resize', onResize);
-
-  const TRANSITION_SPAWN_INSET_BLOCKS = 3;
-
-  function getOppositeTransitionDirection(direction: TransitionDirection): TransitionDirection {
-    if (direction === 'left') return 'right';
-    if (direction === 'right') return 'left';
-    if (direction === 'up') return 'down';
-    return 'up';
-  }
-
-  function computeSpawnBlockForTransition(room: RoomDef, transition: RoomTransitionDef): readonly [number, number] {
-    const openingCenterOffsetBlocks = Math.floor(transition.openingSizeBlocks / 2);
-    if (transition.direction === 'left') {
-      return [
-        TRANSITION_SPAWN_INSET_BLOCKS,
-        transition.positionBlock + openingCenterOffsetBlocks,
-      ] as const;
-    }
-    if (transition.direction === 'right') {
-      return [
-        room.widthBlocks - TRANSITION_SPAWN_INSET_BLOCKS - 1,
-        transition.positionBlock + openingCenterOffsetBlocks,
-      ] as const;
-    }
-    if (transition.direction === 'up') {
-      return [
-        transition.positionBlock + openingCenterOffsetBlocks,
-        TRANSITION_SPAWN_INSET_BLOCKS,
-      ] as const;
-    }
-    return [
-      transition.positionBlock + openingCenterOffsetBlocks,
-      room.heightBlocks - TRANSITION_SPAWN_INSET_BLOCKS - 1,
-    ] as const;
-  }
-
-  /**
-   * Check if the player has entered a transition tunnel and should move
-   * to the adjacent room.
-   */
-  function checkRoomTransitions(): boolean {
-    const player = world.clusters[0];
-    if (player === undefined || player.isAliveFlag === 0) return false;
-
-    const px = player.positionXWorld;
-    const py = player.positionYWorld;
-
-    for (let ti = 0; ti < currentRoom.transitions.length; ti++) {
-      const t = currentRoom.transitions[ti];
-      const openTopWorld = t.positionBlock * BLOCK_SIZE_MEDIUM;
-      const openBottomWorld = (t.positionBlock + t.openingSizeBlocks) * BLOCK_SIZE_MEDIUM;
-
-      let isInTunnel = false;
-      if (t.depthBlock !== undefined) {
-        // Interior transition: fire when the player's center enters the zone
-        const FADE_DEPTH = 6 * BLOCK_SIZE_MEDIUM;
-        const zoneStartWorld = t.depthBlock * BLOCK_SIZE_MEDIUM;
-        const zoneEndWorld   = zoneStartWorld + FADE_DEPTH;
-        isInTunnel = px >= zoneStartWorld && px <= zoneEndWorld
-          && py >= openTopWorld && py <= openBottomWorld;
-        // For up/down interior transitions
-        if (t.direction === 'up' || t.direction === 'down') {
-          isInTunnel = py >= zoneStartWorld && py <= zoneEndWorld
-            && px >= openTopWorld && px <= openBottomWorld;
-        }
-      } else if (t.direction === 'left') {
-        isInTunnel = px < TUNNEL_DETECT_MARGIN_WORLD && py >= openTopWorld && py <= openBottomWorld;
-      } else if (t.direction === 'right') {
-        isInTunnel = px > roomWidthWorld - TUNNEL_DETECT_MARGIN_WORLD && py >= openTopWorld && py <= openBottomWorld;
-      }
-
-      if (isInTunnel) {
-        const targetRoom = ROOM_REGISTRY.get(t.targetRoomId);
-        if (targetRoom !== undefined) {
-          const oppositeDirection = getOppositeTransitionDirection(t.direction);
-          const targetReturnTransition = targetRoom.transitions.find((targetTransition) =>
-            targetTransition.targetRoomId === currentRoom.id
-            && targetTransition.direction === oppositeDirection,
-          );
-
-          if (targetReturnTransition !== undefined) {
-            const spawnBlock = computeSpawnBlockForTransition(targetRoom, targetReturnTransition);
-            loadRoom(targetRoom, spawnBlock[0], spawnBlock[1]);
-          } else {
-            loadRoom(targetRoom, t.targetSpawnBlock[0], t.targetSpawnBlock[1]);
-          }
-          return true;
-        }
-      }
-    }
-    return false;
-  }
 
   function frame(timestampMs: number): void {
     if (!isRunning) return;
@@ -925,7 +801,8 @@ export function startGameScreen(
         const camOff = getCameraOffset(camera, virtualWidthPx, virtualHeightPx);
         const eox = camOff.offsetXPx;
         const eoy = camOff.offsetYPx;
-        const snapshot = createSnapshot(world);
+        updateSnapshotInPlace(reusableSnapshot, world, 1.0, prevClusterPosX, prevClusterPosY);
+        const snapshot = reusableSnapshot;
 
         if (webglRenderer.isAvailable) {
           webglRenderer.render(snapshot, eox, eoy, zoom);
@@ -990,133 +867,19 @@ export function startGameScreen(
       }
     }
 
-    const commands = collectCommands(inputState);
-    let openPause = false;
-    let moveDx = 0;
-    let jumpTriggered = false;
-    let interactTriggered = false;
-    for (let ci = 0; ci < commands.length; ci++) {
-      const cmd = commands[ci];
-      if (cmd.kind === CommandKind.ReturnToMap) {
-        openPause = true;
-      } else if (cmd.kind === CommandKind.MovePlayer) {
-        moveDx = cmd.dx;
-      } else if (cmd.kind === CommandKind.Jump) {
-        jumpTriggered = true;
-      } else if (cmd.kind === CommandKind.Attack) {
-        // Legacy attack command — no longer used for player (enemies still use it internally)
-        // Kept for backward compatibility; ignored for player
-      } else if (cmd.kind === CommandKind.BlockStart || cmd.kind === CommandKind.BlockUpdate) {
-        // Legacy block command — no longer used for player
-      } else if (cmd.kind === CommandKind.BlockEnd) {
-        // Legacy block end — no longer used for player
-      } else if (cmd.kind === CommandKind.WeaveActivatePrimary) {
-        const player = world.clusters[0];
-        if (player !== undefined && player.isAliveFlag === 1) {
-          const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
-          // Check if tapping/clicking on a skill tomb (save point)
-          const tombIndex = skillTombRenderer.getNearbyTombIndex(aim.xWorld, aim.yWorld);
-          if (tombIndex >= 0) {
-            // Player is also near the tomb — open the save menu
-            const playerNearby = skillTombRenderer.getNearbyTombIndex(player.positionXWorld, player.positionYWorld);
-            if (playerNearby >= 0) {
-              interactTriggered = true;
-            }
-          } else {
-            // Normal weave attack
-            let dirX = aim.xWorld - player.positionXWorld;
-            let dirY = aim.yWorld - player.positionYWorld;
-            const len = Math.sqrt(dirX * dirX + dirY * dirY);
-            if (len < 1.0) { dirX = 1.0; dirY = 0.0; } else { dirX /= len; dirY /= len; }
-            world.playerWeaveAimDirXWorld = dirX;
-            world.playerWeaveAimDirYWorld = dirY;
-            world.playerPrimaryWeaveTriggeredFlag = 1;
-          }
-        }
-      } else if (cmd.kind === CommandKind.WeaveHoldPrimary) {
-        const player = world.clusters[0];
-        if (player !== undefined && player.isAliveFlag === 1) {
-          const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
-          let dirX = aim.xWorld - player.positionXWorld;
-          let dirY = aim.yWorld - player.positionYWorld;
-          const len = Math.sqrt(dirX * dirX + dirY * dirY);
-          if (len < 1.0) { dirX = world.playerWeaveAimDirXWorld; dirY = world.playerWeaveAimDirYWorld; }
-          else { dirX /= len; dirY /= len; }
-          world.playerWeaveAimDirXWorld = dirX;
-          world.playerWeaveAimDirYWorld = dirY;
-          // For sustained weaves, trigger on first hold frame
-          if (world.isPlayerPrimaryWeaveActiveFlag === 0) {
-            world.playerPrimaryWeaveTriggeredFlag = 1;
-          }
-        }
-      } else if (cmd.kind === CommandKind.WeaveEndPrimary) {
-        world.playerPrimaryWeaveEndFlag = 1;
-      } else if (cmd.kind === CommandKind.WeaveActivateSecondary) {
-        const player = world.clusters[0];
-        if (player !== undefined && player.isAliveFlag === 1) {
-          const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
-          let dirX = aim.xWorld - player.positionXWorld;
-          let dirY = aim.yWorld - player.positionYWorld;
-          const len = Math.sqrt(dirX * dirX + dirY * dirY);
-          if (len < 1.0) { dirX = 1.0; dirY = 0.0; } else { dirX /= len; dirY /= len; }
-          world.playerWeaveAimDirXWorld = dirX;
-          world.playerWeaveAimDirYWorld = dirY;
-          world.playerSecondaryWeaveTriggeredFlag = 1;
-        }
-      } else if (cmd.kind === CommandKind.WeaveHoldSecondary) {
-        const player = world.clusters[0];
-        if (player !== undefined && player.isAliveFlag === 1) {
-          const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
-          let dirX = aim.xWorld - player.positionXWorld;
-          let dirY = aim.yWorld - player.positionYWorld;
-          const len = Math.sqrt(dirX * dirX + dirY * dirY);
-          if (len < 1.0) { dirX = world.playerWeaveAimDirXWorld; dirY = world.playerWeaveAimDirYWorld; }
-          else { dirX /= len; dirY /= len; }
-          world.playerWeaveAimDirXWorld = dirX;
-          world.playerWeaveAimDirYWorld = dirY;
-          if (world.isPlayerSecondaryWeaveActiveFlag === 0) {
-            world.playerSecondaryWeaveTriggeredFlag = 1;
-          }
-        }
-      } else if (cmd.kind === CommandKind.WeaveEndSecondary) {
-        world.playerSecondaryWeaveEndFlag = 1;
-      } else if (cmd.kind === CommandKind.GrappleFire) {
-        const player = world.clusters[0];
-        if (player !== undefined && player.isAliveFlag === 1) {
-          const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
-          fireGrapple(world, aim.xWorld, aim.yWorld);
-        }
-      } else if (cmd.kind === CommandKind.GrappleRelease) {
-        releaseGrapple(world);
-      } else if (cmd.kind === CommandKind.ToggleFullscreen) {
-        if (!document.fullscreenElement) {
-          // Enter fullscreen on key press (requires user gesture; keydown path satisfies this).
-          void document.documentElement.requestFullscreen().catch(() => {});
-        }
-      } else if (cmd.kind === CommandKind.Interact) {
-        interactInputPulseMs = 150;
-        const playerForInteract = world.clusters[0];
-        if (playerForInteract !== undefined && playerForInteract.isAliveFlag === 1) {
-          // Check if player is near a save tomb (opens the save menu)
-          const nearbyIndex = skillTombRenderer.getNearbyTombIndex(
-            playerForInteract.positionXWorld, playerForInteract.positionYWorld,
-          );
-          if (nearbyIndex >= 0) {
-            interactTriggered = true;
-          }
-          // Check if player is near a skill tomb (unlocks a dust weave)
-          const nearbySkillTombIndex = skillTombEffectRenderer.getNearbyTombIndex(
-            playerForInteract.positionXWorld, playerForInteract.positionYWorld,
-          );
-          if (nearbySkillTombIndex >= 0 && progress) {
-            const roomSkillTombs = currentRoom.skillTombs ?? [];
-            const st = roomSkillTombs[nearbySkillTombIndex];
-            if (st !== undefined) {
-              unlockActiveWeave(progress, st.weaveId);
-            }
-          }
-        }
-      }
+    const { moveDx, jumpTriggered, openPause, interactTriggered, interactInputPulseTrigger } =
+      processPlayerCommands({
+        inputState, world, canvas,
+        offsetXPx, offsetYPx, zoom,
+        virtualWidthPx, virtualHeightPx,
+        skillTombRenderer, skillTombEffectRenderer,
+        progress, consumedSkillTombKeySet, combatText,
+        currentRoomId: currentRoom.id,
+        openMapOnly,
+      });
+
+    if (interactInputPulseTrigger) {
+      interactInputPulseMs = 150;
     }
 
     if (openPause) {
@@ -1131,7 +894,7 @@ export function startGameScreen(
     musicManager.setVolume(pauseMenuState.musicVolume);
 
     // While paused or in a menu, still render the frozen scene but skip sim and transitions
-    if (isPaused || isSkillTombMenuOpen) {
+    if (isPaused || isSkillTombMenuOpen || isMapOnlyOpen) {
       rafHandle = requestAnimationFrame(frame);
       return;
     }
@@ -1143,39 +906,51 @@ export function startGameScreen(
     }
 
     // ── Room transition check ──────────────────────────────────────────────
-    if (checkRoomTransitions()) {
+    if (checkRoomTransitions(world, currentRoom, roomWidthWorld, roomHeightWorld, (room, spawnX, spawnY) => loadRoom(room, spawnX, spawnY))) {
       // Room changed — skip this frame's sim, render the new room next frame
       rafHandle = requestAnimationFrame(frame);
       return;
     }
 
-    // Latch one-shot jump inputs into world state before ticking.
+    // Latch one-shot jump and down inputs into world state before ticking.
     // This preserves edge-triggered inputs on high-refresh frames where no
     // fixed sim tick runs (accumulator < FIXED_DT_MS).
     if (jumpTriggered) {
       world.playerJumpTriggeredFlag = 1;
     }
+    if (inputState.isDownTriggeredFlag) {
+      world.playerDownTriggeredFlag = 1;
+      inputState.isDownTriggeredFlag = false;
+    }
     world.playerJumpHeldFlag = inputState.isJumpHeldFlag ? 1 : 0;
 
 
     // ── Sim ticks ──────────────────────────────────────────────────────────
-    accumulatorMs += elapsedMs;
-
-    // Capture cluster positions before any ticks run this frame.  These are
-    // the "previous" positions used by render interpolation: the renderer
-    // blends between these and the post-tick positions so sprites move
-    // continuously rather than snapping discretely once per physics tick.
-    const clusterCountBeforeTick = world.clusters.length;
-    if (prevClusterPosX.length < clusterCountBeforeTick) {
-      prevClusterPosX = new Float32Array(clusterCountBeforeTick * 2);
-      prevClusterPosY = new Float32Array(clusterCountBeforeTick * 2);
-    }
-    for (let clusterIndex = 0; clusterIndex < clusterCountBeforeTick; clusterIndex++) {
-      prevClusterPosX[clusterIndex] = world.clusters[clusterIndex].positionXWorld;
-      prevClusterPosY[clusterIndex] = world.clusters[clusterIndex].positionYWorld;
-    }
+    // Cap the catch-up budget to 5 fixed ticks so that long pauses (tab switch,
+    // DevTools breakpoint, OS sleep) cannot drive hundreds of unconstrained ticks
+    // in a single render frame, which would cause instant death, runaway enemy AI,
+    // and multi-second browser stalls.
+    accumulatorMs = Math.min(accumulatorMs + elapsedMs, FIXED_DT_MS * 5);
 
     while (accumulatorMs >= FIXED_DT_MS) {
+      // Capture cluster positions just before THIS tick so that after the loop,
+      // prevClusterPos holds the positions from the start of the LAST tick that
+      // ran.  Combined with renderAlpha (the remaining accumulator fraction),
+      // this enables smooth sub-tick interpolation at any display refresh rate:
+      // the renderer blends from prevPos to currentPos as renderAlpha grows from
+      // 0 toward 1 between ticks, producing continuous motion with no lurching.
+      // Capturing before ALL ticks (the old approach) caused the sprite to freeze
+      // at currentPos on no-tick frames then snap back when a tick finally fired.
+      const clusterCountForTick = world.clusters.length;
+      if (prevClusterPosX.length < clusterCountForTick) {
+        prevClusterPosX = new Float32Array(clusterCountForTick * 2);
+        prevClusterPosY = new Float32Array(clusterCountForTick * 2);
+      }
+      for (let clusterIndex = 0; clusterIndex < clusterCountForTick; clusterIndex++) {
+        prevClusterPosX[clusterIndex] = world.clusters[clusterIndex].positionXWorld;
+        prevClusterPosY[clusterIndex] = world.clusters[clusterIndex].positionYWorld;
+      }
+
       const player = world.clusters[0];
       if (player !== undefined) {
         world.playerMoveInputDxWorld = moveDx !== 0 ? (moveDx > 0 ? 1.0 : -1.0) : 0.0;
@@ -1185,13 +960,46 @@ export function startGameScreen(
       world.playerSprintHeldFlag = inputState.isSprintHeldFlag ? 1 : 0;
       world.playerCrouchHeldFlag = inputState.isKeyS ? 1 : 0;
       tick(world);
+      // If the player died during this tick, stop processing further ticks in
+      // this frame.  Continuing to run enemy AI, spike contact, and force
+      // accumulation on a dead cluster produces erratic post-death effects.
+      if (world.clusters[0]?.isAliveFlag === 0) {
+        accumulatorMs -= FIXED_DT_MS;
+        break;
+      }
       // Process large slime splits (spawn child slimes when large slime dies)
       const newSlimes = processLargeSlimeSplits(world);
       for (let s = 0; s < newSlimes.length; s++) {
         world.clusters.push(newSlimes[s]);
       }
       environmentalDust.update(world, FIXED_DT_MS);
+      atmosphericLightDust.update(FIXED_DT_MS);
       skidDebris.update(world, FIXED_DT_MS);
+
+      // ── Crumble block debris events & ambient lighting rebuild ────────────
+      for (let ci = 0; ci < world.crumbleBlockCount; ci++) {
+        const nowActive = world.isCrumbleBlockActiveFlag[ci];
+        const nowHits   = world.crumbleBlockHitsRemaining[ci];
+        const wasActive = prevCrumbleActive[ci];
+        const wasHits   = prevCrumbleHits[ci];
+
+        if (wasActive === 1) {
+          if (nowActive === 0) {
+            // Block fully destroyed this tick.
+            // The wall sprite renderer detects the changed wall-layout signature
+            // automatically and rebuilds ambient lighting on the next frame.
+            crumbleDebris.notifyBlockHit(world.crumbleBlockXWorld[ci], world.crumbleBlockYWorld[ci], true);
+          } else if (nowHits < wasHits) {
+            // Block cracked (first hit) this tick
+            crumbleDebris.notifyBlockHit(world.crumbleBlockXWorld[ci], world.crumbleBlockYWorld[ci], false);
+          }
+        }
+
+        prevCrumbleActive[ci] = nowActive;
+        prevCrumbleHits[ci]   = nowHits;
+      }
+
+      crumbleDebris.update(FIXED_DT_MS);
       accumulatorMs -= FIXED_DT_MS;
     }
 
@@ -1211,55 +1019,7 @@ export function startGameScreen(
       skillTombRenderer.update(playerForTomb.positionXWorld, playerForTomb.positionYWorld, elapsedMs / 1000);
       skillTombEffectRenderer.update(playerForTomb.positionXWorld, playerForTomb.positionYWorld, elapsedMs / 1000);
 
-      // Dust container pickup: grants +1 dust container (+4 capacity) and spawns particles.
-      const roomDustContainers = currentRoom.dustContainers ?? [];
-      for (let i = 0; i < roomDustContainers.length; i++) {
-        const pickupKey = `${currentRoom.id}:${i}`;
-        if (collectedDustContainerKeySet.has(pickupKey)) continue;
-
-        const dc = roomDustContainers[i];
-        const cx = (dc.xBlock + 0.5) * BLOCK_SIZE_MEDIUM;
-        const cy = (dc.yBlock + 0.5) * BLOCK_SIZE_MEDIUM;
-        const dx = playerForTomb.positionXWorld - cx;
-        const dy = playerForTomb.positionYWorld - cy;
-        if (dx * dx + dy * dy <= DUST_CONTAINER_PICKUP_RADIUS_WORLD * DUST_CONTAINER_PICKUP_RADIUS_WORLD) {
-          collectedDustContainerKeySet.add(pickupKey);
-          // Grant a container to the player's progression state
-          if (progress) {
-            progress.dustContainerCount += 1;
-          }
-          spawnClusterParticles(
-            world,
-            playerForTomb.entityId,
-            playerForTomb.positionXWorld,
-            playerForTomb.positionYWorld,
-            ParticleKind.Physical,
-            DUST_CONTAINER_DUST_GAIN,
-            levelRng,
-          );
-        }
-      }
-
-      // Dust boost jar pickup: spawn temporary dust particles of the jar's kind.
-      // The sim (hazards.ts) sets isDustBoostJarActiveFlag=0 on contact; we detect
-      // the transition here and spawn particles on the renderer side.
-      for (let i = 0; i < world.dustBoostJarCount; i++) {
-        const jarKey = `dustjar:${currentRoom.id}:${i}`;
-        if (world.isDustBoostJarActiveFlag[i] === 0 && !collectedDustContainerKeySet.has(jarKey)) {
-          collectedDustContainerKeySet.add(jarKey);
-          const dustKind = world.dustBoostJarKind[i] as ParticleKind;
-          const dustCount = world.dustBoostJarDustCount[i];
-          spawnClusterParticles(
-            world,
-            playerForTomb.entityId,
-            playerForTomb.positionXWorld,
-            playerForTomb.positionYWorld,
-            dustKind,
-            dustCount,
-            levelRng,
-          );
-        }
-      }
+      processRoomPickups(world, currentRoom, collectedDustContainerKeySet, progress, playerForTomb, levelRng);
     }
 
     // ── Update camera to follow player ──────────────────────────────────────
@@ -1312,6 +1072,9 @@ export function startGameScreen(
           isGrappleActive:      world.isGrappleActiveFlag === 1,
           grappleLengthWorld:   world.grappleLengthWorld,
           grapplePullInAmountWorld: world.grapplePullInAmountWorld,
+          isGrappleMissActive:  world.isGrappleMissActiveFlag === 1,
+          grappleParticleStartIndex: world.grappleParticleStartIndex,
+          isGrappleChainHiddenFlag: true,
           isSkidding:           playerClusterForHud.isSkiddingFlag === 1,
           isSliding:            playerClusterForHud.isSlidingFlag === 1,
           isSprinting:          playerClusterForHud.isSprintingFlag === 1,
@@ -1338,9 +1101,16 @@ export function startGameScreen(
     // ── Update procedural cloak (per-frame visual, not per-tick sim) ──────
     const cloakPlayer = world.clusters[0];
     if (cloakPlayer !== undefined && cloakPlayer.isAliveFlag === 1 && cloakPlayer.isPlayerFlag === 1) {
+      // Use the render-interpolated player position so the cloak chain anchor
+      // matches the pixel position where the player sprite will be drawn.
+      // Using raw physics positionXWorld instead causes the cloak root to sit
+      // one-tick ahead of the sprite at non-60 Hz refresh rates, making the
+      // cloak appear to detach and jitter relative to the player body.
+      const cloakInterpXWorld = prevClusterPosX[0] + (cloakPlayer.positionXWorld - prevClusterPosX[0]) * renderAlpha;
+      const cloakInterpYWorld = prevClusterPosY[0] + (cloakPlayer.positionYWorld - prevClusterPosY[0]) * renderAlpha;
       playerCloak.update(elapsedMs / 1000, {
-        positionXWorld: cloakPlayer.positionXWorld,
-        positionYWorld: cloakPlayer.positionYWorld,
+        positionXWorld: cloakInterpXWorld,
+        positionYWorld: cloakInterpYWorld,
         velocityXWorld: cloakPlayer.velocityXWorld,
         velocityYWorld: cloakPlayer.velocityYWorld,
         isFacingLeftFlag: cloakPlayer.isFacingLeftFlag,
@@ -1353,8 +1123,8 @@ export function startGameScreen(
       });
       // Update phantom cloak extension — roots at the main cloak's tip.
       phantomCloak.update(elapsedMs / 1000, {
-        positionXWorld:    cloakPlayer.positionXWorld,
-        positionYWorld:    cloakPlayer.positionYWorld,
+        positionXWorld:    cloakInterpXWorld,
+        positionYWorld:    cloakInterpYWorld,
         velocityXWorld:    cloakPlayer.velocityXWorld,
         velocityYWorld:    cloakPlayer.velocityYWorld,
         isFacingLeftFlag:  cloakPlayer.isFacingLeftFlag,
@@ -1368,8 +1138,9 @@ export function startGameScreen(
     updateSnapshotInPlace(reusableSnapshot, world, renderAlpha, prevClusterPosX, prevClusterPosY);
     renderFrame({
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, skidDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem,
-      playerCloak, phantomCloak, darkRoomOverlay, decorationWaveState,
+      webglRenderer, environmentalDust, skidDebris, crumbleDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem,
+      playerCloak, phantomCloak, darkRoomOverlay, decorationWaveState, arrowWeaveRenderer, swordWeaveRenderer,
+      sunbeamRenderer, atmosphericLightDust, fallingBlockDust,
       world, currentRoom,
       snapshot: reusableSnapshot,
       cachedDecorations: cachedWallDecorations,
@@ -1383,6 +1154,8 @@ export function startGameScreen(
       isDustContainerSpriteLoaded,
       dustContainerSprite,
       getPlayerDustCount,
+      graphicsQuality: pauseMenuState.graphicsQuality,
+      renderProfiler,
     });
 
     rafHandle = requestAnimationFrame(frame);
@@ -1396,6 +1169,7 @@ export function startGameScreen(
     if (pauseMenuCleanup !== null) pauseMenuCleanup();
     if (deathScreenCleanup !== null) deathScreenCleanup();
     if (skillTombMenuCleanup !== null) skillTombMenuCleanup();
+    if (mapOnlyCleanup !== null) mapOnlyCleanup();
     // Stop background music and release resources
     musicManager.dispose();
     editorController.destroy();

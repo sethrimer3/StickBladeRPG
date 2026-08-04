@@ -277,7 +277,7 @@
     -147,
     87.5
   ],
-  "theme": "blackRock",
+  "theme": "bk",
   "bg": "crystallineCracks",
   "light": "DEFAULT",
   "transitions": [
@@ -291,5 +291,16 @@
         19
       ]
     }
+  ],
+  "lights": [
+    [
+      20,
+      10,
+      8,
+      255,
+      220,
+      160,
+      80
+    ]
   ]
 }

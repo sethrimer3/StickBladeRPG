@@ -20,10 +20,9 @@
 
 import { WorldState } from './world';
 import { applyClusterMovement } from './clusters/movement';
-import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleMissChain } from './clusters/grapple';
+import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleRopeAnchor } from './clusters/grapple';
 import { applyEnemyAI } from './clusters/enemyAi';
 import { applyRockElementalAI } from './clusters/rockElementalAi';
-import { updateRockElementalDust } from './clusters/rockElementalDust';
 import { applyRadiantTetherAI } from './clusters/radiantTetherAi';
 import { applyGrappleHunterAI } from './clusters/grappleHunterAi';
 import { applyElementForces } from './particles/elementForces';
@@ -36,6 +35,7 @@ import { applyWallForces, applyWallBounce, settleFloorDust } from './particles/w
 import { integrateParticles } from './particles/integration';
 import { updateParticleLifetimes } from './particles/lifetime';
 import { applyPlayerWeaveCombat } from './weaves/weaveCombat';
+import { tickArrows } from './weaves/arrowWeave';
 import { applyHazards } from './hazards';
 import { tickGrasshoppers } from './critters/grasshopper';
 import { applySlimeAI, applyLargeSlimeAI } from './clusters/slimeAi';
@@ -44,15 +44,48 @@ import { applyBeetleAI } from './clusters/beetleAi';
 import { applyBubbleAI, applyBubblePopForces } from './clusters/bubbleAi';
 import { applySquareStampedeAI } from './clusters/squareStampedeAi';
 import { applyGoldenMimicAI } from './clusters/goldenMimicAi';
+import { applyBeeSwarmAI } from './clusters/beeSwarmAi';
+import {
+  syncMoteQueueWithParticles,
+  tickMoteSlotRegeneration,
+  tickMoteGrappleDisplayRadius,
+} from './motes/orderedMoteQueue';
+import { tickRopes } from './ropes/ropeSim';
+import { tickFallingBlocks } from './fallingBlocks/fallingBlockSim';
 
 export function tick(world: WorldState): void {
   if (world.grappleAttachFxTicks > 0) world.grappleAttachFxTicks -= 1;
+  if (world.grappleProximityBounceTicksLeft > 0) world.grappleProximityBounceTicksLeft -= 1;
+  if (world.grappleFailBeamTicksLeft > 0) world.grappleFailBeamTicksLeft -= 1;
+  if (world.grappleEmptyFxTicksLeft > 0) world.grappleEmptyFxTicksLeft -= 1;
+
+  // Capture the player's downward velocity BEFORE movement/collision zeroes it
+  // on landing.  The tough falling block trigger reads this to detect hard landings.
+  {
+    const player = world.clusters.length > 0 ? world.clusters[0] : undefined;
+    world.playerPrevVelocityYWorld =
+      (player !== undefined && player.isPlayerFlag === 1 && player.isAliveFlag === 1)
+        ? player.velocityYWorld
+        : 0;
+  }
 
   // 0. Cluster movement — smooth acceleration/deceleration for player and enemies
   applyClusterMovement(world);
 
+  // 0.05. Falling block simulation — state machine tick (after movement so
+  //        wall slots are current and playerPrevVelocityYWorld is set)
+  if (world.fallingBlockGroups.length > 0) {
+    tickFallingBlocks(world, world.dtMs);
+  }
+
   // 0.1. Environmental hazards — spikes, springs, water buoyancy, lava, breakables, jars, fireflies
   applyHazards(world);
+
+  // 0.15. Rope physics — Verlet integration + constraint relaxation
+  tickRopes(world);
+
+  // 0.2. Grapple rope anchor tracking — keep anchor moving with rope segment
+  updateGrappleRopeAnchor(world);
 
   // 0.25. Grapple rope constraint — corrects player cluster position/velocity
   applyGrappleClusterConstraint(world);
@@ -62,9 +95,6 @@ export function tick(world: WorldState): void {
 
   // 0.5b. Rock Elemental AI — state machine transitions
   applyRockElementalAI(world);
-
-  // 0.5c. Rock Elemental dust orbit/projectile — position and fire dust
-  updateRockElementalDust(world);
 
   // 0.5d. Radiant Tether AI — light-chain boss state machine
   applyRadiantTetherAI(world);
@@ -96,6 +126,9 @@ export function tick(world: WorldState): void {
   // 0.5l. Golden Mimic AI — mirror player movement, heap/fade state, contact damage
   applyGoldenMimicAI(world);
 
+  // 0.5m. Bee Swarm AI — orbit swarm pattern, charge/contact damage
+  applyBeeSwarmAI(world);
+
   // 1. Clear accumulated forces from previous tick
   for (let i = 0; i < world.particleCount; i++) {
     world.forceX[i] = 0;
@@ -114,18 +147,22 @@ export function tick(world: WorldState): void {
   // 4. Owner-anchor spring + orbital tangential force
   applyBindingForces(world);
 
-  // 4.5. Combat forces — enemy attack launch and block shield positioning (legacy)
-  //      Player combat now uses the Weave system (step 4.55).
+  // 4.5. Combat forces — attack launch and block shield positioning
   applyCombatForces(world);
 
   // 4.55. Player Weave combat — applies weave activation patterns for bound dust
   applyPlayerWeaveCombat(world);
 
+  // 4.56. Arrow Weave flight update — move arrows, detect wall sticking, apply enemy hit sequences
+  tickArrows(world);
   // 4.6. Lava AoE burn — heat damage to nearby enemy particles
   applyLavaEffect(world);
 
   // 5. Inter-particle: repulsion (different owners) + boid (same owner)
   applyInterParticleForces(world);
+
+  // 5.1. Mote queue sync — detect player particle combat kills → deplete slots
+  syncMoteQueueWithParticles(world);
 
   // 5.5. Wall repulsion forces — push particles away from obstacle geometry
   applyWallForces(world);
@@ -143,12 +180,14 @@ export function tick(world: WorldState): void {
 
   // 6.75. Grapple chain particle update — reposition Gold chain particles along rope
   updateGrappleChainParticles(world);
-
-  // 6.76. Grapple miss chain update — limp chain physics when grapple missed
-  updateGrappleMissChain(world);
-
   // 7. Lifetime: age particles; cycle owned particles or respawn combat-killed ones
   updateParticleLifetimes(world);
+
+  // 7.5. Mote queue regeneration — count down depletion cooldowns → restore slots
+  tickMoteSlotRegeneration(world);
+
+  // 7.6. Mote display radius lerp — smooth the grapple influence circle
+  tickMoteGrappleDisplayRadius(world);
 
   world.tick++;
 }

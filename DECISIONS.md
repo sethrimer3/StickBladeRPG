@@ -32,6 +32,9 @@
 - Player spawns in a central lobby (world 0) with tunnels leading left (world 2)
   and right (world 1).
 - Rooms are defined in block-unit coordinates (currently 1 block = BLOCK_SIZE_SMALL = 8 world units).
+- Room manifests are ordering hints, not exclusive file lists. Vite discovers
+  room JSON files under `ASSETS/CAMPAIGNS/*/ROOMS/*.json` and the loader appends
+  discovered files that are missing from `manifest.json`.
 - Room transitions are open tunnel passages at room edges; blocks line the
   tunnel ceiling/floor and a darkness gradient fades to 100% black at the edge.
 - When the player enters a transition zone, the current room is unloaded and
@@ -224,6 +227,34 @@ frame.
 from `wallLayout.solid2x2Map` each frame via `_populateCoveredBy2x2Keys()`.
 Avoids one `new Set<string>()` allocation per frame.
 
+### Procedural Block Organic Edge Shading
+
+`proceduralBlockSprite.ts` applies a cached post-process to generated block
+sprites after the template mask is composited. The system darkens pixels near
+open air using **multiply blending** (preserves hue; avoids colour inversion)
+with **smooth world-space value noise** for organic variation across connected
+blocks. The process (baked once per unique tile position + air-mask + seed):
+
+1. **Distance map (Chebyshev/8-connected BFS):** Solid pixels adjacent to open
+   air in any of the 8 directions receive internal depth 0 (spec depth 1).
+   BFS propagates inward up to depth 2 (spec depth 3).
+
+2. **Base multiply per depth:** 0.70 / 0.82 / 0.92 for depths 1 / 2 / 3.
+
+3. **Smooth noise variation (±0.08):** Bilinear value noise sampled at
+   `worldCoord × 0.15` (seed = world number) is centred and added to the base
+   multiplier. Noise uses world-unit coordinates so variation is seamless across
+   tile boundaries. Clamped per depth: [0.65–0.78] / [0.78–0.88] / [0.88–0.96].
+
+4. **Corner reinforcement (−0.05):** Pixels with ≥ 2 cardinal open-air
+   neighbours receive additional darkening, making corner recesses look natural.
+
+5. **Rim highlight (+0.07):** Outermost (depth 0) pixels that face north or west
+   (top-left light direction) are brightened slightly for a subtle ridge effect.
+
+The cache key includes world-origin coordinates and seed so each tile position
+produces its own correctly-shaded sprite while still being computed at most once.
+This is independent of the room ambient-light system.
 
 
 ### Gravity Model
@@ -710,8 +741,12 @@ can verify the collision boundary matches the visual tile geometry.
 - At runtime, `wallThemeIndex` (Uint8Array) in WorldState maps 0=blackRock, 1=brownRock, 2=dirt; 255=use room default
 - The renderer resolves per-tile theme from wall layout cache, falling back to room-level `_activeBlockTheme`
 - Wall merge only combines walls with matching theme index (in addition to matching platform flag)
-- The Block Theme dropdown in the editor sets which theme newly placed blocks receive
+- The Block Theme palette in the editor sets which theme newly placed blocks receive without changing the room default
+- The editor shows the last three used block themes inline and opens a full palette menu for all available themes
 - Individual wall themes can be changed via the inspector when a wall is selected
+- Compact v2 room JSON writes block themes with very short IDs (`bk`, `br`, `dt`) while retaining legacy long-name loading
+- The editor theme catalog is built from `ASSETS/SPRITES/BLOCKS/<theme>/` folder discovery; Blackstone (`blackRock`), Brownstone (`brownRock`), and Dirt (`dirt`) keep compact legacy IDs but are discovered through the same folder path as newer themes
+- Block theme chips render a representative discovered sprite thumbnail, with the old flat colour swatch only as a fallback if no image URL is available
 
 ## 2x2 BlackRock Block Sprites (BUILD 107)
 - blackRock 1x1 sprites are 16×16 source images drawn at 8×8 virtual pixels (downscaled)
@@ -752,3 +787,129 @@ can verify the collision boundary matches the visual tile geometry.
 - At room load, piles spawn unowned Physical particles with near-permanent lifetime (99999 ticks)
 - Storm Weave attracts and claims these particles when the player is nearby
 - Environmental dust layer skips procedural generation in lobby rooms to avoid duplication
+
+## Collision-Safe Movement Layer (BUILD 224)
+
+### ClusterMoveResult + moveClusterByDelta
+
+`ClusterMoveResult` (interface in `movementCollision.ts`) is a lightweight struct
+that describes what was contacted during a forced displacement:
+  - `collidedLeft / Right / Above / Below` — which side was blocked, relative to
+    the requested delta direction.
+  - `landed` — cluster landed on a top surface during this move.
+  - `blockedX / blockedY` — shorthand for "at least one axis was stopped early."
+
+`moveClusterByDelta(cluster, world, deltaX, deltaY, wasGrounded, dtSec)` wraps
+`resolveClusterSolidWallCollision` for use by forced-movement paths that only know
+their desired displacement (not velocity).  It:
+1. Converts delta → temporary velocity (delta / dtSec).
+2. Runs the full axis-separated, sub-stepped sweep from the current position.
+3. Restores the caller's original velocity so the caller decides the final velocity.
+4. Returns `ClusterMoveResult`.
+
+**Key design choice — velocity restoration:** The helper restores the caller's
+velocity so that forced-displacement paths (grapple constraint snap) are not
+inadvertently affected by the small "virtual" velocity used internally for
+sub-step math.  Callers that want wall-contact velocity zeroing (like zip movement)
+should set velocity explicitly and call `resolveClusterSolidWallCollision` directly,
+as zip already does.
+
+### Grapple Constraint Snap
+
+`applyGrappleClusterConstraint` previously snapped the player directly to the rope
+circle (`player.positionXWorld = ax + nx * ropeLength`) and then ran a single-pass
+`resolveAABBPenetration` loop as a safety net.  The minimum-penetration fallback
+can push the player in an unexpected direction when the snap is obstructed by a
+diagonal corner or stacked walls.
+
+BUILD 224 replaces the direct snap with `moveClusterByDelta`.  The sweep:
+- Prevents the player from being carried through any geometry by the rope snap.
+- Gives correct side-of-contact information via `ClusterMoveResult`.
+- Eliminates the need for the single-pass `resolveAABBPenetration` fallback on the
+  constraint path.
+
+The stuck-phase position lock (direct assignment to targetX/targetY) retains its
+own `resolveAABBPenetration` loop because the stuck target is a geometrically
+determined safe position (anchor + surfaceNormal × halfExtent) and the loop
+resolves residual overlap from ramps or stacked geometry near the anchor.
+
+## Grapple Collision Authority & Surface-Anchor Design (BUILD 231)
+
+### Merged Wall Rectangles are the Authoritative Solid Source
+
+DustWeaver does NOT maintain a separate tile-occupancy grid at runtime.  The merged
+wall rectangles written by `loadRoomWalls()` (gameRoom.ts) are the canonical solid
+geometry.  They are the sole input to:
+- `raycastWalls()` — used for grapple fire, LOS checks, and the miss-chain swept tip
+- `resolveClusterSolidWallCollision()` — physics movement for all clusters
+- `resolveClusterFloorCollision()` — thin-platform landing
+
+Because merging is performed against exact BLOCK_SIZE_MEDIUM (8 wu) integer
+boundaries, there are no subpixel gaps between adjacent merged rectangles.  The
+merged representation is exact for solid walls; individual tile boundaries are not
+needed at runtime.
+
+The description "merged rectangles are broad-phase only" that appears in some design
+documents refers to a possible future where a tile grid is also maintained alongside
+merged rectangles for very narrow collision queries.  As of BUILD 231 merged rects
+are both the broad-phase and the precise collision source.
+
+### RayHit Surface Normal
+
+`raycastWalls()` now returns `normalX, normalY` in addition to `t, x, y, wallIndex`.
+The normal is the outward surface normal at the hit point — an axis-aligned unit
+vector pointing away from the wall toward the ray origin.
+
+Normal computation: The slab intersection tracks which axis' entry (tMin) was the
+tightest constraint.  For an X-face hit: `normalX = –sign(dx)`, `normalY = 0`.
+For a Y-face hit: `normalX = 0`, `normalY = –sign(dy)`.
+
+Corner hits (txMin ≈ tyMin) give the last-updated axis as the normal axis; the
+result is not uniquely defined but is acceptable because corner hits are geometrically
+degenerate and the epsilon offset below makes them safe.
+
+### Surface-Epsilon Anchor Placement
+
+`fireGrapple()` places the anchor at:
+
+    anchorX = hit.x - hit.normalX * GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD
+    anchorY = hit.y - hit.normalY * GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD
+
+where `GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD = 0.1` world units.
+
+This prevents the anchor from sitting exactly on the wall face where floating-point
+arithmetic could classify it as "inside" solid during subsequent frame validation.
+The offset is well within the block size (8 wu), so there is no visible gap.
+
+The miss-chain path uses `GRAPPLE_TIP_SKIN_WORLD = 0.5 wu` which already subsumes
+this epsilon, so no additional offset is applied there.
+
+### Surface-Anchor Validation Rule
+
+A grapple anchor placed by a successful raycast is a **surface-contact point**, not
+a free floating point.  It must NOT be validated using a generic "is this point
+inside solid?" test because:
+1. The anchor intentionally sits just outside the wall face (by the epsilon above).
+2. Floating-point noise at the face boundary can produce false-positive inside tests.
+
+Correct validation:
+- Check that `hit.wallIndex` is still solid (for breakable/crumble blocks).
+- Cast a ray from the player to the anchor and check for obstructions (see zip LOS
+  check in `applyGrappleClusterConstraint`).
+- Do NOT use point-in-AABB tests on the anchor coordinates.
+
+The anchor's surface normal is stored in `world.grappleAnchorNormalXWorld/Y` and
+snapshotted for renderers and debug overlays.
+
+### Debug Grapple Collision Overlay (BUILD 231)
+
+When `isDebugMode = true`, `renderGrapple()` draws:
+- **Cyan dashed line** — the full sweep segment (from/to) cast during the last
+  grapple fire.
+- **Yellow cross** — the raw raycast hit point before the surface-epsilon offset.
+- **Magenta arrow** — the outward surface normal at the raw hit point.
+- **Green circle** — the final snapped anchor position (epsilon-offset from face).
+- **"AABB" label** — indicates the merged-rectangle broad-phase was used.
+
+These fields are stored in `world.grappleDebugSweep*/RawHit*/isGrappleDebugActiveFlag`
+and are read-only from the renderer; they have no physics effect.

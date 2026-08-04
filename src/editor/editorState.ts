@@ -6,13 +6,14 @@
  * which can be exported to JSON and later rebuilt into a RoomDef.
  */
 
-import type { TransitionDirection, BlockTheme, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection } from '../levels/roomDef';
+import type { TransitionDirection, BlockTheme, BlockThemeId, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant } from '../levels/roomDef';
 import type { RoomSongId } from '../audio/musicManager';
 import { AVAILABLE_SONGS, SONG_DISPLAY_NAMES } from '../audio/musicManager';
 import { WEAVE_LIST } from '../sim/weaves/weaveDefinition';
+import { FOLDER_BLOCK_THEMES, folderThemeShortId } from '../render/walls/folderBlockThemes';
 
 // Re-export for convenience in editor modules
-export type { BlockTheme, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection } from '../levels/roomDef';
+export type { BlockTheme, BlockThemeId, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant } from '../levels/roomDef';
 export type { RoomSongId } from '../audio/musicManager';
 
 /** Options shown in the "Room Song" editor dropdown, in display order. */
@@ -32,7 +33,7 @@ export enum EditorTool {
 
 // ── Palette categories and items ─────────────────────────────────────────────
 
-export type PaletteCategory = 'blocks' | 'enemies' | 'triggers' | 'lighting';
+export type PaletteCategory = 'blocks' | 'enemies' | 'triggers' | 'collectables' | 'environment' | 'objects' | 'lighting' | 'liquids' | 'ropes';
 
 export interface PaletteItem {
   id: string;
@@ -50,8 +51,76 @@ export interface PaletteItem {
   isPillarHalfWidthItem?: 1;
   /** 1 if this palette item paints ambient-light blocker tiles. */
   isAmbientLightBlockerItem?: 1;
+  /** 1 if this palette item paints dark ambient-light blocker tiles (also draws a black background overlay). */
+  isDarkAmbientLightBlockerItem?: 1;
   /** 1 if this palette item places a local light source. */
   isLightSourceItem?: 1;
+  /** 1 if this palette item places a sunbeam. */
+  isSunbeamItem?: 1;
+  /** 1 if this palette item places a liquid zone (water or lava). */
+  isLiquidZoneItem?: 1;
+  /** 1 if this palette item places a crumble block (collapses on first contact). */
+  isCrumbleBlockItem?: 1;
+  /** 1 if this palette item places a bounce pad (reflects player velocity). */
+  isBouncePadItem?: 1;
+  /** Speed-factor index for the placed bounce pad: 0=50%, 1=100%. */
+  bouncePadSpeedFactorIndex?: 0 | 1;
+  /** 1 if this palette item places a collectible dust container (grants +4 max capacity). */
+  isDustContainerItem?: 1;
+  /** 1 if this palette item places a collectible dust container piece. */
+  isDustContainerPieceItem?: 1;
+  /** 1 if this palette item places a dust boost jar object (grants temporary dust of a specific kind). */
+  isDustBoostJarItem?: 1;
+  /** 1 if this palette item places a falling block tile (triggers as a rigid group when disturbed). */
+  isFallingBlockItem?: 1;
+  /** Which falling block variant this item places. Only meaningful when isFallingBlockItem === 1. */
+  fallingBlockVariant?: import('../levels/roomDef').FallingBlockVariant;
+}
+
+/** Options for the crumble-block weakness variant dropdown. */
+export const CRUMBLE_VARIANT_OPTIONS: readonly { id: CrumbleVariant; label: string }[] = [
+  { id: 'normal',    label: 'Normal'    },
+  { id: 'fire',      label: 'Fire'      },
+  { id: 'water',     label: 'Water'     },
+  { id: 'void',      label: 'Void'      },
+  { id: 'ice',       label: 'Ice'       },
+  { id: 'lightning', label: 'Lightning' },
+  { id: 'poison',    label: 'Poison'    },
+  { id: 'shadow',    label: 'Shadow'    },
+  { id: 'nature',    label: 'Nature'    },
+];
+
+/** Canonical list of ParticleKind string values available for editor dropdowns. */
+export const DUST_KIND_OPTIONS: readonly string[] = [
+  'Physical', 'Fire', 'Ice', 'Lightning', 'Poison', 'Arcane',
+  'Wind', 'Holy', 'Shadow', 'Metal', 'Earth', 'Nature', 'Crystal', 'Void', 'Water', 'Lava', 'Stone',
+];
+
+export type RopeDestructibility = 'indestructible' | 'playerOnly' | 'any';
+
+export const ROPE_DESTRUCTIBILITY_OPTIONS: ReadonlyArray<{ id: RopeDestructibility; label: string }> = [
+  { id: 'indestructible', label: 'Indestructible' },
+  { id: 'playerOnly',     label: 'Player Only' },
+  { id: 'any',            label: 'Any' },
+];
+
+export const ROPE_THICKNESS_OPTIONS: ReadonlyArray<{ id: 0 | 1 | 2; label: string }> = [
+  { id: 0, label: '8 px (thin)' },
+  { id: 1, label: '16 px (medium)' },
+  { id: 2, label: '24 px (thick)' },
+];
+
+export interface EditorRope {
+  uid: number;
+  anchorAXBlock: number;
+  anchorAYBlock: number;
+  anchorBXBlock: number;
+  anchorBYBlock: number;
+  segmentCount: number;
+  isAnchorBFixedFlag: 0 | 1;
+  destructibility: RopeDestructibility;
+  /** Visual and collision thickness index: 0=8 px, 1=16 px, 2=24 px. */
+  thicknessIndex: 0 | 1 | 2;
 }
 
 /** Built-in palette items available in the editor. */
@@ -76,34 +145,93 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'enemy_square_stampede', label: 'Square Stampede', category: 'enemies' },
   { id: 'enemy_golden_mimic', label: 'Golden Mimic', category: 'enemies' },
   { id: 'enemy_golden_mimic_xy', label: 'Golden Mimic (XY)', category: 'enemies' },
-  // Triggers
-  { id: 'player_spawn', label: 'Player Spawn', category: 'triggers' },
+  { id: 'enemy_bee_swarm', label: 'Bee Swarm', category: 'enemies' },
+  // Triggers (player-facing activators and room logic)
+  { id: 'player_spawn',    label: 'Player Spawn',    category: 'triggers' },
   { id: 'room_transition', label: 'Room Transition', category: 'triggers' },
-  { id: 'save_tomb', label: 'Save Tomb', category: 'triggers' },
-  { id: 'skill_tomb', label: 'Skill Tomb', category: 'triggers' },
-  { id: 'dust_pile_small',  label: 'Dust Pile (S)',  category: 'triggers' },
-  { id: 'dust_pile_medium', label: 'Dust Pile (M)',  category: 'triggers' },
-  { id: 'dust_pile_large',  label: 'Dust Pile (L)',  category: 'triggers' },
+  { id: 'save_tomb',       label: 'Save Tomb',       category: 'triggers' },
+  // Collectables (items the player can pick up for permanent upgrades)
+  { id: 'skill_tomb',            label: 'Skill Tomb',            category: 'collectables' },
+  { id: 'dust_container',        label: 'Dust Container',        category: 'collectables', isDustContainerItem: 1 },
+  { id: 'dust_container_piece',  label: 'Dust Container Piece',  category: 'collectables', isDustContainerPieceItem: 1 },
+  // Environment (world atmosphere and critters)
+  { id: 'dust_pile_small',  label: 'Dust Pile (S)', category: 'environment' },
+  { id: 'dust_pile_medium', label: 'Dust Pile (M)', category: 'environment' },
+  { id: 'dust_pile_large',  label: 'Dust Pile (L)', category: 'environment' },
   // Legacy alias kept for backward-compat with older room exports
-  { id: 'dust_pile', label: 'Dust Pile', category: 'triggers' },
-  { id: 'grasshopper_area', label: 'Grasshopper Area', category: 'triggers' },
-  // Decorations
-  { id: 'decoration_mushroom',  label: 'Glow Mushroom', category: 'triggers' },
-  { id: 'decoration_glowgrass', label: 'Glow Grass',    category: 'triggers' },
-  { id: 'decoration_vine',      label: 'Glow Vine',     category: 'triggers' },
+  { id: 'dust_pile', label: 'Dust Pile', category: 'environment' },
+  { id: 'grasshopper_area',     label: 'Grasshopper Area', category: 'environment' },
+  { id: 'firefly_area',         label: 'Firefly Area',     category: 'environment' },
+  { id: 'decoration_mushroom',  label: 'Glow Mushroom',    category: 'environment' },
+  { id: 'decoration_glowgrass', label: 'Glow Grass',       category: 'environment' },
+  { id: 'decoration_vine',      label: 'Glow Vine',        category: 'environment' },
+  // Objects (interactive world objects)
+  { id: 'dust_boost_jar', label: 'Dust Jar (Object)', category: 'objects', isDustBoostJarItem: 1 },
   // ── Lighting layer ─────────────────────────────────────────────────────
   // Designer-facing authoring for the unified ambient lighting system.
   // See `RoomAmbientLightBlockerDef` / `RoomLightSourceDef` in roomDef.ts.
-  { id: 'ambient_light_blocker', label: 'Ambient Blocker', category: 'lighting', isAmbientLightBlockerItem: 1 },
+  { id: 'ambient_light_blocker',      label: 'Ambient Blocker', category: 'lighting', isAmbientLightBlockerItem: 1 },
+  { id: 'dark_ambient_light_blocker', label: 'Dark Blocker',    category: 'lighting', isAmbientLightBlockerItem: 1, isDarkAmbientLightBlockerItem: 1 },
   { id: 'light_source',          label: 'Light Source',    category: 'lighting', isLightSourceItem: 1 },
+  { id: 'sunbeam',               label: 'Sunbeam',         category: 'lighting', isSunbeamItem: 1 },
+  // ── Liquids layer ───────────────────────────────────────────────────────
+  { id: 'water_zone', label: 'Water Zone', category: 'liquids', defaultWidthBlocks: 4, defaultHeightBlocks: 4, isLiquidZoneItem: 1 },
+  { id: 'lava_zone',  label: 'Lava Zone',  category: 'liquids', defaultWidthBlocks: 4, defaultHeightBlocks: 4, isLiquidZoneItem: 1 },
+  // ── Crumble blocks ──────────────────────────────────────────────────────
+  { id: 'crumble_block',    label: 'Crumble 1×1',       category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isCrumbleBlockItem: 1 },
+  { id: 'crumble_block_2x2', label: 'Crumble 2×2',      category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isCrumbleBlockItem: 1 },
+  { id: 'crumble_ramp_1x1', label: 'Crumble Ramp 1×1',  category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isCrumbleBlockItem: 1, isRampItem: 1 },
+  { id: 'crumble_ramp_1x2', label: 'Crumble Ramp 1×2',  category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 1, isCrumbleBlockItem: 1, isRampItem: 1 },
+  { id: 'crumble_ramp_2x2', label: 'Crumble Ramp 2×2',  category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isCrumbleBlockItem: 1, isRampItem: 1 },
+  // ── Bounce pads ─────────────────────────────────────────────────────────
+  // Dim = 50 % restitution (small 2×2-pixel core)
+  { id: 'bounce_pad_1x1_dim',       label: 'Bounce 1×1 (50%)',      category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 0 },
+  { id: 'bounce_pad_2x2_dim',       label: 'Bounce 2×2 (50%)',      category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 0 },
+  { id: 'bounce_pad_ramp_1x1_dim',  label: 'Bounce Ramp 1×1 (50%)', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 0, isRampItem: 1 },
+  { id: 'bounce_pad_ramp_1x2_dim',  label: 'Bounce Ramp 1×2 (50%)', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 0, isRampItem: 1 },
+  { id: 'bounce_pad_ramp_2x2_dim',  label: 'Bounce Ramp 2×2 (50%)', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 0, isRampItem: 1 },
+  // Bright = 100 % restitution (large 4×4-pixel core)
+  { id: 'bounce_pad_1x1_bright',      label: 'Bounce 1×1 (100%)',      category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 1 },
+  { id: 'bounce_pad_2x2_bright',      label: 'Bounce 2×2 (100%)',      category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 1 },
+  { id: 'bounce_pad_ramp_1x1_bright', label: 'Bounce Ramp 1×1 (100%)', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 1, isRampItem: 1 },
+  { id: 'bounce_pad_ramp_1x2_bright', label: 'Bounce Ramp 1×2 (100%)', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 1, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 1, isRampItem: 1 },
+  { id: 'bounce_pad_ramp_2x2_bright', label: 'Bounce Ramp 2×2 (100%)', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isBouncePadItem: 1, bouncePadSpeedFactorIndex: 1, isRampItem: 1 },
+  // ── Falling blocks (triggers as rigid group when disturbed) ──────────────
+  { id: 'falling_block_tough',     label: 'Falling Block, Tough',     category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isFallingBlockItem: 1, fallingBlockVariant: 'tough' as const },
+  { id: 'falling_block_sensitive', label: 'Falling Block, Sensitive', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isFallingBlockItem: 1, fallingBlockVariant: 'sensitive' as const },
+  { id: 'falling_block_crumbling', label: 'Falling Block, Crumbling', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isFallingBlockItem: 1, fallingBlockVariant: 'crumbling' as const },
+  { id: 'rope', label: 'Rope', category: 'ropes', defaultWidthBlocks: 1, defaultHeightBlocks: 1 },
 ];
 
-/** Available block themes for the editor dropdown. */
-export const BLOCK_THEMES: readonly { id: BlockTheme; label: string }[] = [
-  { id: 'blackRock', label: 'Black Rock' },
-  { id: 'brownRock', label: 'Brown Rock' },
-  { id: 'dirt',      label: 'Dirt' },
-];
+const LEGACY_BLOCK_THEME_META: Readonly<Record<string, { shortId: BlockThemeId; label: string }>> = {
+  blackRock: { shortId: 'bk', label: 'Blackstone' },
+  brownRock: { shortId: 'br', label: 'Brownstone' },
+  dirt:      { shortId: 'dt', label: 'Dirt' },
+};
+const LEGACY_BLOCK_THEME_ORDER: Readonly<Record<string, number>> = {
+  blackRock: 0,
+  brownRock: 1,
+  dirt:      2,
+};
+
+function makeBlockThemeOption(theme: { id: string; label: string }): { id: BlockTheme; shortId: BlockThemeId; label: string } {
+  const legacyMeta = LEGACY_BLOCK_THEME_META[theme.id];
+  if (legacyMeta !== undefined) {
+    return { id: theme.id, shortId: legacyMeta.shortId, label: legacyMeta.label };
+  }
+  return { id: theme.id, shortId: folderThemeShortId(theme.id), label: theme.label };
+}
+
+/** Available block themes for placement and wall inspection. */
+export const BLOCK_THEMES: readonly { id: BlockTheme; shortId: BlockThemeId; label: string }[] = [...FOLDER_BLOCK_THEMES]
+  .sort((a, b) => {
+    const orderA = LEGACY_BLOCK_THEME_ORDER[a.id] ?? 1000;
+    const orderB = LEGACY_BLOCK_THEME_ORDER[b.id] ?? 1000;
+    return orderA !== orderB ? orderA - orderB : a.id.localeCompare(b.id);
+  })
+  .map(makeBlockThemeOption);
+
+const DEFAULT_RECENT_BLOCK_THEMES: readonly BlockTheme[] = ['blackRock', 'brownRock', 'dirt'];
 
 /** Available background options for the editor dropdown. */
 export const BACKGROUND_OPTIONS: readonly { id: BackgroundId; label: string }[] = [
@@ -206,6 +334,9 @@ export interface EditorEnemy {
   isBubbleEnemyFlag: 0 | 1;
   isIceBubbleFlag: 0 | 1;
   isSquareStampedeFlag: 0 | 1;
+  isGoldenMimicFlag?: 0 | 1;
+  isGoldenMimicYFlippedFlag?: 0 | 1;
+  isBeeSwarmFlag?: 0 | 1;
 }
 
 export interface EditorTransition {
@@ -222,6 +353,66 @@ export interface EditorTransition {
    * When defined the transition is an interior zone at this block position.
    */
   depthBlock?: number;
+  /** When true, this transition is a secret door hidden from the player until approached. */
+  isSecretDoor?: boolean;
+  /** Width of the fade gradient in blocks (default: 3). */
+  gradientWidthBlocks?: number;
+}
+
+/** A water zone rectangle placed in the room. */
+export interface EditorWaterZone {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
+}
+
+/** A lava zone rectangle placed in the room. */
+export interface EditorLavaZone {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
+}
+
+/** A crumble block that collapses on first player contact. */
+export interface EditorCrumbleBlock {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  /** Width in blocks (default 1). */
+  wBlock: number;
+  /** Height in blocks (default 1). */
+  hBlock: number;
+  /**
+   * Ramp orientation (0-3). Undefined = not a ramp.
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
+   */
+  rampOrientation?: 0 | 1 | 2 | 3;
+  /** Which elemental type this crumble block is weak to. */
+  variant: CrumbleVariant;
+  /** Per-block theme override. When set, overrides the room-level default. */
+  blockTheme?: BlockTheme;
+}
+
+/** A bounce pad block that reflects the player's velocity on contact. */
+export interface EditorBouncePad {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  /** Width in blocks (default 1). */
+  wBlock: number;
+  /** Height in blocks (default 1). */
+  hBlock: number;
+  /**
+   * Ramp orientation (0-3). Undefined = not a ramp.
+   * 0=rises right(/), 1=rises left(\), 2=ceiling ramp(⌐), 3=ceiling ramp(¬).
+   */
+  rampOrientation?: 0 | 1 | 2 | 3;
+  /** 0 = 50 % bounce (dim 2×2 core), 1 = 100 % bounce (bright 4×4 core). */
+  speedFactorIndex: 0 | 1;
 }
 
 /** Save Tomb — where the player saves their progress. */
@@ -240,11 +431,37 @@ export interface EditorSkillTomb {
   weaveId: string;
 }
 
+/** Collectible dust container — grants +4 max dust particle capacity when picked up. */
+export interface EditorDustContainer {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+}
+
+/** Collectible dust container piece — accumulates toward a full dust container. */
+export interface EditorDustContainerPiece {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+}
+
+/** Dust boost jar — a breakable world object that temporarily grants dust particles of a specific kind. */
+export interface EditorDustBoostJar {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  /** The ParticleKind string name of the dust inside (e.g. 'Physical', 'Fire'). */
+  dustKind: string;
+  /** Number of temporary dust particles granted when broken. */
+  dustCount: number;
+}
+
 export interface EditorDustPile {
   uid: number;
   xBlock: number;
   yBlock: number;
   dustCount: number;
+  spreadBlocks?: number;
 }
 
 export interface EditorGrasshopperArea {
@@ -254,6 +471,15 @@ export interface EditorGrasshopperArea {
   wBlock: number;
   hBlock: number;
   /** Number of grasshoppers to spawn in this area. */
+  count: number;
+}
+
+export interface EditorFireflyArea {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  wBlock: number;
+  hBlock: number;
   count: number;
 }
 
@@ -277,6 +503,11 @@ export interface EditorAmbientLightBlocker {
   uid: number;
   xBlock: number;
   yBlock: number;
+  /**
+   * 1 if this is a dark blocker that draws a solid black overlay over the air
+   * cell, hiding the room background.  0 (or absent) for the standard clear blocker.
+   */
+  isDarkFlag: 0 | 1;
 }
 
 /** An editor-placed local light source (see {@link RoomLightSourceDef}). */
@@ -290,6 +521,37 @@ export interface EditorLightSource {
   colorB: number;
   /** Designer-facing 0-100 percent brightness slider value. */
   brightnessPct: number;
+  /** Number of atmospheric dust motes near this source (0 = none). */
+  dustMoteCount: number;
+  /** Radius (blocks) in which dust motes spawn; 0 = use radiusBlocks. */
+  dustMoteSpreadBlocks: number;
+}
+
+/** An editor-placed sunbeam (see {@link RoomSunbeamDef}). */
+export interface EditorSunbeam {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  /** Angle (radians) the beam travels — 0 = right, π/2 = down. */
+  angleRad: number;
+  /** Width of the beam base in blocks. */
+  widthBlocks: number;
+  /** Length of the beam shaft in blocks. */
+  lengthBlocks: number;
+  colorR: number;
+  colorG: number;
+  colorB: number;
+  /** Intensity as 0–100 percent. */
+  intensityPct: number;
+}
+
+/** An editor-painted falling block tile (one tile per entry). */
+export interface EditorFallingBlock {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  /** Which falling block variant this tile belongs to. */
+  variant: import('../levels/roomDef').FallingBlockVariant;
 }
 
 export interface EditorRoomData {
@@ -327,19 +589,38 @@ export interface EditorRoomData {
   transitions: EditorTransition[];
   saveTombs: EditorSaveTomb[];
   skillTombs: EditorSkillTomb[];
+  dustContainers: EditorDustContainer[];
+  dustContainerPieces: EditorDustContainerPiece[];
+  dustBoostJars: EditorDustBoostJar[];
   dustPiles: EditorDustPile[];
   grasshopperAreas: EditorGrasshopperArea[];
+  /** Firefly spawn areas (free-roaming fireflies, not jar-based). */
+  fireflyAreas: EditorFireflyArea[];
   /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
   decorations: EditorDecoration[];
   /** Editor-painted ambient-light blocker tiles (sparse). */
   ambientLightBlockers: EditorAmbientLightBlocker[];
   /** Editor-placed local light sources. */
   lightSources: EditorLightSource[];
+  /** Water zones placed in this room. */
+  waterZones?: EditorWaterZone[];
+  /** Lava zones placed in this room. */
+  lavaZones?: EditorLavaZone[];
+  /** Crumble blocks placed in this room (collapse on first player contact). */
+  crumbleBlocks?: EditorCrumbleBlock[];
+  /** Bounce pads placed in this room (reflect player velocity on contact). */
+  bouncePads?: EditorBouncePad[];
+  /** Ropes placed in this room. */
+  ropes?: EditorRope[];
+  /** Sunbeams placed in this room. */
+  sunbeams?: EditorSunbeam[];
+  /** Falling block tiles placed in this room. */
+  fallingBlocks?: EditorFallingBlock[];
 }
 
 // ── Selected element reference ───────────────────────────────────────────────
 
-export type SelectedElementType = 'wall' | 'enemy' | 'transition' | 'saveTomb' | 'skillTomb' | 'dustPile' | 'grasshopperArea' | 'decoration' | 'playerSpawn' | 'ambientLightBlocker' | 'lightSource';
+export type SelectedElementType = 'wall' | 'enemy' | 'transition' | 'saveTomb' | 'skillTomb' | 'dustContainer' | 'dustContainerPiece' | 'dustBoostJar' | 'dustPile' | 'grasshopperArea' | 'fireflyArea' | 'decoration' | 'playerSpawn' | 'ambientLightBlocker' | 'lightSource' | 'waterZone' | 'lavaZone' | 'crumbleBlock' | 'bouncePad' | 'rope' | 'sunbeam' | 'fallingBlock';
 
 export interface SelectedElement {
   type: SelectedElementType;
@@ -354,6 +635,10 @@ export interface EditorState {
   activeCategory: PaletteCategory;
   selectedPaletteItem: PaletteItem | null;
   selectedElements: SelectedElement[];
+  /** Block theme assigned to newly placed wall blocks. */
+  selectedBlockTheme: BlockTheme;
+  /** Last three block themes picked for placement, most recent first. */
+  recentBlockThemes: BlockTheme[];
   /** Current placement rotation in 90° steps (0, 1, 2, 3). */
   placementRotationSteps: number;
   /** Whether the current placement is horizontally flipped. */
@@ -394,6 +679,25 @@ export interface EditorState {
    */
   pendingSkillTombWeaveId: string;
   /**
+   * Which crumble variant a newly placed crumble block will have.
+   * Populated from the crumble variant dropdown when a crumble item is selected.
+   */
+  pendingCrumbleVariant: CrumbleVariant;
+  /**
+   * Which dust kind a newly placed dust boost jar will contain.
+   * Populated from the dust kind dropdown when dust_boost_jar is selected.
+   */
+  pendingDustBoostJarKind: string;
+  /**
+   * How many dust particles a newly placed dust boost jar grants when broken.
+   */
+  pendingDustBoostJarCount: number;
+  /**
+   * Pending first anchor when placing a rope (null if not in rope-placement mode).
+   */
+  pendingRopeAnchorXBlock: number | null;
+  pendingRopeAnchorYBlock: number | null;
+  /**
    * The element the mouse is currently hovering over (Select tool only).
    * Null when no element is under the cursor or when not using the Select tool.
    */
@@ -407,6 +711,8 @@ export function createEditorState(): EditorState {
     activeCategory: 'blocks',
     selectedPaletteItem: null,
     selectedElements: [],
+    selectedBlockTheme: 'blackRock',
+    recentBlockThemes: [...DEFAULT_RECENT_BLOCK_THEMES],
     placementRotationSteps: 0,
     placementFlipH: false,
     cursorBlockX: 0,
@@ -427,6 +733,11 @@ export function createEditorState(): EditorState {
     selectionBoxStartBlockY: 0,
     clipboard: null,
     pendingSkillTombWeaveId: WEAVE_LIST[0] ?? 'storm',
+    pendingCrumbleVariant: 'normal',
+    pendingDustBoostJarKind: 'Physical',
+    pendingDustBoostJarCount: 5,
+    pendingRopeAnchorXBlock: null,
+    pendingRopeAnchorYBlock: null,
     hoverElement: null,
   };
 }
@@ -434,4 +745,55 @@ export function createEditorState(): EditorState {
 /** Generates a unique ID for a new editor element. */
 export function allocateUid(state: EditorState): number {
   return state.nextUid++;
+}
+
+// ── Editor UI shared types ────────────────────────────────────────────────────
+// These live here so both editorUI.ts and editorInspector.ts can import them
+// without creating a circular dependency.
+
+/** The four edges of the room that can be grown or shrunk via the edge-resize buttons. */
+export type RoomEdge = 'top' | 'bottom' | 'left' | 'right';
+
+/** Callbacks wired from EditorUI to EditorController. */
+export interface EditorUICallbacks {
+  onToolChange: (tool: EditorTool) => void;
+  onCategoryChange: (category: PaletteCategory) => void;
+  onPaletteItemSelect: (item: PaletteItem) => void;
+  onExport: () => void;
+  onLinkTransition: () => void;
+  onPropertyChange: (prop: string, value: string | number) => void;
+  onRoomDimensionsChange: (prop: 'widthBlocks' | 'heightBlocks', value: number) => void;
+  /** Add or remove one row/column from the given edge. delta is +1 (add) or -1 (remove). */
+  onEdgeResize: (edge: RoomEdge, delta: 1 | -1) => void;
+  onBlockThemeChange: (theme: BlockTheme) => void;
+  onLightingEffectChange: (effect: LightingEffect) => void;
+  onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => void;
+  onBackgroundChange: (backgroundId: BackgroundId) => void;
+  onRoomSongChange: (songId: RoomSongId) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onExportAllChanges: () => void;
+  /** Open the visual world map overlay. */
+  onOpenVisualMap: () => void;
+  /** Called when the user picks a different skill in the skill tomb dropdown. */
+  onSkillTombWeaveChange: (weaveId: string) => void;
+  /** Called when the user picks a different crumble variant in the crumble variant dropdown. */
+  onCrumbleVariantChange: (variant: CrumbleVariant) => void;
+  /** Called when the user picks a different dust kind for the dust boost jar. */
+  onDustBoostJarKindChange: (dustKind: string) => void;
+  /** Called when the user changes the dust count for the dust boost jar. */
+  onDustBoostJarCountChange: (dustCount: number) => void;
+}
+
+/** Selects the placement block theme and updates the recent-theme strip. */
+export function selectBlockTheme(state: EditorState, theme: BlockTheme): void {
+  state.selectedBlockTheme = theme;
+  const nextRecent: BlockTheme[] = [theme];
+  for (const recentTheme of state.recentBlockThemes) {
+    if (recentTheme !== theme && nextRecent.length < 3) nextRecent.push(recentTheme);
+  }
+  for (const fallbackTheme of DEFAULT_RECENT_BLOCK_THEMES) {
+    if (!nextRecent.includes(fallbackTheme) && nextRecent.length < 3) nextRecent.push(fallbackTheme);
+  }
+  state.recentBlockThemes = nextRecent;
 }

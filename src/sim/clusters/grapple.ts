@@ -72,35 +72,84 @@
 import { WorldState } from '../world';
 import { ParticleKind } from '../particles/kinds';
 import { getElementProfile } from '../particles/elementProfiles';
-import { INFLUENCE_RADIUS_WORLD } from './binding';
+import { ClusterState } from './state';
 import { PLAYER_JUMP_SPEED_WORLD, VAR_JUMP_TIME_TICKS } from './movement';
-import { resolveAABBPenetration } from '../physics/collision';
+import { moveClusterByDelta } from './movementCollision';
+import {
+  GRAPPLE_SEGMENT_COUNT,
+  GRAPPLE_MIN_LENGTH_WORLD,
+  GRAPPLE_ATTACH_FX_TICKS,
+  BEHAVIOR_MODE_GRAPPLE_CHAIN,
+  GRAPPLE_CHAIN_LIFETIME_TICKS,
+  GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD,
+  raycastWalls,
+  releaseGrapple,
+  clearLegacyGrappleMissState,
+} from './grappleShared';
+import { getEffectiveGrappleRangeWorld } from '../motes/orderedMoteQueue';
+import { tickGrappleWrapping } from './grappleWrapping';
+import { raycastRopeSegments } from './grappleRopeSupport';
+import { tickGrappleZip } from './grappleZip';
+
+export { updateGrappleRopeAnchor } from './grappleRopeSupport';
+export { raycastRopeSegments } from './grappleRopeSupport';
+// Re-export so existing callers (gameCommandProcessor) need not change import paths.
+export { releaseGrapple } from './grappleShared';
 
 // ============================================================================
 // Tuning constants — adjust these to dial in the grapple feel
 // ============================================================================
 
-/** Maximum rope length the player can shoot (world units) — matches the zone of influence radius. */
-export const GRAPPLE_MAX_LENGTH_WORLD = INFLUENCE_RADIUS_WORLD;
-
-/** Minimum rope length to prevent degenerate zero-length ropes. */
-const GRAPPLE_MIN_LENGTH_WORLD = 20;
-
-/** Duration of the sparkle burst effect on attach (ticks). */
-const GRAPPLE_ATTACH_FX_TICKS = 14;
+/**
+ * Base speed at which the rope shortens while the down key is held (world units per second).
+ * Applied at the start of a retraction hold before the ramp reaches full speed.
+ * Intentionally equal to the old constant so the feel is identical at tick 0.
+ */
+const GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC = 60.0;
 
 /**
- * Speed at which the rope shortens while the jump button is held (world units per second).
+ * Full speed at which the rope shortens while the down key is held (world units per second).
+ * Reached after GRAPPLE_PULL_IN_RAMP_TICKS ticks of continuous hold.
  * Shorter rope = tighter swing radius = faster rotation = bigger launch when released.
  */
-const GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC = 60.0;
+const GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC = 180.0;
+
+/**
+ * Number of ticks over which the retraction speed ramps from the base speed
+ * to the full speed.  At 60 fps this is 0.35 seconds.
+ * Prevents an instantaneous velocity spike when the player starts retracting.
+ */
+const GRAPPLE_PULL_IN_RAMP_TICKS = 21;
+
+/**
+ * Ticks of out-of-range rope before grapple breaks automatically.
+ * Each tick the attached rope length exceeds the current effective grapple
+ * range increments the counter; when the counter reaches this value the
+ * grapple is released.  At 60 fps this is 0.75 seconds.
+ *
+ * Gives the player a short grace window when motes are depleted mid-swing
+ * without instantly punishing them, while still enforcing the mote economy.
+ */
+const GRAPPLE_OUT_OF_RANGE_BREAK_TICKS = 45;
+
+/**
+ * Visual tension ramp denominator.  Tension starts becoming visible after
+ * this many out-of-range ticks so the player gets a warning before the break.
+ */
+const GRAPPLE_RANGE_SHRINK_GRACE_TICKS = 20;
+
+export const GRAPPLE_FAIL_BEAM_TOTAL_TICKS = 14;
+export const GRAPPLE_FAIL_BEAM_EXTEND_TICKS = 5;
+export const GRAPPLE_FAIL_BEAM_HOVER_TICKS = 3;
+export const GRAPPLE_EMPTY_FX_TOTAL_TICKS = 12;
 
 /**
  * Maximum total rope that can be pulled in before the grapple breaks (world units).
  * This is a tension limit — pulling too hard snaps the rope and the player flies
  * off with their accumulated swing momentum.  Acts as the skill ceiling for the mechanic.
+ * Raised from 100 to 150 to give more retraction time at the higher pull speed.
  */
-const GRAPPLE_MAX_PULL_IN_WORLD = 100.0;
+const GRAPPLE_MAX_PULL_IN_WORLD = 150.0;
 
 /**
  * Maximum ratio by which tangential velocity can increase in a single tick due
@@ -108,6 +157,14 @@ const GRAPPLE_MAX_PULL_IN_WORLD = 100.0;
  * speed spikes when the rope is very short.  1.1 = max 10 % boost per tick.
  */
 const GRAPPLE_MAX_RETRACT_SPEED_RATIO = 1.1;
+
+/**
+ * Maximum tangential speed (world units/second) the player can reach via rope
+ * retraction.  Acts as a hard cap so unbounded speed cannot accumulate even
+ * when the rope is very short and angular-momentum conservation would produce
+ * extreme values.  540 wu/s ≈ 9 wu/tick at 60 fps — fast but safe.
+ */
+const GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC = 540.0;
 
 /**
  * Tangential velocity damping coefficient (fraction of speed lost per second).
@@ -125,117 +182,21 @@ const GRAPPLE_SWING_DAMPING_PER_SEC = 0.12;
  */
 const GRAPPLE_JUMP_OFF_SPEED_WORLD = PLAYER_JUMP_SPEED_WORLD;
 
-/** Number of Gold particles that form the visible chain between player and anchor. */
-export const GRAPPLE_SEGMENT_COUNT = 10;
-
-// ── Top-surface grapple (zip + stick) ────────────────────────────────────────
+/**
+ * Distance (world units) within which a grapple hit triggers the special
+ * proximity bounce instead of a normal rope attachment.  Equals the side
+ * length of a 2×2 small-block area (16 virtual pixels = 16 world units).
+ * If the player's centre is within this distance of the hit surface at fire
+ * time, the player is launched instantly in the surface-normal direction at
+ * super-jump speed.  Works on any surface orientation: floor, wall, or ceiling.
+ */
+const GRAPPLE_PROXIMITY_BOUNCE_THRESHOLD_WORLD = 16.0;
 
 /**
- * Speed at which the player zips toward a top-surface grapple anchor.
- * 3× the player's top sprint speed: MAX_RUN_SPEED(105) × SPRINT(1.5) × 3.
+ * How many ticks to display the rotated jumping sprite after a proximity bounce
+ * off a wall or ceiling (0.5 seconds at 60 fps).
  */
-const GRAPPLE_ZIP_SPEED_WORLD_PER_SEC = 472.5;
-
-/**
- * Per-tick velocity multiplier while grapple-stuck, applied multiplicatively.
- * 0.05 = 95% speed loss each tick — almost instant stop in 2–3 frames.
- */
-const GRAPPLE_STUCK_DECEL_FACTOR = 0.05;
-
-/** Speed threshold (world units/sec) below which a stuck player is considered fully stopped. */
-const GRAPPLE_STUCK_STOP_THRESHOLD_WORLD = 1.0;
-
-/**
- * Ticks after coming to a full stop while grapple-stuck during which a jump
- * receives 100% extra vertical height (super jump).
- */
-const GRAPPLE_STUCK_SUPER_JUMP_WINDOW_TICKS = 10;
-
-/** Jump speed multiplier for the super jump (2× = 100% extra height). */
-const GRAPPLE_STUCK_SUPER_JUMP_MULTIPLIER = 2.0;
-
-/**
- * Distance threshold (world units) within which the player is considered to
- * have arrived at the zip destination.  Prevents overshooting the target on
- * the final tick when the remaining distance is smaller than the zip step.
- */
-const GRAPPLE_ZIP_ARRIVAL_THRESHOLD_WORLD = 1.0;
-
-/**
- * Minimum distance (world units) for computing a normalized direction toward
- * the zip target.  Prevents division-by-near-zero when the player is
- * essentially on top of the anchor.
- */
-const GRAPPLE_ZIP_MIN_DIST_WORLD = 0.01;
-
-/**
- * Behavior mode value used for grapple chain particles.
- * Binding forces (binding.ts) already skip any particle whose behaviorMode !== 0,
- * so this non-standard value prevents chain particles from being pulled toward
- * their owner anchor — the grapple system overrides their positions directly.
- */
-const BEHAVIOR_MODE_GRAPPLE_CHAIN = 3;
-
-/**
- * Lifetime (ticks) assigned to grapple chain particles — effectively infinite.
- * Chain particle lifetime is managed by the grapple system directly; using a
- * very large value prevents the standard particle lifetime loop from expiring them.
- */
-const GRAPPLE_CHAIN_LIFETIME_TICKS = 9999999.0;
-
-interface RayHit {
-  t: number;
-  x: number;
-  y: number;
-}
-
-function raycastWalls(world: WorldState, ox: number, oy: number, dx: number, dy: number, maxDist: number): RayHit | null {
-  let bestT = Number.POSITIVE_INFINITY;
-  let bestX = 0;
-  let bestY = 0;
-
-  for (let wi = 0; wi < world.wallCount; wi++) {
-    const minX = world.wallXWorld[wi];
-    const minY = world.wallYWorld[wi];
-    const maxX = minX + world.wallWWorld[wi];
-    const maxY = minY + world.wallHWorld[wi];
-
-    let tMin = 0;
-    let tMax = maxDist;
-
-    if (Math.abs(dx) < 1e-6) {
-      if (ox < minX || ox > maxX) continue;
-    } else {
-      const tx1 = (minX - ox) / dx;
-      const tx2 = (maxX - ox) / dx;
-      const txMin = tx1 < tx2 ? tx1 : tx2;
-      const txMax = tx1 > tx2 ? tx1 : tx2;
-      tMin = txMin > tMin ? txMin : tMin;
-      tMax = txMax < tMax ? txMax : tMax;
-      if (tMin > tMax) continue;
-    }
-
-    if (Math.abs(dy) < 1e-6) {
-      if (oy < minY || oy > maxY) continue;
-    } else {
-      const ty1 = (minY - oy) / dy;
-      const ty2 = (maxY - oy) / dy;
-      const tyMin = ty1 < ty2 ? ty1 : ty2;
-      const tyMax = ty1 > ty2 ? ty1 : ty2;
-      tMin = tyMin > tMin ? tyMin : tMin;
-      tMax = tyMax < tMax ? tyMax : tMax;
-      if (tMin > tMax) continue;
-    }
-
-    if (tMin >= 0 && tMin <= maxDist && tMin < bestT) {
-      bestT = tMin;
-      bestX = ox + dx * tMin;
-      bestY = oy + dy * tMin;
-    }
-  }
-
-  return Number.isFinite(bestT) ? { t: bestT, x: bestX, y: bestY } : null;
-}
+const GRAPPLE_PROXIMITY_BOUNCE_SPRITE_TICKS = 30;
 
 /**
  * Initialises the GRAPPLE_SEGMENT_COUNT chain particle slots starting at
@@ -276,61 +237,57 @@ export function initGrappleChainParticles(world: WorldState, playerEntityId: num
   world.grappleParticleStartIndex = startIndex;
 }
 
-/**
- * Minimum vertical drop from player feet to anchor required to trigger the
- * grapple zip/stick behavior.
- */
-const GRAPPLE_SPECIAL_ZIP_MIN_DROP_WORLD = 16.0;
+function getPlayerGrappleOriginWorld(player: ClusterState): { x: number; y: number } {
+  const offsetDir = player.isFacingLeftFlag === 1 ? -1 : 1;
+  return {
+    x: player.positionXWorld + offsetDir * player.halfWidthWorld,
+    y: player.positionYWorld,
+  };
+}
 
-/**
- * Returns true when the grapple should use the special zip/stick behavior.
- *
- * Requirements:
- *   1) Anchor must be at least GRAPPLE_SPECIAL_ZIP_MIN_DROP_WORLD below feet.
- *   2) Straight path from player center to anchor has no obstruction before
- *      the anchor point.
- */
-function isSpecialZipGrapple(
-  world: WorldState,
-  player: { positionXWorld: number; positionYWorld: number; halfHeightWorld: number },
-  anchorXWorld: number,
-  anchorYWorld: number,
-): boolean {
-  const playerFeetYWorld = player.positionYWorld + player.halfHeightWorld;
-  if (anchorYWorld < playerFeetYWorld + GRAPPLE_SPECIAL_ZIP_MIN_DROP_WORLD) {
-    return false;
-  }
+function clearGrappleFailureFx(world: WorldState): void {
+  world.grappleFailBeamTicksLeft = 0;
+  world.grappleEmptyFxTicksLeft = 0;
+}
 
-  const dxWorld = anchorXWorld - player.positionXWorld;
-  const dyWorld = anchorYWorld - player.positionYWorld;
-  const distanceWorld = Math.sqrt(dxWorld * dxWorld + dyWorld * dyWorld);
-  if (distanceWorld <= 0.0001) return false;
+function triggerGrappleFailBeam(world: WorldState, dirXWorld: number, dirYWorld: number, maxDistWorld: number): void {
+  const player = world.clusters[0];
+  if (player === undefined || player.isAliveFlag === 0) return;
 
-  const inverseDistance = 1.0 / distanceWorld;
-  const dirXWorld = dxWorld * inverseDistance;
-  const dirYWorld = dyWorld * inverseDistance;
-  const firstHit = raycastWalls(
-    world,
-    player.positionXWorld,
-    player.positionYWorld,
-    dirXWorld,
-    dirYWorld,
-    distanceWorld + 0.5,
-  );
-  if (firstHit === null) return true;
+  const origin = getPlayerGrappleOriginWorld(player);
+  world.grappleFailBeamTicksLeft = GRAPPLE_FAIL_BEAM_TOTAL_TICKS;
+  world.grappleFailBeamTotalTicks = GRAPPLE_FAIL_BEAM_TOTAL_TICKS;
+  world.grappleFailBeamStartXWorld = origin.x;
+  world.grappleFailBeamStartYWorld = origin.y;
+  world.grappleFailBeamEndXWorld = origin.x + dirXWorld * maxDistWorld;
+  world.grappleFailBeamEndYWorld = origin.y + dirYWorld * maxDistWorld;
+}
 
-  const firstHitDistanceWorld = Math.sqrt(
-    (firstHit.x - player.positionXWorld) ** 2 +
-    (firstHit.y - player.positionYWorld) ** 2,
-  );
-  return firstHitDistanceWorld >= distanceWorld - 0.5;
+function triggerGrappleEmptyFx(world: WorldState): void {
+  const player = world.clusters[0];
+  if (player === undefined || player.isAliveFlag === 0) return;
+
+  const origin = getPlayerGrappleOriginWorld(player);
+  world.grappleEmptyFxTicksLeft = GRAPPLE_EMPTY_FX_TOTAL_TICKS;
+  world.grappleEmptyFxTotalTicks = GRAPPLE_EMPTY_FX_TOTAL_TICKS;
+  world.grappleEmptyFxXWorld = origin.x;
+  world.grappleEmptyFxYWorld = origin.y;
 }
 
 /**
- * Fires the grapple, setting the anchor at the exact raycast hit point on a
- * wall surface.  Returns without attaching if the wall is too close (less than
+ * Fires the grapple, setting the anchor just outside the raycast wall surface.
+ * Returns without attaching if the wall is too close (less than
  * GRAPPLE_MIN_LENGTH_WORLD away) to prevent degenerate behaviour.
  * Activates the chain particles.
+ *
+ * ANCHOR PLACEMENT:
+ *   The anchor is placed at hitPoint + normal * GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD
+ *   (i.e. slightly OUTSIDE the wall, not at the exact boundary).  This prevents
+ *   the anchor from sitting exactly on a wall face where floating-point math
+ *   could classify it as "inside" solid geometry on subsequent validation
+ *   checks.  The anchor is a surface-contact point — validate it by checking
+ *   the stored normal + wall index, NOT by testing if the point is inside
+ *   solid geometry.
  *
  * The player can only grapple once until they touch the ground or grapple onto
  * a top surface (which instantly refreshes the charge).
@@ -344,7 +301,10 @@ export function fireGrapple(world: WorldState, anchorXWorld: number, anchorYWorl
   // shortcut is intentionally removed — the charge system already refreshes
   // after top-surface grapples and ground contact, so a genuine refire only
   // succeeds when the player actually has a charge.
-  if (world.hasGrappleChargeFlag === 0) return;
+  if (world.hasGrappleChargeFlag === 0) {
+    triggerGrappleEmptyFx(world);
+    return;
+  }
 
   const dx = anchorXWorld - player.positionXWorld;
   const dy = anchorYWorld - player.positionYWorld;
@@ -354,62 +314,203 @@ export function fireGrapple(world: WorldState, anchorXWorld: number, anchorYWorl
   const invDist = 1.0 / dist;
   const dirX = dx * invDist;
   const dirY = dy * invDist;
-  const maxCastDist = Math.min(dist, GRAPPLE_MAX_LENGTH_WORLD);
+  const effectiveRangeWorld = getEffectiveGrappleRangeWorld(world);
+  const maxCastDist = Math.min(dist, effectiveRangeWorld);
+
+  // ── Check rope segments first — ropes take priority over walls ──────────
+  const ropeHit = raycastRopeSegments(world, player.positionXWorld, player.positionYWorld, dirX, dirY, maxCastDist);
+  if (ropeHit !== null) {
+    const ropeDist = ropeHit.distWorld;
+    if (ropeDist >= GRAPPLE_MIN_LENGTH_WORLD) {
+      clearGrappleFailureFx(world);
+      world.grappleAnchorXWorld = ropeHit.hitX;
+      world.grappleAnchorYWorld = ropeHit.hitY;
+      world.grappleLengthWorld  = ropeDist;
+      world.grapplePullInAmountWorld = 0.0;
+      world.grappleJumpHeldTickCount = 0;
+      world.playerJumpTriggeredFlag = 0;
+      world.isGrappleActiveFlag = 1;
+      world.isGrappleZipActiveFlag = 0;
+      world.isGrappleStuckFlag = 0;
+      world.grappleStuckStoppedTickCount = 0;
+      world.grappleProximityBounceTicksLeft = 0;
+      world.grappleProximityBounceRotationAngleRad = 0;
+      world.grappleAttachFxTicks = GRAPPLE_ATTACH_FX_TICKS;
+      world.grappleAttachFxXWorld = ropeHit.hitX;
+      world.grappleAttachFxYWorld = ropeHit.hitY;
+      player.isFastFallModeFlag = 0;
+      world.hasGrappleChargeFlag = 0;
+      // Track which rope segment we're attached to so the anchor moves with rope
+      world.grappleRopeIndex = ropeHit.ropeIndex;
+      world.grappleRopeAttachSegF = ropeHit.segF;
+      // Activate chain particles
+      if (world.grappleParticleStartIndex >= 0) {
+        const start = world.grappleParticleStartIndex;
+        const chainProfile = getElementProfile(ParticleKind.Gold);
+        for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
+          const idx = start + i;
+          world.isAliveFlag[idx]        = 1;
+          world.ageTicks[idx]           = 0.0;
+          world.lifetimeTicks[idx]      = GRAPPLE_CHAIN_LIFETIME_TICKS;
+          world.kindBuffer[idx]         = ParticleKind.Gold;
+          world.ownerEntityId[idx]      = playerEntityId;
+          world.behaviorMode[idx]       = BEHAVIOR_MODE_GRAPPLE_CHAIN;
+          world.isTransientFlag[idx]    = 1;
+          world.particleDurability[idx] = chainProfile.toughness;
+          world.respawnDelayTicks[idx]  = 0;
+          world.velocityXWorld[idx]     = 0.0;
+          world.velocityYWorld[idx]     = 0.0;
+        }
+      }
+      return;
+    }
+  }
+
   const hit = raycastWalls(world, player.positionXWorld, player.positionYWorld, dirX, dirY, maxCastDist);
 
   if (hit === null) {
-    // No wall hit. Cancel any pre-existing miss/retract animation, then start
-    // a fresh miss throw from the current player position.
-    if (world.isGrappleMissActiveFlag === 1) {
-      cancelGrappleMiss(world);
-    }
-    startGrappleMiss(world, dirX, dirY);
+    clearLegacyGrappleMissState(world);
+    triggerGrappleFailBeam(world, dirX, dirY, maxCastDist);
+    return;
+  }
+
+  // Bounce pad walls cannot be grappled — treat as a miss.
+  if (hit.wallIndex >= 0 && world.wallIsBouncePadFlag[hit.wallIndex] === 1) {
+    clearLegacyGrappleMissState(world);
+    triggerGrappleFailBeam(world, dirX, dirY, maxCastDist);
     return;
   }
 
   const hitDist = Math.sqrt((hit.x - player.positionXWorld) ** 2 + (hit.y - player.positionYWorld) ** 2);
 
+  // ── Special proximity bounce ────────────────────────────────────────────────
+  // If the player is within GRAPPLE_PROXIMITY_BOUNCE_THRESHOLD_WORLD (16 world
+  // units = 2 small blocks) of the hit surface at the moment the grapple
+  // fires, the hook acts as an instant surface-bounce rather than a rope attach.
+  // The player is launched in the surface-normal direction (from anchor toward
+  // player) at super-jump speed.  Works on any surface orientation: floor,
+  // wall, or ceiling.
+  if (hitDist > 0.01 && hitDist < GRAPPLE_PROXIMITY_BOUNCE_THRESHOLD_WORLD) {
+    clearLegacyGrappleMissState(world);
+    clearGrappleFailureFx(world);
+    // Normal direction: from anchor (surface) toward player.
+    const invHitDist = 1.0 / hitDist;
+    const normalX = (player.positionXWorld - hit.x) * invHitDist;
+    const normalY = (player.positionYWorld - hit.y) * invHitDist;
+    // Apply super-jump speed in the surface-normal direction.
+    const jumpSpeed = PLAYER_JUMP_SPEED_WORLD
+      * ov(debugSpeedOverrides.grappleSuperJumpMultiplier, GRAPPLE_SUPER_JUMP_MULTIPLIER);
+    player.velocityXWorld = normalX * jumpSpeed;
+    player.velocityYWorld = normalY * jumpSpeed;
+    player.varJumpTimerTicks = VAR_JUMP_TIME_TICKS;
+    player.varJumpSpeedWorld = player.velocityYWorld;
+    player.isFastFallModeFlag = 0;
+    // Sparkle FX at the anchor point.
+    world.grappleAttachFxTicks = GRAPPLE_ATTACH_FX_TICKS;
+    world.grappleAttachFxXWorld = hit.x;
+    world.grappleAttachFxYWorld = hit.y;
+    // Consume grapple charge (proximity bounce is a one-shot move, no recharge).
+    world.hasGrappleChargeFlag = 0;
+    // Reset the jump trigger so the same press isn't replayed.
+    world.playerJumpTriggeredFlag = 0;
+    // Stub sprite: show jumping sprite rotated toward the wall/ceiling for a
+    // brief window after the bounce.  Floor bounces (normalY < 0) use no
+    // rotation — only wall and ceiling bounces get the special orientation.
+    // Always reset the state first so a floor bounce after a wall/ceiling bounce
+    // doesn't leave a stale rotation active.
+    world.grappleProximityBounceTicksLeft = 0;
+    world.grappleProximityBounceRotationAngleRad = 0;
+    if (Math.abs(normalY) > Math.abs(normalX)) {
+      if (normalY > 0) {
+        // Ceiling bounce — normal points downward; rotate 180° (upside-down).
+        world.grappleProximityBounceRotationAngleRad = Math.PI;
+        world.grappleProximityBounceTicksLeft = GRAPPLE_PROXIMITY_BOUNCE_SPRITE_TICKS;
+      }
+      // Floor bounce (normalY < 0): leave rotation at 0; jumping sprite looks correct.
+    } else if (normalX !== 0) {
+      if (normalX > 0) {
+        // Left-wall bounce — normal points rightward; rotate -90° (CCW).
+        world.grappleProximityBounceRotationAngleRad = -Math.PI / 2;
+      } else {
+        // Right-wall bounce — normal points leftward; rotate +90° (CW).
+        world.grappleProximityBounceRotationAngleRad = Math.PI / 2;
+      }
+      world.grappleProximityBounceTicksLeft = GRAPPLE_PROXIMITY_BOUNCE_SPRITE_TICKS;
+    }
+    return;
+  }
+
   // Don't attach when the wall is closer than the minimum rope length — doing
   // so would place the anchor inside the block geometry, which causes the
   // visible dot to appear embedded in the tile and produces erratic physics.
-  if (hitDist < GRAPPLE_MIN_LENGTH_WORLD) return;
-
-  // Confirmed wall hit — cancel any active miss/retract before attaching.
-  if (world.isGrappleMissActiveFlag === 1) {
-    cancelGrappleMiss(world);
+  if (hitDist < GRAPPLE_MIN_LENGTH_WORLD) {
+    triggerGrappleFailBeam(world, dirX, dirY, maxCastDist);
+    return;
   }
 
-  const anchorX = hit.x;
-  const anchorY = hit.y;
-  const anchorDist = Math.sqrt((anchorX - player.positionXWorld) ** 2 + (anchorY - player.positionYWorld) ** 2);
-  const isSpecialTopHit = isSpecialZipGrapple(world, player, anchorX, anchorY);
+  // Confirmed wall hit — cancel any active miss/retract before attaching.
+  clearLegacyGrappleMissState(world);
+  clearGrappleFailureFx(world);
 
-  // Place the anchor exactly at the (potentially snapped) surface hit point.
+  // Place the anchor just outside the wall surface using the surface normal from
+  // the raycast.  Offsetting by GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD prevents the
+  // anchor from sitting exactly on the wall boundary where floating-point math
+  // could classify it as inside solid geometry.
+  //
+  // SURFACE-ANCHOR VALIDATION NOTE:
+  //   This anchor is a confirmed surface-contact point from a swept raycast —
+  //   do NOT re-validate it with a point-in-solid test.  Instead, validate by
+  //   checking that hit.wallIndex is still solid (relevant for breakable blocks)
+  //   and that the player→anchor line remains unobstructed.  A generic
+  //   "is this point inside a wall?" check will incorrectly fire because the
+  //   anchor sits exactly on (or within floating-point noise of) the wall face.
+  const anchorX = hit.x - hit.normalX * GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD;
+  const anchorY = hit.y - hit.normalY * GRAPPLE_ANCHOR_SURFACE_EPSILON_WORLD;
+  const anchorDist = Math.sqrt((anchorX - player.positionXWorld) ** 2 + (anchorY - player.positionYWorld) ** 2);
+
   world.grappleAnchorXWorld = anchorX;
   world.grappleAnchorYWorld = anchorY;
+  // Store the outward surface normal so:
+  //   1. Constraint/validation code knows this is a surface anchor (not a free point).
+  //   2. Debug rendering can draw the normal arrow at the anchor.
+  world.grappleAnchorNormalXWorld = hit.normalX;
+  world.grappleAnchorNormalYWorld = hit.normalY;
   world.grappleLengthWorld  = anchorDist;
   world.grapplePullInAmountWorld = 0.0;  // reset pull-in counter for this new attachment
   world.grappleJumpHeldTickCount = 0;   // reset tap/hold tracker
+  world.grappleRetractHeldTicks  = 0;   // reset retraction ramp counter
   // Clear any pending jump trigger so that a jump press made on the same frame
   // as the grapple fire (e.g. jumping then immediately grappling) is not
   // misread as a tap-release by applyGrappleClusterConstraint on the very
   // first tick after attachment.
   world.playerJumpTriggeredFlag = 0;
   world.isGrappleActiveFlag = 1;
-  world.isGrappleTopSurfaceFlag = isSpecialTopHit ? 1 : 0;
+  world.isGrappleZipActiveFlag = 0;  // zip activated by double-tap down, not at fire time
   world.isGrappleStuckFlag = 0;
   world.grappleStuckStoppedTickCount = 0;
+  // Clear wrap points — this is a new grapple attachment.
+  world.grappleWrapPointCount = 0;
+  // Clear any lingering proximity bounce sprite state — the player is now
+  // swinging on a normal rope, so the bounce rotation is no longer relevant.
+  world.grappleProximityBounceTicksLeft = 0;
+  world.grappleProximityBounceRotationAngleRad = 0;
   world.grappleAttachFxTicks = GRAPPLE_ATTACH_FX_TICKS;
   world.grappleAttachFxXWorld = anchorX;
   world.grappleAttachFxYWorld = anchorY;
+  // Attaching a grapple exits committed fast-fall mode — the player is now
+  // swinging, not falling, so the fast-fall terminal velocity no longer applies.
+  player.isFastFallModeFlag = 0;
+  // Debug: record the sweep segment and raw hit point for overlay rendering.
+  world.grappleDebugSweepFromXWorld = player.positionXWorld;
+  world.grappleDebugSweepFromYWorld = player.positionYWorld;
+  world.grappleDebugSweepToXWorld   = player.positionXWorld + dirX * maxCastDist;
+  world.grappleDebugSweepToYWorld   = player.positionYWorld + dirY * maxCastDist;
+  world.grappleDebugRawHitXWorld    = hit.x;
+  world.grappleDebugRawHitYWorld    = hit.y;
+  world.isGrappleDebugActiveFlag    = 1;
 
-  // Consume grapple charge. Top-surface grapples instantly refresh the charge
-  // so the player can chain grapple between ledges.
-  if (isSpecialTopHit) {
-    world.hasGrappleChargeFlag = 1;
-  } else {
-    world.hasGrappleChargeFlag = 0;
-  }
+  // Consume grapple charge (normal rope attachment — no auto-recharge).
+  world.hasGrappleChargeFlag = 0;
 
   // Activate chain particles — fully reinitialise fields that may have been
   // overwritten while the slots were reused by stone shards or other transient
@@ -439,31 +540,6 @@ export function fireGrapple(world: WorldState, anchorXWorld: number, anchorYWorl
 /**
  * Releases the grapple and deactivates the chain particles.
  * The player retains their current velocity (built-up swing momentum).
- */
-export function releaseGrapple(world: WorldState): void {
-  const shouldRetractFromActiveGrapple = world.isGrappleActiveFlag === 1;
-  const shouldRetractFromMiss = world.isGrappleMissActiveFlag === 1;
-
-  world.isGrappleActiveFlag = 0;
-  world.isGrappleTopSurfaceFlag = 0;
-  world.isGrappleStuckFlag = 0;
-  world.grappleStuckStoppedTickCount = 0;
-  world.grappleJumpHeldTickCount = 0;
-  world.grapplePullInAmountWorld = 0.0;
-
-  if (shouldRetractFromActiveGrapple || shouldRetractFromMiss) {
-    startGrappleRetract(world);
-    return;
-  }
-
-  if (world.grappleParticleStartIndex >= 0) {
-    const start = world.grappleParticleStartIndex;
-    for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-      world.isAliveFlag[start + i] = 0;
-    }
-  }
-}
-
 /**
  * Step 0.25 — Enforces the rope constraint and applies swing physics.
  *
@@ -474,20 +550,27 @@ export function releaseGrapple(world: WorldState): void {
  *   • Jump (W/Space/Up) → release grapple + upward velocity impulse.
  *   • Down (S/ArrowDown) held → retract (shorten) the rope.
  *     Shortening conserves angular momentum so the player swings faster.
+ *   • Down double-tap → activate zip: player rockets toward the anchor,
+ *     momentum stops on arrival, then a 0.25 s zip-jump window opens.
+ *     Jump in window = high-velocity zip-jump in surface normal direction.
+ *     Miss window = gentle hop off the surface.
+ *     Double-tap + hold after arrival = stay stuck until jump or release.
  *
  * Pipeline per tick:
- *   1. Consume playerJumpTriggeredFlag (movement.ts preserves it when grappling).
- *   2. If jump pressed → release grapple with upward impulse.
- *   3. While down held (retraction):
+ *   1. Consume playerJumpTriggeredFlag and playerDownTriggeredFlag.
+ *   2. Delegate zip detection + state machine to tickGrappleZip.
+ *   3. If zip active → skip normal swing.
+ *   4. Jump pressed (normal swing) → release with upward impulse.
+ *   5. While down held (retraction):
  *      a. Decompose velocity into radial + tangential components.
  *      b. Shorten the rope.
  *      c. Scale tangential velocity by (oldLength / newLength) to conserve
  *         angular momentum.
  *      d. Recompose velocity from radial + boosted tangential.
- *   4. Enforce rope length: if player distance > ropeLength, snap position
+ *   6. Enforce rope length: if player distance > ropeLength, snap position
  *      onto the rope circle and remove the outward radial velocity component.
- *   5. Post-constraint wall collision check to prevent ground clipping.
- *   6. Apply subtle tangential damping (air resistance / friction).
+ *   7. Post-constraint wall collision check to prevent ground clipping.
+ *   8. Apply subtle tangential damping (air resistance / friction).
  */
 export function applyGrappleClusterConstraint(world: WorldState): void {
   if (world.isGrappleActiveFlag === 0) return;
@@ -500,104 +583,32 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
 
   const dtSec = world.dtMs / 1000.0;
 
-  // ── Jump input: release grapple with upward impulse ───────────────────────
+  // ── Jump input ────────────────────────────────────────────────────────────
   // movement.ts preserves playerJumpTriggeredFlag when grapple is active so we
   // can detect the rising edge of a jump press here.
   const jumpJustPressed = world.playerJumpTriggeredFlag === 1;
   world.playerJumpTriggeredFlag = 0; // consume — grapple owns the flag while active
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // Top-surface grapple — zip toward anchor then stick
-  // ════════════════════════════════════════════════════════════════════════════
-  if (world.isGrappleTopSurfaceFlag === 1) {
-    const ax = world.grappleAnchorXWorld;
-    const ay = world.grappleAnchorYWorld;
-    // Target position: player center such that feet rest on the wall surface.
-    const targetX = ax;
-    const targetY = ay - player.halfHeightWorld;
+  // ── Down input (double-tap detection and zip state machine) ──────────────
+  // Delegate to grappleZip.ts: detects double-tap activation and runs the
+  // zip-to-anchor state machine.  Returns true when the zip path was taken
+  // this tick so we skip normal pendulum swing.
+  const downJustPressed = world.playerDownTriggeredFlag === 1;
+  world.playerDownTriggeredFlag = 0; // consume
 
-    // ── Jump input while in top-surface mode ──────────────────────────────
-    // Any jump press releases the grapple and launches the player upward.
-    // If the player has recently stopped while stuck, they receive 100% extra
-    // jump height (super jump).
-    if (jumpJustPressed || (world.playerJumpHeldFlag === 1 && world.isGrappleStuckFlag === 1)) {
-      const hasSuperJump = world.isGrappleStuckFlag === 1 &&
-        world.grappleStuckStoppedTickCount > 0 &&
-        world.grappleStuckStoppedTickCount <= GRAPPLE_STUCK_SUPER_JUMP_WINDOW_TICKS;
-      const jumpSpeed = PLAYER_JUMP_SPEED_WORLD *
-        (hasSuperJump ? GRAPPLE_STUCK_SUPER_JUMP_MULTIPLIER : 1.0);
-      player.velocityYWorld = -jumpSpeed;
-      player.isGroundedFlag = 0;
-      player.varJumpTimerTicks = VAR_JUMP_TIME_TICKS;
-      player.varJumpSpeedWorld = -jumpSpeed;
-      releaseGrapple(world);
-      return;
-    }
-
-    if (world.isGrappleStuckFlag === 0) {
-      // ── Zip phase: move player toward anchor at 3× sprint speed ────────
-      const dx = targetX - player.positionXWorld;
-      const dy = targetY - player.positionYWorld;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const zipStep = GRAPPLE_ZIP_SPEED_WORLD_PER_SEC * dtSec;
-
-      if (dist <= zipStep + GRAPPLE_ZIP_ARRIVAL_THRESHOLD_WORLD) {
-        // Arrived — snap to target and transition to stuck
-        player.positionXWorld = targetX;
-        player.positionYWorld = targetY;
-        // Preserve zip direction as velocity (for skid effect / release momentum)
-        if (dist > GRAPPLE_ZIP_MIN_DIST_WORLD) {
-          const nd = 1.0 / dist;
-          player.velocityXWorld = dx * nd * GRAPPLE_ZIP_SPEED_WORLD_PER_SEC;
-          player.velocityYWorld = dy * nd * GRAPPLE_ZIP_SPEED_WORLD_PER_SEC;
-        }
-        world.isGrappleStuckFlag = 1;
-        world.grappleStuckStoppedTickCount = 0;
-      } else {
-        // Move toward anchor
-        const nd = 1.0 / dist;
-        const ndx = dx * nd;
-        const ndy = dy * nd;
-        player.positionXWorld += ndx * zipStep;
-        player.positionYWorld += ndy * zipStep;
-        player.velocityXWorld = ndx * GRAPPLE_ZIP_SPEED_WORLD_PER_SEC;
-        player.velocityYWorld = ndy * GRAPPLE_ZIP_SPEED_WORLD_PER_SEC;
-      }
-    }
-
-    if (world.isGrappleStuckFlag === 1) {
-      // ── Stuck phase: lock position, decelerate rapidly, spawn skid debris ─
-      player.positionXWorld = targetX;
-      player.positionYWorld = targetY;
-
-      const speed = Math.sqrt(
-        player.velocityXWorld * player.velocityXWorld +
-        player.velocityYWorld * player.velocityYWorld,
-      );
-
-      if (speed <= GRAPPLE_STUCK_STOP_THRESHOLD_WORLD) {
-        // Fully stopped
-        player.velocityXWorld = 0;
-        player.velocityYWorld = 0;
-        world.grappleStuckStoppedTickCount++;
-      } else {
-        // Heavy deceleration — almost instantly lose most speed
-        player.velocityXWorld *= GRAPPLE_STUCK_DECEL_FACTOR;
-        player.velocityYWorld *= GRAPPLE_STUCK_DECEL_FACTOR;
-
-        // Set skid debris flags for the renderer (large burst of debris)
-        world.isPlayerSkiddingFlag = 1;
-        world.skidDebrisXWorld = player.positionXWorld;
-        world.skidDebrisYWorld = player.positionYWorld + player.halfHeightWorld;
-      }
-    }
-
-    return; // skip normal pendulum physics
+  if (tickGrappleZip(world, player, jumpJustPressed, downJustPressed, dtSec)) {
+    return;
   }
 
   // ════════════════════════════════════════════════════════════════════════════
   // Normal grapple — pendulum swing
   // ════════════════════════════════════════════════════════════════════════════
+
+  // ── Phase 2: Geometric wrapping tick ─────────────────────────────────────
+  // Must run before the constraint so wrap points are current this tick.
+  if (world.isGrappleWrappingEnabled === 1) {
+    tickGrappleWrapping(world, player);
+  }
 
   // ── Jump input: release grapple + upward impulse ──────────────────────────
   // Any jump press immediately releases the grapple and gives the player an
@@ -606,13 +617,19 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
     player.velocityYWorld -= GRAPPLE_JUMP_OFF_SPEED_WORLD;
     player.varJumpTimerTicks = VAR_JUMP_TIME_TICKS;
     player.varJumpSpeedWorld = player.velocityYWorld;
-    releaseGrapple(world);
+    releaseGrapple(world, false);
     return;
   }
 
   // ── Compute radial direction from anchor to player ────────────────────────
-  const ax = world.grappleAnchorXWorld;
-  const ay = world.grappleAnchorYWorld;
+  // Phase 2: When wrapping is enabled and wrap points exist, the active swing
+  // anchor is the newest wrap point rather than the main grapple anchor.
+  const ax = (world.isGrappleWrappingEnabled === 1 && world.grappleWrapPointCount > 0)
+    ? world.grappleWrapPointXWorld[world.grappleWrapPointCount - 1]
+    : world.grappleAnchorXWorld;
+  const ay = (world.isGrappleWrappingEnabled === 1 && world.grappleWrapPointCount > 0)
+    ? world.grappleWrapPointYWorld[world.grappleWrapPointCount - 1]
+    : world.grappleAnchorYWorld;
   let dx = player.positionXWorld - ax;
   let dy = player.positionYWorld - ay;
   let dist = Math.sqrt(dx * dx + dy * dy);
@@ -628,78 +645,117 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   // While the down key is held the rope shortens, and angular momentum is
   // conserved: v_tangential_new = v_tangential_old × (L_old / L_new).
   // This is why figure skaters spin faster when they pull their arms in.
+  // A ramp-up over GRAPPLE_PULL_IN_RAMP_TICKS prevents an instant speed spike
+  // on the first tick of a retraction hold.
   if (world.playerCrouchHeldFlag === 1) {
-    const pullThisTick = GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC * dtSec;
+    world.grappleRetractHeldTicks++;
+    // Ramp: starts at base speed on tick 1, reaches full speed at RAMP_TICKS.
+    const rampFactor = Math.max(
+      GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC / GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC,
+      Math.min(1.0, world.grappleRetractHeldTicks / GRAPPLE_PULL_IN_RAMP_TICKS),
+    );
+    const pullThisTick = GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC * rampFactor * dtSec;
     const oldLength = world.grappleLengthWorld;
     const newLength = Math.max(oldLength - pullThisTick, GRAPPLE_MIN_LENGTH_WORLD);
 
     if (newLength < oldLength) {
-      // Decompose velocity into radial and tangential components relative to
-      // the anchor→player axis.
-      const vRadial = player.velocityXWorld * nx + player.velocityYWorld * ny;
-      const vTangX  = player.velocityXWorld - vRadial * nx;
-      const vTangY  = player.velocityYWorld - vRadial * ny;
+      // Wall obstruction check: shortening the rope snaps the player toward
+      // the anchor.  If a wall blocks that path, stop retraction rather than
+      // pulling the player through geometry.  Cast from the player toward the
+      // anchor; only check up to however far the player would actually move.
+      // When retractDistWorld <= 0 the player is already within the new rope
+      // length, so no snap occurs and no wall check is needed.
+      const retractDistWorld = dist - newLength;
+      const isRetractPathClear = retractDistWorld <= 0 || raycastWalls(
+        world,
+        player.positionXWorld, player.positionYWorld,
+        -nx, -ny,
+        retractDistWorld,
+      ) === null;
 
-      // Scale tangential velocity to conserve angular momentum (L = m·v·r).
-      // The ratio is clamped to prevent extreme spikes when the rope is very short.
-      const ratio = Math.min(oldLength / newLength, GRAPPLE_MAX_RETRACT_SPEED_RATIO);
-      player.velocityXWorld = vRadial * nx + vTangX * ratio;
-      player.velocityYWorld = vRadial * ny + vTangY * ratio;
+      if (isRetractPathClear) {
+        // Decompose velocity into radial and tangential components relative to
+        // the anchor→player axis.
+        const vRadial = player.velocityXWorld * nx + player.velocityYWorld * ny;
+        const vTangX  = player.velocityXWorld - vRadial * nx;
+        const vTangY  = player.velocityYWorld - vRadial * ny;
 
-      world.grappleLengthWorld        = newLength;
-      world.grapplePullInAmountWorld += (oldLength - newLength);
+        // Scale tangential velocity to conserve angular momentum (L = m·v·r).
+        // The ratio is clamped to prevent extreme spikes when the rope is very short.
+        const ratio = Math.min(oldLength / newLength, GRAPPLE_MAX_RETRACT_SPEED_RATIO);
+        let newVTangX = vTangX * ratio;
+        let newVTangY = vTangY * ratio;
 
-      // Snap limit: too much accumulated tension breaks the rope
-      if (world.grapplePullInAmountWorld >= GRAPPLE_MAX_PULL_IN_WORLD) {
-        releaseGrapple(world);
-        return;
+        // Hard cap on tangential speed to prevent unbounded acceleration when
+        // the rope becomes very short.  Clamp after the ratio is applied so the
+        // cap is consistent regardless of rope length.
+        const tangSpeedSq = newVTangX * newVTangX + newVTangY * newVTangY;
+        const maxTangSpeedSq = GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC;
+        if (tangSpeedSq > maxTangSpeedSq) {
+          const invTangSpeed = 1.0 / Math.sqrt(tangSpeedSq);
+          newVTangX *= GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * invTangSpeed;
+          newVTangY *= GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * invTangSpeed;
+        }
+
+        player.velocityXWorld = vRadial * nx + newVTangX;
+        player.velocityYWorld = vRadial * ny + newVTangY;
+
+        world.grappleLengthWorld        = newLength;
+        world.grapplePullInAmountWorld += (oldLength - newLength);
+
+        // Snap limit: too much accumulated tension breaks the rope
+        if (world.grapplePullInAmountWorld >= GRAPPLE_MAX_PULL_IN_WORLD) {
+          releaseGrapple(world);
+          return;
+        }
       }
+      // If a wall blocks retraction, or if newLength equals GRAPPLE_MIN_LENGTH_WORLD,
+      // no further pull occurs this tick.
     }
-    // If newLength equals GRAPPLE_MIN_LENGTH_WORLD the rope is at minimum — no more pull.
+  } else {
+    // Crouch key released — reset ramp counter so the next press starts fresh.
+    world.grappleRetractHeldTicks = 0;
   }
 
   // ── Enforce rope length constraint ────────────────────────────────────────
   // If the player has drifted beyond the current rope length (due to gravity,
-  // movement, or the rope shortening around them), snap their position back
-  // onto the rope circle and remove the outward radial velocity component.
+  // movement, or the rope shortening around them), move their position back
+  // onto the rope circle using the collision-safe helper so the correction
+  // cannot push them through a wall.  The outward radial velocity component
+  // is removed afterward to prevent the rope from being stretched further.
   // The tangential (swing) component is fully preserved — this is what makes
   // the pendulum feel physical rather than scripted.
   const ropeLength = world.grappleLengthWorld;
 
   if (dist > ropeLength) {
-    // 1. Snap player position back onto the rope circle
-    player.positionXWorld = ax + nx * ropeLength;
-    player.positionYWorld = ay + ny * ropeLength;
+    // Target position: player centre on the rope circle.
+    const targetX = ax + nx * ropeLength;
+    const targetY = ay + ny * ropeLength;
+    const deltaX  = targetX - player.positionXWorld;
+    const deltaY  = targetY - player.positionYWorld;
 
-    // 2. Remove outward velocity component (rope can only pull — never push)
+    // Move toward the target safely.  moveClusterByDelta uses the same
+    // axis-separated sub-stepped sweep as normal movement, so the snap cannot
+    // carry the player through solid geometry.  If a wall obstructs the path
+    // the player stops at the wall face rather than being clipped inside it.
+    // If a bounce pad is contacted, moveClusterByDelta applies the reflected
+    // real velocity (based on the swing momentum, not the snap delta), and we
+    // release the grapple so the player travels with the bounce trajectory.
+    const snapResult = moveClusterByDelta(player, world, deltaX, deltaY, false, dtSec);
+    if (snapResult.bounced) {
+      // Reflected swing velocity is already on the player cluster (applied by
+      // moveClusterByDelta).  Release the grapple so normal movement takes over.
+      releaseGrapple(world, false);
+      return;
+    }
+
+    // Remove outward velocity component (rope can only pull — never push).
+    // Use the pre-snap nx/ny direction; the position change is a small
+    // correction so the angular error is negligible.
     const velDotN = player.velocityXWorld * nx + player.velocityYWorld * ny;
     if (velDotN > 0) {
       player.velocityXWorld -= velDotN * nx;
       player.velocityYWorld -= velDotN * ny;
-    }
-  }
-
-  // ── Post-constraint wall collision (last-resort fallback) ──────────────────
-  // The primary collision resolver is the axis-separated sweep in movement.ts
-  // (step 0).  This minimum-penetration push-out is a *fallback safety net*
-  // that only fires when the rope constraint (above) re-introduces a small
-  // overlap — typically when the anchor is on a nearby floor and the rope pulls
-  // the player downward into geometry.  Because the overlap is always small
-  // (≤ one tick of rope correction) and velocities are low at this point,
-  // minimum-penetration is acceptable here.  The axis-separated sweep is not
-  // re-run because it would require re-doing the full X-then-Y integration
-  // pass, which is disproportionate to the tiny correction needed.
-  {
-    const halfW = player.halfWidthWorld;
-    const halfH = player.halfHeightWorld;
-    for (let wi = 0; wi < world.wallCount; wi++) {
-      const wLeft   = world.wallXWorld[wi];
-      const wTop    = world.wallYWorld[wi];
-      const wRight  = wLeft + world.wallWWorld[wi];
-      const wBottom = wTop + world.wallHWorld[wi];
-      if (resolveAABBPenetration(player, halfW, halfH, wLeft, wTop, wRight, wBottom)) {
-        break; // resolve one wall per tick — sufficient for the grapple correction
-      }
     }
   }
 
@@ -711,6 +767,30 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   invDist = 1.0 / dist;
   nx = dx * invDist;
   ny = dy * invDist;
+
+  // ── Phase 9: Out-of-range tension break ──────────────────────────────────
+  // While attached, if motes are depleted mid-swing the effective grapple range
+  // can shrink below the current rope length.  Give the player a grace window
+  // before snapping the rope so they are not instantly punished.
+  {
+    const effectiveRangeWorld = getEffectiveGrappleRangeWorld(world);
+    if (world.grappleLengthWorld > effectiveRangeWorld) {
+      world.grappleOutOfRangeTicks++;
+      // Tension ramps from 0 → 1 starting after the grace window
+      const ticksPastGrace = world.grappleOutOfRangeTicks - GRAPPLE_RANGE_SHRINK_GRACE_TICKS;
+      const tensionWindow = GRAPPLE_OUT_OF_RANGE_BREAK_TICKS - GRAPPLE_RANGE_SHRINK_GRACE_TICKS;
+      world.grappleTensionFactor = Math.max(0, Math.min(1.0, ticksPastGrace / tensionWindow));
+
+      if (world.grappleOutOfRangeTicks >= GRAPPLE_OUT_OF_RANGE_BREAK_TICKS) {
+        releaseGrapple(world);
+        return;
+      }
+    } else {
+      // Rope back within range — drain tension
+      world.grappleOutOfRangeTicks = 0;
+      world.grappleTensionFactor   = 0;
+    }
+  }
 
   // ── Swing damping (subtle air resistance on tangential velocity) ──────────
   // Only the tangential component is damped so gravity's natural acceleration
@@ -770,347 +850,4 @@ export function updateGrappleChainParticles(world: WorldState): void {
   }
 }
 
-// ============================================================================
-// Grapple miss — limp chain physics
-// ============================================================================
 
-/**
- * Speed at which the grapple chain extends outward when fired (world units/sec).
- * Slightly slower than the max range to give a visible "throw" animation.
- */
-const GRAPPLE_MISS_EXTEND_SPEED_WORLD_PER_SEC = 400.0;
-
-/**
- * Gravity applied to limp chain links after full extension (world units/sec²).
- * Heavier than normal gravity for a weighty feel.
- */
-const GRAPPLE_MISS_GRAVITY_WORLD_PER_SEC2 = 500.0;
-
-/**
- * Maximum spring force between connected chain links (world units).
- * Keeps the chain from stretching too far apart.
- * LINK_STRETCH_MULTIPLIER allows 30% stretch beyond evenly-spaced distance.
- */
-const GRAPPLE_MISS_LINK_STRETCH_MULTIPLIER = 1.3;
-const GRAPPLE_MISS_LINK_MAX_DIST_WORLD = GRAPPLE_MAX_LENGTH_WORLD / GRAPPLE_SEGMENT_COUNT * GRAPPLE_MISS_LINK_STRETCH_MULTIPLIER;
-
-/**
- * Drag applied to limp chain link velocities per second.
- * Provides "heavy inertia" feel.
- */
-const GRAPPLE_MISS_DRAG_PER_SEC = 0.8;
-
-/**
- * Relaxation factor for the iterative constraint solver.
- * 0.5 = split correction equally between both connected links.
- */
-const GRAPPLE_MISS_CONSTRAINT_RELAX_FACTOR = 0.5;
-
-/** Duration in ticks after which the miss animation auto-cancels. */
-const GRAPPLE_MISS_MAX_TICKS = 90;
-const GRAPPLE_RETRACT_SPEED_WORLD_PER_SEC = 6000.0;
-
-/**
- * Pre-allocated position/velocity arrays for the limp chain simulation.
- * These store independent per-link physics separate from the particle buffer
- * (we write the final positions into the particle buffer each tick).
- */
-const missLinkX = new Float32Array(GRAPPLE_SEGMENT_COUNT);
-const missLinkY = new Float32Array(GRAPPLE_SEGMENT_COUNT);
-const missLinkVx = new Float32Array(GRAPPLE_SEGMENT_COUNT);
-const missLinkVy = new Float32Array(GRAPPLE_SEGMENT_COUNT);
-
-/** 1 if a link has attached to a surface and is now anchored. */
-const missLinkStuckFlag = new Uint8Array(GRAPPLE_SEGMENT_COUNT);
-
-function startGrappleMiss(world: WorldState, dirX: number, dirY: number): void {
-  const player = world.clusters[0];
-  if (player === undefined) return;
-  if (world.grappleParticleStartIndex < 0) return;
-  const playerEntityId = player.entityId;
-  const chainProfile = getElementProfile(ParticleKind.Gold);
-
-  world.isGrappleMissActiveFlag = 1;
-  world.isGrappleRetractingFlag = 0;
-  world.grappleMissDirXWorld = dirX;
-  world.grappleMissDirYWorld = dirY;
-  world.grappleMissTickCount = 0;
-
-  // Position chain links along the fire direction from the player,
-  // evenly spaced, with outward velocity.
-  const start = world.grappleParticleStartIndex;
-  for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-    const t = (i + 1) / (GRAPPLE_SEGMENT_COUNT + 1);
-    // Initial position: start near the player, spread outward
-    missLinkX[i] = player.positionXWorld + dirX * t * 10;
-    missLinkY[i] = player.positionYWorld + dirY * t * 10;
-    // Initial velocity: throw outward, each further link is faster
-    const speedScale = 0.7 + 0.3 * t;
-    missLinkVx[i] = dirX * GRAPPLE_MISS_EXTEND_SPEED_WORLD_PER_SEC * speedScale;
-    missLinkVy[i] = dirY * GRAPPLE_MISS_EXTEND_SPEED_WORLD_PER_SEC * speedScale;
-    missLinkStuckFlag[i] = 0;
-
-    // Activate the chain particle
-    const idx = start + i;
-    world.isAliveFlag[idx] = 1;
-    world.ageTicks[idx] = 0.0;
-    world.lifetimeTicks[idx] = GRAPPLE_CHAIN_LIFETIME_TICKS;
-    world.kindBuffer[idx] = ParticleKind.Gold;
-    world.ownerEntityId[idx] = playerEntityId;
-    world.behaviorMode[idx] = BEHAVIOR_MODE_GRAPPLE_CHAIN;
-    world.isTransientFlag[idx] = 1;
-    world.particleDurability[idx] = chainProfile.toughness;
-    world.respawnDelayTicks[idx] = 0;
-  }
-}
-
-function cancelGrappleMiss(world: WorldState): void {
-  world.isGrappleMissActiveFlag = 0;
-  world.isGrappleRetractingFlag = 0;
-  world.grappleMissTickCount = 0;
-  if (world.grappleParticleStartIndex >= 0) {
-    const start = world.grappleParticleStartIndex;
-    for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-      world.isAliveFlag[start + i] = 0;
-    }
-  }
-}
-
-function startGrappleRetract(world: WorldState): void {
-  const player = world.clusters[0];
-  if (player === undefined || world.grappleParticleStartIndex < 0) return;
-  const playerEntityId = player.entityId;
-
-  world.isGrappleMissActiveFlag = 1;
-  world.isGrappleRetractingFlag = 1;
-  world.grappleMissTickCount = 0;
-
-  const start = world.grappleParticleStartIndex;
-  const chainProfile = getElementProfile(ParticleKind.Gold);
-  for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-    const idx = start + i;
-    missLinkX[i] = world.positionXWorld[idx];
-    missLinkY[i] = world.positionYWorld[idx];
-    missLinkVx[i] = 0.0;
-    missLinkVy[i] = 0.0;
-    missLinkStuckFlag[i] = 0;
-    // Fully reinitialise fields so stale lifetime/kind data from slot reuse
-    // cannot cause chain particles to die during the retract animation.
-    world.isAliveFlag[idx]        = 1;
-    world.ageTicks[idx]           = 0.0;
-    world.lifetimeTicks[idx]      = GRAPPLE_CHAIN_LIFETIME_TICKS;
-    world.kindBuffer[idx]         = ParticleKind.Gold;
-    world.ownerEntityId[idx]      = playerEntityId;
-    world.behaviorMode[idx]       = BEHAVIOR_MODE_GRAPPLE_CHAIN;
-    world.isTransientFlag[idx]    = 1;
-    world.particleDurability[idx] = chainProfile.toughness;
-    world.respawnDelayTicks[idx]  = 0;
-  }
-}
-
-/**
- * Step 6.75 (alt) — Update limp chain physics when the grapple missed.
- * Chain links fly outward, fall under gravity, and stick to the first
- * surface they touch. If any link hits a wall, the grapple attaches there.
- */
-export function updateGrappleMissChain(world: WorldState): void {
-  if (world.isGrappleMissActiveFlag === 0) return;
-  if (world.grappleParticleStartIndex < 0) return;
-
-  const player = world.clusters[0];
-  if (player === undefined || player.isAliveFlag === 0) {
-    cancelGrappleMiss(world);
-    return;
-  }
-
-  world.grappleMissTickCount++;
-  if (world.grappleMissTickCount > GRAPPLE_MISS_MAX_TICKS) {
-    cancelGrappleMiss(world);
-    return;
-  }
-
-  const dtSec = world.dtMs / 1000.0;
-  const dragFactor = Math.max(0.0, 1.0 - GRAPPLE_MISS_DRAG_PER_SEC * dtSec);
-
-  if (world.isGrappleRetractingFlag === 1) {
-    let hasAnyLinkFarFromPlayerFlag: 0 | 1 = 0;
-    for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-      const dx = player.positionXWorld - missLinkX[i];
-      const dy = player.positionYWorld - missLinkY[i];
-      const distanceWorld = Math.sqrt(dx * dx + dy * dy);
-
-      if (distanceWorld > 0.001) {
-        const moveWorld = Math.min(GRAPPLE_RETRACT_SPEED_WORLD_PER_SEC * dtSec, distanceWorld);
-        const invDistance = 1.0 / distanceWorld;
-        missLinkX[i] += dx * invDistance * moveWorld;
-        missLinkY[i] += dy * invDistance * moveWorld;
-      }
-
-      if (distanceWorld > 1.0) {
-        hasAnyLinkFarFromPlayerFlag = 1;
-      }
-    }
-
-    if (hasAnyLinkFarFromPlayerFlag === 0) {
-      cancelGrappleMiss(world);
-      return;
-    }
-  } else {
-    // ── Integrate link physics ──────────────────────────────────────────────
-    for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-      if (missLinkStuckFlag[i] === 1) continue; // stuck links don't move
-
-      // Apply gravity
-      missLinkVy[i] += GRAPPLE_MISS_GRAVITY_WORLD_PER_SEC2 * dtSec;
-
-      // Apply drag for heavy inertia feel
-      missLinkVx[i] *= dragFactor;
-      missLinkVy[i] *= dragFactor;
-
-      // Integrate position
-      missLinkX[i] += missLinkVx[i] * dtSec;
-      missLinkY[i] += missLinkVy[i] * dtSec;
-
-      // ── Check wall collision — stick on contact ──────────────────────────
-      for (let wi = 0; wi < world.wallCount; wi++) {
-        const wx = world.wallXWorld[wi];
-        const wy = world.wallYWorld[wi];
-        const ww = world.wallWWorld[wi];
-        const wh = world.wallHWorld[wi];
-
-        if (missLinkX[i] >= wx && missLinkX[i] <= wx + ww &&
-          missLinkY[i] >= wy && missLinkY[i] <= wy + wh) {
-          // This link hit a wall! Stick it here.
-          missLinkStuckFlag[i] = 1;
-          missLinkVx[i] = 0;
-          missLinkVy[i] = 0;
-
-          // If this is the tip (last link), attach the grapple here
-          if (i === GRAPPLE_SEGMENT_COUNT - 1) {
-            // Check if distance is valid for grapple attachment
-            const hitDist = Math.sqrt(
-              (missLinkX[i] - player.positionXWorld) ** 2 +
-              (missLinkY[i] - player.positionYWorld) ** 2,
-            );
-            if (hitDist >= GRAPPLE_MIN_LENGTH_WORLD) {
-              const missAnchorX = missLinkX[i];
-              const missAnchorY = missLinkY[i];
-              const missAnchorDist = Math.sqrt(
-                (missAnchorX - player.positionXWorld) ** 2 +
-                (missAnchorY - player.positionYWorld) ** 2,
-              );
-              const isMissSpecialTopHit = isSpecialZipGrapple(world, player, missAnchorX, missAnchorY);
-
-              // Attach grapple at this point
-              world.grappleAnchorXWorld = missAnchorX;
-              world.grappleAnchorYWorld = missAnchorY;
-              world.grappleLengthWorld = missAnchorDist;
-              world.grapplePullInAmountWorld = 0.0;
-              world.grappleJumpHeldTickCount = 0;
-              world.playerJumpTriggeredFlag = 0;
-              world.isGrappleActiveFlag = 1;
-              world.isGrappleTopSurfaceFlag = isMissSpecialTopHit ? 1 : 0;
-              world.isGrappleStuckFlag = 0;
-              world.grappleStuckStoppedTickCount = 0;
-              world.isGrappleMissActiveFlag = 0;
-              world.isGrappleRetractingFlag = 0;
-              world.grappleMissTickCount = 0;
-              world.grappleAttachFxTicks = GRAPPLE_ATTACH_FX_TICKS;
-              world.grappleAttachFxXWorld = missAnchorX;
-              world.grappleAttachFxYWorld = missAnchorY;
-
-              // Charge: top-surface refreshes charge, wall consumes it
-              if (isMissSpecialTopHit) {
-                world.hasGrappleChargeFlag = 1;
-              } else {
-                world.hasGrappleChargeFlag = 0;
-              }
-              return;
-            }
-          }
-          break;
-        }
-      }
-
-      // ── Check world floor ────────────────────────────────────────────────
-      if (missLinkY[i] >= world.worldHeightWorld) {
-        missLinkY[i] = world.worldHeightWorld - 0.5;
-        missLinkStuckFlag[i] = 1;
-        missLinkVx[i] = 0;
-        missLinkVy[i] = 0;
-      }
-
-      // ── Clamp to circle of influence ─────────────────────────────────────
-      // The grapple tip (and all chain links) must never extend beyond the
-      // player's influence radius.  If a link drifts outside, snap it back
-      // onto the circle edge and zero its outward velocity component.
-      {
-        const cdx = missLinkX[i] - player.positionXWorld;
-        const cdy = missLinkY[i] - player.positionYWorld;
-        const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
-        if (cdist > GRAPPLE_MAX_LENGTH_WORLD) {
-          const inv = 1.0 / cdist;
-          const cnx = cdx * inv;
-          const cny = cdy * inv;
-          missLinkX[i] = player.positionXWorld + cnx * GRAPPLE_MAX_LENGTH_WORLD;
-          missLinkY[i] = player.positionYWorld + cny * GRAPPLE_MAX_LENGTH_WORLD;
-          // Remove outward velocity component so the link stays on the edge
-          const vDotN = missLinkVx[i] * cnx + missLinkVy[i] * cny;
-          if (vDotN > 0) {
-            missLinkVx[i] -= vDotN * cnx;
-            missLinkVy[i] -= vDotN * cny;
-          }
-        }
-      }
-    }
-
-    // ── Enforce link connectivity ───────────────────────────────────────────
-    // Each link must stay within max distance of its neighbor.
-    // Link 0 is connected to the player, link N to link N-1.
-    for (let iter = 0; iter < 3; iter++) {
-      for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-        // Anchor point: player position for first link, previous link for others
-        const anchorX = i === 0 ? player.positionXWorld : missLinkX[i - 1];
-        const anchorY = i === 0 ? player.positionYWorld : missLinkY[i - 1];
-
-        const linkDxWorld = missLinkX[i] - anchorX;
-        const linkDyWorld = missLinkY[i] - anchorY;
-        const linkDist = Math.sqrt(linkDxWorld * linkDxWorld + linkDyWorld * linkDyWorld);
-
-        if (linkDist > GRAPPLE_MISS_LINK_MAX_DIST_WORLD && linkDist > 0.01) {
-          const excess = linkDist - GRAPPLE_MISS_LINK_MAX_DIST_WORLD;
-          const nx = linkDxWorld / linkDist;
-          const ny = linkDyWorld / linkDist;
-
-          if (missLinkStuckFlag[i] === 0) {
-            // Pull this link toward anchor
-            missLinkX[i] -= nx * excess * GRAPPLE_MISS_CONSTRAINT_RELAX_FACTOR;
-            missLinkY[i] -= ny * excess * GRAPPLE_MISS_CONSTRAINT_RELAX_FACTOR;
-          }
-          if (i > 0 && missLinkStuckFlag[i - 1] === 0) {
-            // Push previous link toward this one
-            missLinkX[i - 1] += nx * excess * GRAPPLE_MISS_CONSTRAINT_RELAX_FACTOR;
-            missLinkY[i - 1] += ny * excess * GRAPPLE_MISS_CONSTRAINT_RELAX_FACTOR;
-          }
-        }
-      }
-    }
-  }
-
-  // ── Write positions to particle buffer ────────────────────────────────────
-  // Also force isAliveFlag = 1: if a chain particle was killed mid-retract by
-  // combat damage or lifetime expiry the renderer would fall back to rendering
-  // the rope at grappleAnchorXWorld/Y (the original fixed anchor), making it
-  // look like the grapple is still attached while the player falls.
-  const start = world.grappleParticleStartIndex;
-  for (let i = 0; i < GRAPPLE_SEGMENT_COUNT; i++) {
-    const idx = start + i;
-    world.isAliveFlag[idx]    = 1;
-    world.positionXWorld[idx] = missLinkX[i];
-    world.positionYWorld[idx] = missLinkY[i];
-    world.velocityXWorld[idx] = 0.0;
-    world.velocityYWorld[idx] = 0.0;
-    world.forceX[idx] = 0.0;
-    world.forceY[idx] = 0.0;
-  }
-}

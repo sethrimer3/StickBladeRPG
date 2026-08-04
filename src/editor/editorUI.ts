@@ -1,37 +1,28 @@
 /**
- * Editor UI — toolbar, palette panel, inspector panel, and export controls.
+ * Editor UI — toolbar, palette panel, and export controls.
  * All DOM elements are created dynamically and removed on cleanup.
+ *
+ * The per-element property inspector panel is delegated to editorInspector.ts.
  */
 
 import {
   EditorState, EditorTool, PaletteCategory, PALETTE_ITEMS,
-  PaletteItem, BLOCK_THEMES, BACKGROUND_OPTIONS, LIGHTING_OPTIONS, FADE_COLOR_OPTIONS,
+  BLOCK_THEMES, BACKGROUND_OPTIONS, LIGHTING_OPTIONS,
   BlockTheme, BackgroundId, LightingEffect, SONG_OPTIONS, RoomSongId,
   AMBIENT_LIGHT_DIRECTION_OPTIONS, AmbientLightDirection,
+  CrumbleVariant, CRUMBLE_VARIANT_OPTIONS, RoomEdge, EditorUICallbacks,
+  DUST_KIND_OPTIONS,
 } from './editorState';
-import { addHoverStyle } from '../ui/helpers';
 import { WEAVE_LIST, WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
 import {
-  addField, addSelect, addCheckbox,
-  addDimField, addNumberField, addSliderField, addColorSliders,
+  addDimField,
 } from './editorFormWidgets';
 import { PANEL_BG, PANEL_BORDER, ACTIVE_BG, BTN_BG, TEXT_COLOR, GREEN } from './editorStyles';
-
-// ── Block-theme visual constants ─────────────────────────────────────────────
-
-/** Fill colour shown in palette previews for each block theme. */
-const THEME_FILL_COLOR: Readonly<Record<string, string>> = {
-  blackRock: '#484856',
-  brownRock: '#7a5230',
-  dirt:      '#7a6038',
-};
-
-/** Representative block sprite URL for each block theme. */
-const THEME_BLOCK_SPRITE_URL: Readonly<Record<string, string>> = {
-  blackRock: 'SPRITES/BLOCKS/blackRock/blackRock (1).png',
-  brownRock: 'SPRITES/BLOCKS/brownRock/brownRock_8x8.png',
-  dirt:      'SPRITES/BLOCKS/dirt/dirt_8x8.png',
-};
+import {
+  makeBtn, makeEdgeBtn, makeThemeChip, makeThemePaletteButton,
+  makeBlockPreviewCard,
+} from './editorUIHelpers';
+import { updateInspector } from './editorInspector';
 
 // ── UI container ─────────────────────────────────────────────────────────────
 
@@ -44,31 +35,9 @@ export interface EditorUI {
   destroy: () => void;
 }
 
-export type RoomEdge = 'top' | 'bottom' | 'left' | 'right';
-
-export interface EditorUICallbacks {
-  onToolChange: (tool: EditorTool) => void;
-  onCategoryChange: (category: PaletteCategory) => void;
-  onPaletteItemSelect: (item: PaletteItem) => void;
-  onExport: () => void;
-  onLinkTransition: () => void;
-  onPropertyChange: (prop: string, value: string | number) => void;
-  onRoomDimensionsChange: (prop: 'widthBlocks' | 'heightBlocks', value: number) => void;
-  /** Add or remove one row/column from the given edge. delta is +1 (add) or -1 (remove). */
-  onEdgeResize: (edge: RoomEdge, delta: 1 | -1) => void;
-  onBlockThemeChange: (theme: BlockTheme) => void;
-  onLightingEffectChange: (effect: LightingEffect) => void;
-  onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => void;
-  onBackgroundChange: (backgroundId: BackgroundId) => void;
-  onRoomSongChange: (songId: RoomSongId) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-  onExportAllChanges: () => void;
-  /** Open the visual world map overlay. */
-  onOpenVisualMap: () => void;
-  /** Called when the user picks a different skill in the skill tomb dropdown. */
-  onSkillTombWeaveChange: (weaveId: string) => void;
-}
+// Re-export shared types so consumers that already import from editorUI.ts
+// continue to work without change.
+export type { RoomEdge, EditorUICallbacks } from './editorState';
 
 export function createEditorUI(root: HTMLElement): EditorUI {
   let callbacks: EditorUICallbacks | null = null;
@@ -246,8 +215,8 @@ export function createEditorUI(root: HTMLElement): EditorUI {
   let dimWidthInput: HTMLInputElement | null = null;
   let dimHeightInput: HTMLInputElement | null = null;
   const catBar = document.createElement('div');
-  catBar.style.cssText = 'display: flex; gap: 4px; margin-bottom: 8px;';
-  const categories: PaletteCategory[] = ['blocks', 'enemies', 'triggers'];
+  catBar.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px;';
+  const categories: PaletteCategory[] = ['blocks', 'enemies', 'triggers', 'collectables', 'environment', 'objects', 'lighting', 'liquids', 'ropes'];
   const catBtns: HTMLButtonElement[] = [];
   for (const cat of categories) {
     const btn = makeBtn(cat, () => callbacks?.onCategoryChange(cat));
@@ -320,6 +289,8 @@ export function createEditorUI(root: HTMLElement): EditorUI {
   let renderedCategory: PaletteCategory | null = null;
   let lastRenderedBlockTheme = '';
   let lastRenderedLightingEffect = '';
+  let lastRenderedRecentBlockThemes = '';
+  let isBlockThemePaletteOpen = false;
   let paletteItems: { btn: HTMLElement; itemId: string }[] = [];
 
   // ── Skill tomb picker (shown above inspector when skill_tomb is selected) ──
@@ -351,12 +322,89 @@ export function createEditorUI(root: HTMLElement): EditorUI {
   skillTombSelect.addEventListener('click', (e) => e.stopPropagation());
   skillTombPickerDiv.appendChild(skillTombSelect);
 
+  // ── Crumble variant picker (shown above inspector when a crumble item is selected) ──
+  const crumblePickerDiv = document.createElement('div');
+  crumblePickerDiv.style.cssText = `
+    border: 1px solid rgba(200,150,60,0.5); border-radius: 3px;
+    padding: 6px 8px; margin-top: 8px; background: rgba(20,12,0,0.4); display: none;
+  `;
+  const crumblePickerTitle = document.createElement('div');
+  crumblePickerTitle.textContent = 'Crumble Weakness';
+  crumblePickerTitle.style.cssText = `font-size: 11px; color: #c8a060; margin-bottom: 6px; font-weight: bold;`;
+  crumblePickerDiv.appendChild(crumblePickerTitle);
+  const crumbleVariantSelect = document.createElement('select');
+  crumbleVariantSelect.style.cssText = `
+    width: 100%; background: rgba(0,0,0,0.6); border: 1px solid rgba(200,150,60,0.4);
+    color: ${TEXT_COLOR}; padding: 4px 6px; font-size: 11px; font-family: monospace;
+    border-radius: 2px;
+  `;
+  for (const opt of CRUMBLE_VARIANT_OPTIONS) {
+    const o = document.createElement('option');
+    o.value = opt.id;
+    o.textContent = opt.label;
+    crumbleVariantSelect.appendChild(o);
+  }
+  crumbleVariantSelect.addEventListener('change', () => {
+    callbacks?.onCrumbleVariantChange(crumbleVariantSelect.value as CrumbleVariant);
+  });
+  crumbleVariantSelect.addEventListener('click', (e) => e.stopPropagation());
+  crumblePickerDiv.appendChild(crumbleVariantSelect);
+
+  // ── Dust boost jar picker (shown above inspector when dust_boost_jar is selected) ──
+  const dustJarPickerDiv = document.createElement('div');
+  dustJarPickerDiv.style.cssText = `
+    border: 1px solid rgba(200,100,255,0.5); border-radius: 3px;
+    padding: 6px 8px; margin-top: 8px; background: rgba(15,0,20,0.4); display: none;
+  `;
+  const dustJarPickerTitle = document.createElement('div');
+  dustJarPickerTitle.textContent = 'Dust Jar Contents';
+  dustJarPickerTitle.style.cssText = `font-size: 11px; color: #d080ff; margin-bottom: 6px; font-weight: bold;`;
+  dustJarPickerDiv.appendChild(dustJarPickerTitle);
+  const dustJarKindSelect = document.createElement('select');
+  dustJarKindSelect.style.cssText = `
+    width: 100%; background: rgba(0,0,0,0.6); border: 1px solid rgba(200,100,255,0.4);
+    color: ${TEXT_COLOR}; padding: 4px 6px; font-size: 11px; font-family: monospace;
+    border-radius: 2px; margin-bottom: 4px;
+  `;
+  for (const kind of DUST_KIND_OPTIONS) {
+    const o = document.createElement('option');
+    o.value = kind;
+    o.textContent = kind;
+    dustJarKindSelect.appendChild(o);
+  }
+  dustJarKindSelect.addEventListener('change', () => {
+    callbacks?.onDustBoostJarKindChange(dustJarKindSelect.value);
+  });
+  dustJarKindSelect.addEventListener('click', (e) => e.stopPropagation());
+  dustJarPickerDiv.appendChild(dustJarKindSelect);
+  const dustJarCountLabel = document.createElement('div');
+  dustJarCountLabel.textContent = 'Dust count';
+  dustJarCountLabel.style.cssText = `font-size: 10px; color: rgba(200,200,200,0.6); margin-bottom: 2px;`;
+  dustJarPickerDiv.appendChild(dustJarCountLabel);
+  const dustJarCountInput = document.createElement('input');
+  dustJarCountInput.type = 'number';
+  dustJarCountInput.min = '1';
+  dustJarCountInput.max = '20';
+  dustJarCountInput.style.cssText = `
+    width: 100%; background: rgba(0,0,0,0.6); border: 1px solid rgba(200,100,255,0.4);
+    color: ${TEXT_COLOR}; padding: 4px 6px; font-size: 11px; font-family: monospace;
+    border-radius: 2px; box-sizing: border-box;
+  `;
+  dustJarCountInput.addEventListener('change', () => {
+    const v = parseInt(dustJarCountInput.value);
+    if (!isNaN(v) && v >= 1 && v <= 20) callbacks?.onDustBoostJarCountChange(v);
+  });
+  dustJarCountInput.addEventListener('click', (e) => e.stopPropagation());
+  dustJarPickerDiv.appendChild(dustJarCountInput);
+
   // ── Inspector ────────────────────────────────────────────────────────────
   const inspectorDiv = document.createElement('div');
   inspectorDiv.style.cssText = `
     border-top: 1px solid ${PANEL_BORDER}; padding-top: 10px; margin-top: 8px;
   `;
   container.appendChild(skillTombPickerDiv);
+  container.appendChild(crumblePickerDiv);
+  container.appendChild(dustJarPickerDiv);
   container.appendChild(inspectorDiv);
 
   // Track rendered inspector state to avoid recreating fields every frame
@@ -448,14 +496,19 @@ export function createEditorUI(root: HTMLElement): EditorUI {
     }
 
     // Update palette area — recreate when category changes OR when block theme changes
-    const currentTheme = state.roomData?.blockTheme ?? 'blackRock';
+    const currentTheme = state.selectedBlockTheme;
+    const recentBlockThemeSignature = state.recentBlockThemes.join('|');
     const currentLighting = state.roomData?.lightingEffect ?? 'DEFAULT';
     const needsPaletteRebuild = renderedCategory !== state.activeCategory ||
-      (state.activeCategory === 'blocks' && currentTheme !== lastRenderedBlockTheme);
+      (state.activeCategory === 'blocks' && (
+        currentTheme !== lastRenderedBlockTheme ||
+        recentBlockThemeSignature !== lastRenderedRecentBlockThemes
+      ));
 
     if (needsPaletteRebuild) {
       renderedCategory = state.activeCategory;
       lastRenderedBlockTheme = currentTheme;
+      lastRenderedRecentBlockThemes = recentBlockThemeSignature;
       lastRenderedLightingEffect = currentLighting;
       paletteDiv.innerHTML = '';
       paletteItems = [];
@@ -470,15 +523,34 @@ export function createEditorUI(root: HTMLElement): EditorUI {
         themeSection.appendChild(themeTitle);
 
         const themeRow = document.createElement('div');
-        themeRow.style.cssText = `display: flex; gap: 4px;`;
-        for (const th of BLOCK_THEMES) {
-          const isActive = th.id === currentTheme;
-          const chip = makeThemeChip(th.id, th.label, isActive, () => {
+        themeRow.style.cssText = `display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 4px;`;
+        for (const themeId of state.recentBlockThemes) {
+          const th = BLOCK_THEMES.find(t => t.id === themeId);
+          if (!th) continue;
+          const chip = makeThemeChip(th.id, th.label, th.shortId, th.id === currentTheme, () => {
             callbacks?.onBlockThemeChange(th.id as BlockTheme);
           });
           themeRow.appendChild(chip);
         }
+        const paletteButton = makeThemePaletteButton(isBlockThemePaletteOpen, () => {
+          isBlockThemePaletteOpen = !isBlockThemePaletteOpen;
+          lastRenderedBlockTheme = '';
+        });
+        themeRow.appendChild(paletteButton);
         themeSection.appendChild(themeRow);
+        if (isBlockThemePaletteOpen) {
+          const themePaletteGrid = document.createElement('div');
+          themePaletteGrid.style.cssText = `display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 5px;`;
+          for (const th of BLOCK_THEMES) {
+            const chip = makeThemeChip(th.id, th.label, th.shortId, th.id === currentTheme, () => {
+              callbacks?.onBlockThemeChange(th.id as BlockTheme);
+              isBlockThemePaletteOpen = false;
+              lastRenderedBlockTheme = '';
+            });
+            themePaletteGrid.appendChild(chip);
+          }
+          themeSection.appendChild(themePaletteGrid);
+        }
         paletteDiv.appendChild(themeSection);
 
         // ── Lighting dropdown ───────────────────────────────────────────────
@@ -543,6 +615,25 @@ export function createEditorUI(root: HTMLElement): EditorUI {
       skillTombSelect.value = state.pendingSkillTombWeaveId;
     }
 
+    // Show/hide the crumble variant picker based on selected palette item
+    const isCrumbleSelected = state.selectedPaletteItem?.isCrumbleBlockItem === 1;
+    crumblePickerDiv.style.display = isCrumbleSelected ? '' : 'none';
+    if (isCrumbleSelected && document.activeElement !== crumbleVariantSelect) {
+      crumbleVariantSelect.value = state.pendingCrumbleVariant;
+    }
+
+    // Show/hide the dust boost jar picker based on selected palette item
+    const isDustBoostJarSelected = state.selectedPaletteItem?.isDustBoostJarItem === 1 || state.selectedPaletteItem?.id === 'dust_boost_jar';
+    dustJarPickerDiv.style.display = isDustBoostJarSelected ? '' : 'none';
+    if (isDustBoostJarSelected) {
+      if (document.activeElement !== dustJarKindSelect) {
+        dustJarKindSelect.value = state.pendingDustBoostJarKind;
+      }
+      if (document.activeElement !== dustJarCountInput) {
+        dustJarCountInput.value = String(state.pendingDustBoostJarCount);
+      }
+    }
+
     // Update inspector (only recreate when selected element changes)
     const selUid = state.selectedElements.length > 0 ? state.selectedElements[0].uid : -1;
     const selType = state.selectedElements.length > 0 ? state.selectedElements[0].type : '';
@@ -571,6 +662,7 @@ export function createEditorUI(root: HTMLElement): EditorUI {
       lastRenderedBackgroundId = '';
       lastRenderedSongId = '';
       lastRenderedBlockTheme = '';
+      lastRenderedRecentBlockThemes = '';
       lastRenderedLightingEffect = '';
       dimWidthInput = null;
       dimHeightInput = null;
@@ -578,406 +670,4 @@ export function createEditorUI(root: HTMLElement): EditorUI {
       if (topRightBar.parentElement) topRightBar.parentElement.removeChild(topRightBar);
     },
   };
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function makeBtn(label: string, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.textContent = label;
-  btn.style.cssText = `
-    background: ${BTN_BG}; color: ${TEXT_COLOR}; border: 1px solid ${PANEL_BORDER};
-    padding: 6px 8px; font-size: 11px; font-family: monospace; cursor: pointer;
-    border-radius: 3px; transition: background 0.1s;
-  `;
-  addHoverStyle(btn, { background: ACTIVE_BG }, { background: BTN_BG });
-  btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  return btn;
-}
-
-function makeEdgeBtn(label: string, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.textContent = label;
-  btn.style.cssText = `
-    background: ${BTN_BG}; color: ${TEXT_COLOR}; border: 1px solid ${PANEL_BORDER};
-    width: 28px; height: 22px; font-size: 13px; font-family: monospace; cursor: pointer;
-    border-radius: 3px; transition: background 0.1s; text-align: center; padding: 0;
-    line-height: 22px;
-  `;
-  addHoverStyle(btn, { background: ACTIVE_BG }, { background: BTN_BG });
-  btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  return btn;
-}
-
-/**
- * Creates a visual "theme chip" button for the block theme selector.
- * Shows a colour swatch + short name. Highlighted when isActive is true.
- */
-function makeThemeChip(themeId: string, label: string, isActive: boolean, onClick: () => void): HTMLButtonElement {
-  const fill = THEME_FILL_COLOR[themeId] ?? '#555';
-  const btn = document.createElement('button');
-  btn.style.cssText = `
-    flex: 1; padding: 4px 2px; cursor: pointer; border-radius: 4px;
-    background: ${isActive ? 'rgba(0,200,100,0.2)' : BTN_BG};
-    border: 2px solid ${isActive ? GREEN : PANEL_BORDER};
-    color: ${TEXT_COLOR}; font-size: 9px; font-family: monospace;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    transition: background 0.1s;
-  `;
-  const swatch = document.createElement('div');
-  swatch.style.cssText = `
-    width: 24px; height: 24px; border-radius: 3px;
-    background: ${fill};
-    border: 1px solid rgba(255,255,255,0.15);
-    background-image: url(${THEME_BLOCK_SPRITE_URL[themeId] ?? ''});
-    background-size: cover; image-rendering: pixelated;
-  `;
-  const text = document.createElement('span');
-  text.textContent = label;
-  btn.appendChild(swatch);
-  btn.appendChild(text);
-  btn.addEventListener('mouseenter', () => { if (!isActive) btn.style.background = ACTIVE_BG; });
-  btn.addEventListener('mouseleave', () => { if (!isActive) btn.style.background = BTN_BG; });
-  btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  return btn;
-}
-
-/**
- * Builds the CSS for the inner shape div of a block preview, based on the item type and theme.
- */
-function makeBlockPreviewShapeCss(itemId: string, theme: string): { shapeCss: string; containerCss: string } {
-  const fill = THEME_FILL_COLOR[theme] ?? '#555';
-  const spriteUrl = THEME_BLOCK_SPRITE_URL[theme] ?? '';
-  const baseTile = `
-    background-color: ${fill};
-    background-image: url(${spriteUrl});
-    image-rendering: pixelated;
-  `;
-  const containerCss = `
-    width: 40px; height: 40px; overflow: hidden; position: relative; flex-shrink: 0;
-    border-radius: 2px; background: rgba(0,0,0,0.3);
-  `;
-
-  switch (itemId) {
-    case 'block_1x1':
-      return {
-        containerCss,
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: cover;`,
-      };
-    case 'block_2x2':
-      return {
-        containerCss,
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: 50% 50%;`,
-      };
-    case 'ramp_1x1':
-      return {
-        containerCss,
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: cover;
-          clip-path: polygon(0% 100%, 100% 100%, 100% 0%);`,
-      };
-    case 'ramp_1x2':
-      return {
-        containerCss,
-        // Shallow angle: full width, half height on tall side
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: cover;
-          clip-path: polygon(0% 100%, 100% 100%, 100% 50%);`,
-      };
-    case 'ramp_2x2':
-      return {
-        containerCss,
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: cover;
-          clip-path: polygon(0% 100%, 100% 100%, 100% 0%);`,
-      };
-    case 'platform': {
-      // Thin horizontal bar centred vertically with small end caps
-      const pfill = fill;
-      return {
-        containerCss,
-        shapeCss: `
-          position: absolute; left: 0; top: 17px;
-          width: 40px; height: 6px;
-          background-color: ${pfill};
-          background-image: url(${spriteUrl});
-          background-size: auto 6px; image-rendering: pixelated;
-          border-top: 1px solid rgba(255,255,255,0.2);
-        `,
-      };
-    }
-    default:
-      return {
-        containerCss,
-        shapeCss: `${baseTile} width: 40px; height: 40px; background-size: cover;`,
-      };
-  }
-}
-
-/**
- * Creates a palette card for a block item with a visual preview and label.
- */
-function makeBlockPreviewCard(item: PaletteItem, theme: string, onClick: () => void): HTMLDivElement {
-  const card = document.createElement('div');
-  card.style.cssText = `
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    padding: 6px 4px 5px; border-radius: 4px; cursor: pointer;
-    background: ${BTN_BG}; border: 1px solid ${PANEL_BORDER};
-    transition: background 0.1s;
-  `;
-
-  const { containerCss, shapeCss } = makeBlockPreviewShapeCss(item.id, theme);
-  const previewWrap = document.createElement('div');
-  previewWrap.style.cssText = containerCss;
-  const shape = document.createElement('div');
-  shape.style.cssText = shapeCss;
-  previewWrap.appendChild(shape);
-  card.appendChild(previewWrap);
-
-  const lbl = document.createElement('div');
-  lbl.textContent = item.label;
-  lbl.style.cssText = `
-    font-size: 9px; color: ${TEXT_COLOR}; text-align: center; line-height: 1.2;
-    word-break: break-word;
-  `;
-  card.appendChild(lbl);
-
-  card.addEventListener('mouseenter', () => {
-    if (card.style.background !== ACTIVE_BG) card.style.background = 'rgba(0,200,100,0.12)';
-  });
-  card.addEventListener('mouseleave', () => {
-    if (card.style.background !== ACTIVE_BG) card.style.background = BTN_BG;
-  });
-  card.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-  return card;
-}
-
-function updateInspector(
-  div: HTMLDivElement,
-  state: EditorState,
-  callbacks: EditorUICallbacks | null,
-): void {
-  div.innerHTML = '';
-  if (state.selectedElements.length === 0 || state.roomData === null) {
-    div.innerHTML = `<div style="color: rgba(200,255,200,0.4); font-size: 11px;">Select an element to inspect</div>`;
-    return;
-  }
-
-  const room = state.roomData;
-
-  // Multi-selection: show count
-  if (state.selectedElements.length > 1) {
-    const heading = document.createElement('div');
-    heading.textContent = `Inspector: ${state.selectedElements.length} elements`;
-    heading.style.cssText = `color: ${GREEN}; font-size: 13px; margin-bottom: 8px; font-weight: bold;`;
-    div.appendChild(heading);
-
-    // Show shared properties for multi-selection
-    const types = new Set(state.selectedElements.map(e => e.type));
-    if (types.size === 1) {
-      const type = state.selectedElements[0].type;
-      const typeLabel = document.createElement('div');
-      typeLabel.textContent = `All: ${type}`;
-      typeLabel.style.cssText = `font-size: 11px; color: rgba(200,255,200,0.5); margin-bottom: 4px;`;
-      div.appendChild(typeLabel);
-
-      if (type === 'wall') {
-        addSelect(div, 'blockTheme',
-          BLOCK_THEMES.map(t => ({ label: t.label, value: t.id })),
-          '(mixed)',
-          v => callbacks?.onPropertyChange('wall.blockTheme', v));
-      } else if (type === 'transition') {
-        addSelect(div, 'fadeColor',
-          FADE_COLOR_OPTIONS,
-          '(mixed)',
-          v => callbacks?.onPropertyChange('transition.fadeColor', v));
-      }
-    } else {
-      const typeInfo = document.createElement('div');
-      typeInfo.textContent = `Mixed types: ${[...types].join(', ')}`;
-      typeInfo.style.cssText = `font-size: 11px; color: rgba(200,255,200,0.5); margin-bottom: 4px;`;
-      div.appendChild(typeInfo);
-    }
-    return;
-  }
-
-  // Single selection
-  const el = state.selectedElements[0];
-
-  const heading = document.createElement('div');
-  heading.textContent = `Inspector: ${el.type}`;
-  heading.style.cssText = `color: ${GREEN}; font-size: 13px; margin-bottom: 8px; font-weight: bold;`;
-  div.appendChild(heading);
-
-  if (el.type === 'wall') {
-    const wall = room.interiorWalls.find(w => w.uid === el.uid);
-    if (wall) {
-      addField(div, 'xBlock', String(wall.xBlock), v => callbacks?.onPropertyChange('wall.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(wall.yBlock), v => callbacks?.onPropertyChange('wall.yBlock', parseInt(v)));
-      addField(div, 'wBlock', String(wall.wBlock), v => callbacks?.onPropertyChange('wall.wBlock', parseInt(v)));
-      addField(div, 'hBlock', String(wall.hBlock), v => callbacks?.onPropertyChange('wall.hBlock', parseInt(v)));
-      addSelect(div, 'blockTheme',
-        BLOCK_THEMES.map(t => ({ label: t.label, value: t.id })),
-        wall.blockTheme ?? room.blockTheme,
-        v => callbacks?.onPropertyChange('wall.blockTheme', v));
-      const typeLabel = wall.isPlatformFlag === 1 ? 'Platform (one-way)' : 'Solid Block';
-      const typeDiv = document.createElement('div');
-      typeDiv.style.cssText = `font-size: 11px; color: rgba(200,255,200,0.5); margin-top: 4px;`;
-      typeDiv.textContent = `Type: ${typeLabel}`;
-      div.appendChild(typeDiv);
-    }
-  } else if (el.type === 'enemy') {
-    const enemy = room.enemies.find(e => e.uid === el.uid);
-    if (enemy) {
-      addField(div, 'xBlock', String(enemy.xBlock), v => callbacks?.onPropertyChange('enemy.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(enemy.yBlock), v => callbacks?.onPropertyChange('enemy.yBlock', parseInt(v)));
-      addField(div, 'kinds', enemy.kinds.join(', '), v => callbacks?.onPropertyChange('enemy.kinds', v));
-      addField(div, 'particleCount', String(enemy.particleCount), v => callbacks?.onPropertyChange('enemy.particleCount', parseInt(v)));
-      addSelect(div, 'type', [
-        { label: 'Rolling', value: 'rolling' },
-        { label: 'Flying Eye', value: 'flyingEye' },
-      ], enemy.isRollingEnemyFlag === 1 ? 'rolling' : 'flyingEye',
-      v => callbacks?.onPropertyChange('enemy.type', v));
-      if (enemy.isRollingEnemyFlag === 1) {
-        addField(div, 'spriteIndex', String(enemy.rollingEnemySpriteIndex),
-          v => callbacks?.onPropertyChange('enemy.rollingEnemySpriteIndex', parseInt(v)));
-      }
-      addCheckbox(div, 'isBoss', enemy.isBossFlag === 1,
-        v => callbacks?.onPropertyChange('enemy.isBossFlag', v ? 1 : 0));
-    }
-  } else if (el.type === 'transition') {
-    const trans = room.transitions.find(t => t.uid === el.uid);
-    if (trans) {
-      // Show door number
-      const doorIndex = room.transitions.indexOf(trans);
-      const doorLabel = document.createElement('div');
-      doorLabel.textContent = `Door #${doorIndex + 1}`;
-      doorLabel.style.cssText = `font-size: 12px; color: #88bbff; margin-bottom: 6px; font-weight: bold;`;
-      div.appendChild(doorLabel);
-
-      addSelect(div, 'direction',
-        ['left', 'right', 'up', 'down'].map(d => ({ label: d, value: d })),
-        trans.direction, v => callbacks?.onPropertyChange('transition.direction', v));
-      addField(div, 'positionBlock', String(trans.positionBlock),
-        v => callbacks?.onPropertyChange('transition.positionBlock', parseInt(v)));
-      addField(div, 'openingSizeBlocks', String(trans.openingSizeBlocks),
-        v => callbacks?.onPropertyChange('transition.openingSizeBlocks', parseInt(v)));
-      addField(div, 'depthBlock (blank=edge)', trans.depthBlock !== undefined ? String(trans.depthBlock) : '',
-        v => callbacks?.onPropertyChange('transition.depthBlock', v.trim() === '' ? '' : parseInt(v)));
-      addField(div, 'targetRoomId', trans.targetRoomId,
-        v => callbacks?.onPropertyChange('transition.targetRoomId', v));
-      addField(div, 'targetSpawnX', String(trans.targetSpawnBlock[0]),
-        v => callbacks?.onPropertyChange('transition.targetSpawnBlockX', parseInt(v)));
-      addField(div, 'targetSpawnY', String(trans.targetSpawnBlock[1]),
-        v => callbacks?.onPropertyChange('transition.targetSpawnBlockY', parseInt(v)));
-
-      // Fade color dropdown
-      addSelect(div, 'fadeColor',
-        FADE_COLOR_OPTIONS,
-        trans.fadeColor ?? '#000000',
-        v => callbacks?.onPropertyChange('transition.fadeColor', v));
-
-      // Link Transition button
-      const linkBtn = makeBtn('🔗 Link Transition', () => callbacks?.onLinkTransition());
-      linkBtn.style.width = '100%';
-      linkBtn.style.marginTop = '8px';
-      linkBtn.style.background = 'rgba(0,100,200,0.3)';
-      linkBtn.style.borderColor = 'rgba(0,150,255,0.5)';
-      div.appendChild(linkBtn);
-    }
-  } else if (el.type === 'playerSpawn') {
-    addField(div, 'xBlock', String(room.playerSpawnBlock[0]),
-      v => callbacks?.onPropertyChange('playerSpawn.xBlock', parseInt(v)));
-    addField(div, 'yBlock', String(room.playerSpawnBlock[1]),
-      v => callbacks?.onPropertyChange('playerSpawn.yBlock', parseInt(v)));
-  } else if (el.type === 'saveTomb') {
-    const tomb = room.saveTombs.find(s => s.uid === el.uid);
-    if (tomb) {
-      addField(div, 'xBlock', String(tomb.xBlock),
-        v => callbacks?.onPropertyChange('saveTomb.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(tomb.yBlock),
-        v => callbacks?.onPropertyChange('saveTomb.yBlock', parseInt(v)));
-    }
-  } else if (el.type === 'skillTomb') {
-    const tomb = room.skillTombs.find(s => s.uid === el.uid);
-    if (tomb) {
-      addField(div, 'xBlock', String(tomb.xBlock),
-        v => callbacks?.onPropertyChange('skillTomb.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(tomb.yBlock),
-        v => callbacks?.onPropertyChange('skillTomb.yBlock', parseInt(v)));
-      addSelect(div, 'weaveId',
-        WEAVE_LIST.map(id => ({
-          label: WEAVE_REGISTRY.get(id)?.displayName ?? id,
-          value: id,
-        })),
-        tomb.weaveId,
-        v => callbacks?.onPropertyChange('skillTomb.weaveId', v));
-    }
-  } else if (el.type === 'dustPile') {
-    const pile = room.dustPiles.find(p => p.uid === el.uid);
-    if (pile) {
-      addField(div, 'xBlock', String(pile.xBlock),
-        v => callbacks?.onPropertyChange('dustPile.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(pile.yBlock),
-        v => callbacks?.onPropertyChange('dustPile.yBlock', parseInt(v)));
-      addField(div, 'dustCount', String(pile.dustCount),
-        v => callbacks?.onPropertyChange('dustPile.dustCount', parseInt(v)));
-    }
-  } else if (el.type === 'decoration') {
-    const deco = (room.decorations ?? []).find(d => d.uid === el.uid);
-    if (deco) {
-      addField(div, 'kind', deco.kind, () => {/* read-only */});
-      addField(div, 'xBlock', String(deco.xBlock),
-        v => callbacks?.onPropertyChange('decoration.xBlock', parseInt(v)));
-      addField(div, 'yBlock', String(deco.yBlock),
-        v => callbacks?.onPropertyChange('decoration.yBlock', parseInt(v)));
-    }
-  } else if (el.type === 'ambientLightBlocker') {
-    const blocker = (room.ambientLightBlockers ?? []).find(b => b.uid === el.uid);
-    if (blocker) {
-      const readout = document.createElement('div');
-      readout.textContent = 'Ambient Light Blocker';
-      readout.style.cssText = `font-size: 12px; color: rgba(180,120,255,0.9); margin-bottom: 6px; font-weight: bold;`;
-      div.appendChild(readout);
-      const posInfo = document.createElement('div');
-      posInfo.textContent = `X: ${blocker.xBlock}, Y: ${blocker.yBlock}`;
-      posInfo.style.cssText = `font-size: 11px; color: rgba(200,255,200,0.7); margin-bottom: 4px;`;
-      div.appendChild(posInfo);
-      const note = document.createElement('div');
-      note.textContent = 'Blocks ambient-light propagation through this cell (no collision effect).';
-      note.style.cssText = `font-size: 10px; color: rgba(200,255,200,0.5); margin-top: 6px; font-style: italic;`;
-      div.appendChild(note);
-    }
-  } else if (el.type === 'lightSource') {
-    const light = (room.lightSources ?? []).find(l => l.uid === el.uid);
-    if (light) {
-      addField(div, 'xBlock', String(light.xBlock),
-        v => {
-          const num = parseInt(v);
-          if (!isNaN(num)) {
-            light.xBlock = num;
-            callbacks?.onPropertyChange('lightSource.xBlock', num);
-          }
-        });
-      addField(div, 'yBlock', String(light.yBlock),
-        v => {
-          const num = parseInt(v);
-          if (!isNaN(num)) {
-            light.yBlock = num;
-            callbacks?.onPropertyChange('lightSource.yBlock', num);
-          }
-        });
-      addNumberField(div, 'radiusBlocks', light.radiusBlocks, 1, 64, v => {
-        light.radiusBlocks = v;
-        callbacks?.onPropertyChange('lightSource.radiusBlocks', v);
-      });
-      addSliderField(div, 'brightnessPct', light.brightnessPct, 0, 100, v => {
-        light.brightnessPct = v;
-        callbacks?.onPropertyChange('lightSource.brightnessPct', v);
-      });
-      addColorSliders(div, 'color', light.colorR, light.colorG, light.colorB, (r, g, b) => {
-        light.colorR = r;
-        light.colorG = g;
-        light.colorB = b;
-        callbacks?.onPropertyChange('lightSource.color', 0);
-      });
-    }
-  }
 }

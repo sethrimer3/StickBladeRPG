@@ -27,11 +27,10 @@ import {
   PLAYER_JUMP_SPEED_WORLD,
   JUMP_CUT_GRAVITY_MULTIPLIER,
   VAR_JUMP_TIME_TICKS,
-  APEX_GRAVITY_MULTIPLIER,
-  APEX_THRESHOLD_WORLD_PER_SEC,
+  APEX_FLOAT_VELOCITY_THRESHOLD,
+  APEX_FLOAT_GRAVITY_MULTIPLIER,
   NORMAL_MAX_FALL_WORLD_PER_SEC,
   FAST_MAX_FALL_WORLD_PER_SEC,
-  FAST_MAX_FALL_APPROACH_PER_SEC,
   JUMP_BUFFER_TICKS,
   MAX_RUN_SPEED_WORLD_PER_SEC,
   GROUND_ACCELERATION_PER_SEC2,
@@ -44,6 +43,7 @@ import {
   WALL_JUMP_FIRST_BONUS_Y_SPEED_WORLD,
   WALL_JUMP_FORCE_TIME_TICKS,
   WALL_JUMP_LOCKOUT_TICKS,
+  WALL_JUMP_PROXIMITY_PIXELS,
   SPRINT_SPEED_MULTIPLIER,
   SPRINT_FRICTION_MULTIPLIER,
   SKID_FRICTION_MULTIPLIER,
@@ -54,7 +54,15 @@ import {
   FAST_FALL_HALF_WIDTH_WORLD,
   IDLE_TRIGGER_TICKS,
   IDLE_BLINK_DURATION_TICKS,
+  WALL_JUMP_AIR_ACCEL_MULTIPLIER,
+  WALL_JUMP_SUBSEQUENT_Y_MULTIPLIER,
+  AIR_MOVE_SPEED_WORLD_PER_SEC,
+  AIR_BRAKING_PER_SEC2,
+  MOMENTUM_DECAY_PER_SEC2,
+  HIGH_SPEED_STEERING_FACTOR,
+  UPWARD_BRAKE_STRENGTH_PER_SEC2,
 } from './movementConstants';
+import { getNearbyWallForWallJump } from './movementCollision';
 
 /**
  * Tick all player-specific velocity and input logic for a single cluster.
@@ -87,6 +95,12 @@ export function tickPlayerMovement(
   if (cluster.wallJumpForceTimeTicks > 0) {
     cluster.wallJumpForceTimeTicks -= 1;
   }
+  if (cluster.wallJumpGraceLeftTicks > 0) {
+    cluster.wallJumpGraceLeftTicks -= 1;
+  }
+  if (cluster.wallJumpGraceRightTicks > 0) {
+    cluster.wallJumpGraceRightTicks -= 1;
+  }
   if (cluster.varJumpTimerTicks > 0) {
     cluster.varJumpTimerTicks -= 1;
   }
@@ -95,6 +109,10 @@ export function tickPlayerMovement(
   }
   if (cluster.hurtTicks > 0) {
     cluster.hurtTicks -= 1;
+  }
+  // Clear committed fast-fall mode when the player is on the ground.
+  if (cluster.isGroundedFlag === 1) {
+    cluster.isFastFallModeFlag = 0;
   }
   // Grappling resets the "first wall jump" bonus state.
   if (world.isGrappleActiveFlag === 1 || world.isGrappleStuckFlag === 1) {
@@ -208,14 +226,15 @@ export function tickPlayerMovement(
     // Consistent gravity for pendulum swing.
     grav = baseGrav;
   } else if (cluster.velocityYWorld < 0) {
-    // Rising: check for apex half-gravity, then jump-cut multiplier.
+    // Rising: check for apex float, then jump-cut multiplier.
     const absVy = -cluster.velocityYWorld; // positive magnitude
     if (
-      absVy < APEX_THRESHOLD_WORLD_PER_SEC &&
+      absVy < ov(debugSpeedOverrides.apexFloatVelocityThreshold, APEX_FLOAT_VELOCITY_THRESHOLD) &&
       world.playerJumpHeldFlag === 1
     ) {
       // Apex band: reduce gravity for a brief floaty feel at the top.
-      grav = baseGrav * APEX_GRAVITY_MULTIPLIER;
+      // Fast-fall cannot be active while rising (cleared on jump), so no guard needed here.
+      grav = baseGrav * ov(debugSpeedOverrides.apexFloatGravityMultiplier, APEX_FLOAT_GRAVITY_MULTIPLIER);
     } else if (world.playerJumpHeldFlag === 0) {
       // Jump released while rising: apply jump-cut heavy gravity.
       grav = baseGrav * JUMP_CUT_GRAVITY_MULTIPLIER;
@@ -223,13 +242,15 @@ export function tickPlayerMovement(
       grav = baseGrav;
     }
   } else {
-    // Falling: check for apex half-gravity (vy just crossed zero, near apex).
+    // Falling: check for apex float (vy just crossed zero, near apex).
+    // Fast fall overrides apex float; early jump release is already handled above.
     const absVy = cluster.velocityYWorld; // already positive when falling
     if (
-      absVy < APEX_THRESHOLD_WORLD_PER_SEC &&
-      world.playerJumpHeldFlag === 1
+      absVy < ov(debugSpeedOverrides.apexFloatVelocityThreshold, APEX_FLOAT_VELOCITY_THRESHOLD) &&
+      world.playerJumpHeldFlag === 1 &&
+      cluster.isFastFallModeFlag === 0
     ) {
-      grav = baseGrav * APEX_GRAVITY_MULTIPLIER;
+      grav = baseGrav * ov(debugSpeedOverrides.apexFloatGravityMultiplier, APEX_FLOAT_GRAVITY_MULTIPLIER);
     } else {
       grav = baseGrav;
     }
@@ -252,30 +273,63 @@ export function tickPlayerMovement(
     }
   }
 
-  // ── Fall speed cap (normal fall vs fast fall) ────────────────────────
+  // ── Fall speed cap (committed fast fall + optional upward brake) ────────
   // Skip terminal velocity cap during grapple — the swing can legitimately
   // exceed the normal fall speed cap without causing tunnelling issues
   // because the rope constraint clamps displacement each tick.
   if (world.isGrappleActiveFlag === 0 && cluster.velocityYWorld > 0) {
     const normalFallCap = ov(debugSpeedOverrides.normalFallCapWorld, NORMAL_MAX_FALL_WORLD_PER_SEC);
     const fastFallCap = ov(debugSpeedOverrides.fastFallCapWorld, FAST_MAX_FALL_WORLD_PER_SEC);
-    // Determine current max fall speed: fast fall if holding down in midair.
+    // Enter committed fast-fall mode when holding down while falling.
     // Use crouch-held input as the authoritative "down" signal because
     // playerMoveInputDyWorld is not guaranteed on keyboard movement paths.
     const isHoldingDown = world.playerMoveInputDyWorld > 0 || world.playerCrouchHeldFlag === 1;
-    let maxFall: number;
     if (isHoldingDown) {
-      // Smoothly approach fastMaxFall from the current cap
-      const currentCap = cluster.velocityYWorld < normalFallCap
-        ? normalFallCap
-        : cluster.velocityYWorld;
-      maxFall = currentCap + FAST_MAX_FALL_APPROACH_PER_SEC * dtSec;
-      if (maxFall > fastFallCap) maxFall = fastFallCap;
-    } else {
-      maxFall = normalFallCap;
+      cluster.isFastFallModeFlag = 1;
     }
+
+    // Apply terminal velocity cap FIRST so gravity cannot push velocity above
+    // fastFallCap before the brake runs.  Without this, gravity adds ~15 units
+    // per tick, the cap would then restore it to fastFallCap each frame, and
+    // the brake would be completely nullified.
+    const maxFall = cluster.isFastFallModeFlag === 1 ? fastFallCap : normalFallCap;
     if (cluster.velocityYWorld > maxFall) {
       cluster.velocityYWorld = maxFall;
+    }
+
+    // Upward brake: holding jump while in committed fast-fall brakes descent
+    // back toward normalFallCap.  Once at or below normalFallCap, exit mode.
+    //
+    // Bug fix: we subtract (upwardBrake + grav * waterMult) instead of just
+    // upwardBrake.  Gravity was already applied above this section, so without
+    // canceling it the net deceleration would be (brake - gravity) ≈ negative
+    // (i.e., still accelerating).  Adding grav back cancels the gravity that
+    // was already baked in, giving a true net deceleration of brakeStrength/s.
+    const isBraking = cluster.isFastFallModeFlag === 1
+        && world.playerJumpHeldFlag === 1
+        && cluster.velocityYWorld > normalFallCap;
+    const vyBeforeBrake = cluster.velocityYWorld;
+    if (isBraking) {
+      const upwardBrake = ov(debugSpeedOverrides.upwardBrakeStrengthWorld, UPWARD_BRAKE_STRENGTH_PER_SEC2);
+      cluster.velocityYWorld -= (upwardBrake + grav * waterMult) * dtSec;
+      if (cluster.velocityYWorld <= normalFallCap) {
+        cluster.velocityYWorld = normalFallCap;
+        cluster.isFastFallModeFlag = 0;
+      }
+    }
+
+    // DEBUG: fast-fall brake diagnostics (temporary — remove once brake is verified)
+    if (cluster.isFastFallModeFlag === 1 || isBraking) {
+      console.log(
+        `[FF] tick=${world.tick}` +
+        ` isFastFallMode=${cluster.isFastFallModeFlag}` +
+        ` jumpHeld=${world.playerJumpHeldFlag}` +
+        ` vy_before=${vyBeforeBrake.toFixed(2)}` +
+        ` vy_after=${cluster.velocityYWorld.toFixed(2)}` +
+        ` normalCap=${normalFallCap.toFixed(2)}` +
+        ` fastCap=${fastFallCap.toFixed(2)}` +
+        ` brakeRan=${isBraking}`,
+      );
     }
   }
 
@@ -285,24 +339,58 @@ export function tickPlayerMovement(
   // (handled in grapple.ts step 0.25), so normal / wall jumps are skipped.
   if (world.playerJumpTriggeredFlag === 1 && world.isGrappleActiveFlag === 0) {
     const baseJumpSpeed = ov(debugSpeedOverrides.jumpSpeedWorld, PLAYER_JUMP_SPEED_WORLD);
-    // Skid jump boost: if jumping while skidding, increase jump height by 50%
+    // Skid jump boost: if jumping while skidding, increase jump height
+    const skidJumpMult = ov(debugSpeedOverrides.skidJumpMultiplier, SKID_JUMP_MULTIPLIER);
     const jumpSpeed = cluster.isSkiddingFlag === 1
-      ? baseJumpSpeed * SKID_JUMP_MULTIPLIER
+      ? baseJumpSpeed * skidJumpMult
       : baseJumpSpeed;
     if (cluster.isGroundedFlag === 1 || cluster.coyoteTimeTicks > 0) {
       // ── Normal ground jump ─────────────────────────────────────────
       cluster.velocityYWorld      = -jumpSpeed;
       cluster.isGroundedFlag      = 0;
       cluster.coyoteTimeTicks     = 0;
+      cluster.isFastFallModeFlag  = 0;
       // Start variable jump sustain timer so holding jump sustains height.
       cluster.varJumpTimerTicks   = VAR_JUMP_TIME_TICKS;
       cluster.varJumpSpeedWorld   = -jumpSpeed;
     } else {
-      // ── Wall jump (uses wall-touch flags from the previous tick) ───
-      const canJumpFromLeft  = cluster.isTouchingWallLeftFlag  === 1
-                            && cluster.wallJumpLockoutTicks === 0;
-      const canJumpFromRight = cluster.isTouchingWallRightFlag === 1
-                            && cluster.wallJumpLockoutTicks === 0;
+      // ── Wall jump (uses wall-touch flags, grace timers, and proximity) ───
+      // Grace timers extend the window after leaving a wall (wall coyote time).
+      // Proximity check allows wall jump when slightly away from a wall face.
+      const { nearLeftDistWorld, nearRightDistWorld } = getNearbyWallForWallJump(cluster, world);
+      const proximityPx = ov(debugSpeedOverrides.wallJumpProximityPixels, WALL_JUMP_PROXIMITY_PIXELS);
+      const nearLeft  = nearLeftDistWorld  <= proximityPx;
+      const nearRight = nearRightDistWorld <= proximityPx;
+
+      let canJumpFromLeft  = (cluster.isTouchingWallLeftFlag  === 1
+                           || cluster.wallJumpGraceLeftTicks  > 0
+                           || nearLeft)
+                           && cluster.wallJumpLockoutTicks === 0;
+      let canJumpFromRight = (cluster.isTouchingWallRightFlag === 1
+                           || cluster.wallJumpGraceRightTicks > 0
+                           || nearRight)
+                           && cluster.wallJumpLockoutTicks === 0;
+
+      // When both sides are eligible, prefer the nearer wall.
+      // If equidistant (e.g., touching both walls simultaneously), prefer the
+      // wall on the side the player is facing / moving toward so the launch
+      // direction feels intentional rather than always favouring the left wall.
+      if (canJumpFromLeft && canJumpFromRight) {
+        const leftDist  = cluster.isTouchingWallLeftFlag  === 1 ? 0 : nearLeftDistWorld;
+        const rightDist = cluster.isTouchingWallRightFlag === 1 ? 0 : nearRightDistWorld;
+        if (leftDist < rightDist) {
+          canJumpFromRight = false;
+        } else if (rightDist < leftDist) {
+          canJumpFromLeft = false;
+        } else {
+          // Equal distances: prefer the side the player is moving toward (or right by default).
+          if (cluster.velocityXWorld < 0) {
+            canJumpFromRight = false; // moving left → prefer left wall
+          } else {
+            canJumpFromLeft = false;  // moving right or stationary → prefer right wall
+          }
+        }
+      }
 
       if (canJumpFromLeft || canJumpFromRight) {
         const wallJumpX = ov(debugSpeedOverrides.wallJumpXWorld, WALL_JUMP_X_SPEED_WORLD);
@@ -310,17 +398,20 @@ export function tickPlayerMovement(
         const isInitialWallJump = cluster.hasUsedWallJumpSinceResetFlag === 0;
         const wallJumpY = isInitialWallJump
           ? wallJumpYBase + WALL_JUMP_FIRST_BONUS_Y_SPEED_WORLD
-          : wallJumpYBase - 20.0;
+          : wallJumpYBase * WALL_JUMP_SUBSEQUENT_Y_MULTIPLIER;
         // wallDir = +1 if wall is to the right, -1 if wall is to the left
         const wallDir = canJumpFromRight ? 1 : -1;
         // Launch away: strong diagonal push prevents same-wall climbing.
         cluster.velocityXWorld          = -wallDir * wallJumpX;
         cluster.velocityYWorld          = -wallJumpY;
+        cluster.isFastFallModeFlag      = 0;
         cluster.wallJumpLockoutTicks    = WALL_JUMP_LOCKOUT_TICKS;
         cluster.wallJumpForceTimeTicks  = WALL_JUMP_FORCE_TIME_TICKS;
         cluster.wallJumpDirX            = -wallDir; // outward direction
         cluster.isWallSlidingFlag       = 0;
         cluster.coyoteTimeTicks         = 0;
+        cluster.wallJumpGraceLeftTicks  = 0;
+        cluster.wallJumpGraceRightTicks = 0;
         cluster.hasUsedWallJumpSinceResetFlag = 1;
         if (isInitialWallJump) {
           world.wallJumpSkidDebrisBurstFlag = 1;
@@ -393,47 +484,107 @@ export function tickPlayerMovement(
     }
 
     if (cluster.wallJumpForceTimeTicks <= 0 && inputDx !== 0) {
-      // Reversing direction uses a higher turn acceleration for snappy feel
-      const isTurning = (inputDx > 0 && cluster.velocityXWorld < -1.0) ||
-                        (inputDx < 0 && cluster.velocityXWorld >  1.0);
-      let accel: number;
-      if (isTurning) {
-        accel = TURN_ACCELERATION_PER_SEC2;
-      } else if (isGrounded) {
-        accel = baseGroundAccel;
+      if (isGrounded) {
+        // ── Grounded: turn acceleration / ground acceleration + speed cap ──
+        const isTurning = (inputDx > 0 && cluster.velocityXWorld < -1.0) ||
+                          (inputDx < 0 && cluster.velocityXWorld >  1.0);
+        const accel = isTurning ? TURN_ACCELERATION_PER_SEC2 : baseGroundAccel;
+        cluster.velocityXWorld += inputDx * accel * dtSec;
+        const maxSpeed = cluster.isSprintingFlag === 1
+          ? baseRunSpeed * sprintMult
+          : baseRunSpeed;
+        if (inputDx > 0 && cluster.velocityXWorld > maxSpeed) {
+          cluster.velocityXWorld = maxSpeed;
+        } else if (inputDx < 0 && cluster.velocityXWorld < -maxSpeed) {
+          cluster.velocityXWorld = -maxSpeed;
+        }
       } else {
-        accel = baseAirAccel;
-      }
-      cluster.velocityXWorld += inputDx * accel * dtSec;
-      // Clamp to max run speed only in the direction of input
-      // Sprint increases the max speed by 50% when grounded and holding shift
-      const maxSpeed = cluster.isSprintingFlag === 1
-        ? baseRunSpeed * sprintMult
-        : baseRunSpeed;
-      if (inputDx > 0 && cluster.velocityXWorld > maxSpeed) {
-        cluster.velocityXWorld = maxSpeed;
-      } else if (inputDx < 0 && cluster.velocityXWorld < -maxSpeed) {
-        cluster.velocityXWorld = -maxSpeed;
+        // ── Airborne: momentum-preserving air control ─────────────────────
+        // AIR_MOVE_SPEED is the soft cap for input-generated speed.
+        // Externally generated momentum (grapple launch, bounce pads, etc.)
+        // above this cap is preserved.  Input can steer or brake, but cannot
+        // push abs(vx) above the pre-input value when already above the cap.
+        const airMoveSpeed = ov(debugSpeedOverrides.airMoveSpeedWorld, AIR_MOVE_SPEED_WORLD_PER_SEC);
+        const preInputAbsVxWorld = Math.abs(cluster.velocityXWorld);
+
+        if (preInputAbsVxWorld > airMoveSpeed) {
+          // High-speed regime: check whether input opposes or matches velocity.
+          const isOpposing = (inputDx > 0 && cluster.velocityXWorld < 0) ||
+                             (inputDx < 0 && cluster.velocityXWorld > 0);
+          if (isOpposing) {
+            // Intentional air brake — bleed off high-speed momentum deliberately.
+            const airBraking = ov(debugSpeedOverrides.airBrakingWorld, AIR_BRAKING_PER_SEC2);
+            cluster.velocityXWorld += inputDx * airBraking * dtSec;
+          } else {
+            // Same direction: subtle steering feel without increasing speed.
+            const steeringAccel = baseAirAccel
+              * ov(debugSpeedOverrides.highSpeedSteeringFactor, HIGH_SPEED_STEERING_FACTOR);
+            cluster.velocityXWorld += inputDx * steeringAccel * dtSec;
+            // Hard cap: steering must not push abs(vx) above its pre-input value.
+            if (Math.abs(cluster.velocityXWorld) > preInputAbsVxWorld) {
+              cluster.velocityXWorld = (cluster.velocityXWorld > 0 ? 1 : -1) * preInputAbsVxWorld;
+            }
+          }
+        } else {
+          // Normal speed range: standard air control clamped to airMoveSpeed.
+          // Normal input cannot push the player above this soft cap.
+          const wallJumpMult = cluster.hasUsedWallJumpSinceResetFlag === 1
+            ? ov(debugSpeedOverrides.wallJumpAirAccelMultiplier, WALL_JUMP_AIR_ACCEL_MULTIPLIER)
+            : 1.0;
+          const isTurning = (inputDx > 0 && cluster.velocityXWorld < -1.0) ||
+                            (inputDx < 0 && cluster.velocityXWorld >  1.0);
+          const accel = isTurning
+            ? TURN_ACCELERATION_PER_SEC2
+            : baseAirAccel * wallJumpMult;
+          cluster.velocityXWorld += inputDx * accel * dtSec;
+          // Clamp to airMoveSpeed in input direction.
+          if (inputDx > 0 && cluster.velocityXWorld > airMoveSpeed) {
+            cluster.velocityXWorld = airMoveSpeed;
+          } else if (inputDx < 0 && cluster.velocityXWorld < -airMoveSpeed) {
+            cluster.velocityXWorld = -airMoveSpeed;
+          }
+        }
       }
     } else if (cluster.wallJumpForceTimeTicks <= 0) {
       // No horizontal input and not in force-time — decelerate toward zero.
-      // Friction is modified by sprint (50% less) and skid (50% more).
-      let decel: number;
       if (isGrounded) {
-        decel = baseGroundDecel;
+        // ── Grounded: friction with skid and sprint modifiers ────────────
+        let decel = baseGroundDecel;
         if (cluster.isSkiddingFlag === 1) {
           decel *= SKID_FRICTION_MULTIPLIER;
         } else if (world.playerSprintHeldFlag === 1) {
           decel *= SPRINT_FRICTION_MULTIPLIER;
         }
+        const dv = decel * dtSec;
+        if (cluster.velocityXWorld > 0) {
+          cluster.velocityXWorld = cluster.velocityXWorld - dv > 0 ? cluster.velocityXWorld - dv : 0;
+        } else if (cluster.velocityXWorld < 0) {
+          cluster.velocityXWorld = cluster.velocityXWorld + dv < 0 ? cluster.velocityXWorld + dv : 0;
+        }
       } else {
-        decel = baseAirDecel;
-      }
-      const dv    = decel * dtSec;
-      if (cluster.velocityXWorld > 0) {
-        cluster.velocityXWorld = cluster.velocityXWorld - dv > 0 ? cluster.velocityXWorld - dv : 0;
-      } else if (cluster.velocityXWorld < 0) {
-        cluster.velocityXWorld = cluster.velocityXWorld + dv < 0 ? cluster.velocityXWorld + dv : 0;
+        // ── Airborne: preserve high-speed momentum; gentle decel at normal speeds
+        const airMoveSpeed = ov(debugSpeedOverrides.airMoveSpeedWorld, AIR_MOVE_SPEED_WORLD_PER_SEC);
+        const absVxWorld = Math.abs(cluster.velocityXWorld);
+        if (absVxWorld > airMoveSpeed) {
+          // Subtle momentum decay above airMoveSpeed.
+          // The decay floor prevents bleeding below airMoveSpeed so normal
+          // air deceleration behaviour is unchanged at typical speeds.
+          const momentumDecay = ov(debugSpeedOverrides.momentumDecayWorld, MOMENTUM_DECAY_PER_SEC2);
+          const dv = momentumDecay * dtSec;
+          if (cluster.velocityXWorld > 0) {
+            cluster.velocityXWorld = Math.max(airMoveSpeed, cluster.velocityXWorld - dv);
+          } else {
+            cluster.velocityXWorld = Math.min(-airMoveSpeed, cluster.velocityXWorld + dv);
+          }
+        } else {
+          // Normal air decel toward zero.
+          const dv = baseAirDecel * dtSec;
+          if (cluster.velocityXWorld > 0) {
+            cluster.velocityXWorld = cluster.velocityXWorld - dv > 0 ? cluster.velocityXWorld - dv : 0;
+          } else if (cluster.velocityXWorld < 0) {
+            cluster.velocityXWorld = cluster.velocityXWorld + dv < 0 ? cluster.velocityXWorld + dv : 0;
+          }
+        }
       }
     }
   }
