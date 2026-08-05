@@ -23,6 +23,7 @@ import {
   HURT_FLASH_DURATION_TICKS,
   HURT_FLASH_MAX_ALPHA,
 } from './characterSprites';
+import { renderStickRangerBody } from './stickRangerRenderer';
 import { renderGridBlockEnemy, renderGridSnakeEnemy } from './gridBlockEnemyRenderer';
 import { renderMomentumTurret } from './momentumTurretRenderer';
 import { renderSlimeSnailBody, renderSlimeSnailTrails } from './slimeSnailRenderer';
@@ -201,6 +202,12 @@ export function renderClusters(
         cluster.flyingEyeElementKind,
         healthRatio,
       );
+    } else if (isPlayer && snapshot.stickRangerBody !== null) {
+      // ── Player: Stick Ranger stickman ─────────────────────────────────
+      // The softbody is the character — there is no sprite to draw, and none
+      // of the sprite-path decoration below (outline mask, afterimages,
+      // cloak, flip transform) applies to a set of simulated line segments.
+      renderStickRangerBody(ctx, snapshot.stickRangerBody, offsetXPx, offsetYPx, scalePx);
     } else if (isPlayer) {
       // ── Player: character sprite (no rotation; flip when facing left) ────
       const charSprites = getCharacterSprites(snapshot.characterId);

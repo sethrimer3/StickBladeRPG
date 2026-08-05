@@ -2322,6 +2322,24 @@ export function startGameScreen(
       return summary;
     };
 
+    // ── DEV-only inspection hook for the Stick Ranger stickman ───────────
+    // `window.__dwStickman()` — returns the live softbody state (point
+    // positions, gait window, ground contact). Handy while tuning the
+    // gravity profile and steering impulses in sim/clusters/stickRangerBody.ts.
+    (w as DwWin & { __dwStickman?: () => unknown }).__dwStickman = (): unknown => {
+      const body = world.stickRangerBody;
+      if (body === null) return { active: false, characterId: world.characterId };
+      return {
+        active: true,
+        characterId: world.characterId,
+        x: Array.from(body.x),
+        y: Array.from(body.y),
+        framesSinceGroundContact: body.framesSinceGroundContact,
+        groundContactFlag: body.groundContactFlag,
+        facingDirection: body.facingDirection,
+      };
+    };
+
     // ── DEV-only spawn hook for The Void Herald boss ─────────────────────
     // `window.__dwSpawnHerald(xBlock?, yBlock?)` — spawns The Void Herald directly
     // into the running world at the given block position (defaults to the
