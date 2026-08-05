@@ -785,8 +785,20 @@ test('a zone-entry task warms the SWEPT region the readiness predicate tests, no
   clearAllRenderBundles();
   const vpW = 240, vpH = 135, scale = 1;
 
-  const left  = room('left',  [{ ...tx('right' as TransitionDirection, 'right'), positionBlock: 8, openingSizeBlocks: 6 }]);
-  const right = room('right', [{ ...tx('left'  as TransitionDirection, 'left'),  positionBlock: 8, openingSizeBlocks: 6 }]);
+  // A tall room with a mid-wall doorway: the runtime slides the spawn along the
+  // opening, so the swept union is genuinely larger than one viewport.
+  const door = (direction: TransitionDirection, target: string): RoomTransitionDef => ({
+    ...tx(direction, target),
+    xBlock: direction === 'left' ? 0 : 59,
+    yBlock: 24,
+    positionBlock: 24,
+    openingSizeBlocks: 6,
+  });
+  const tall = (id: string, transitions: RoomTransitionDef[]): RoomDef =>
+    ({ ...room(id, transitions), widthBlocks: 60, heightBlocks: 60 }) as RoomDef;
+
+  const left  = tall('left',  [door('right' as TransitionDirection, 'right')]);
+  const right = tall('right', [door('left'  as TransitionDirection, 'left')]);
   const registry = new Map<string, RoomDef>([['left', left], ['right', right]]);
 
   const runtimeCache = new RoomRuntimeCache();
