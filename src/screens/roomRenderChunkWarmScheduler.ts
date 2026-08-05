@@ -882,6 +882,35 @@ export function getPinnedPrewarmRoomIds(): ReadonlySet<string> {
 }
 
 /**
+ * The region each queued task will actually warm (diagnostics and tests).
+ *
+ * Exists because the one property that matters for zone-load termination —
+ * that a task warms the SAME rectangle the readiness predicate tests — was
+ * otherwise unobservable from outside this module, and a producer/predicate
+ * mismatch there is an unbounded warm/re-queue loop rather than a visible
+ * failure.
+ */
+export function getQueuedWarmRegions(): readonly {
+  roomId: string;
+  entryKey: string | null;
+  offsetXPx: number;
+  offsetYPx: number;
+  vpWPx: number;
+  vpHPx: number;
+  scalePx: number;
+}[] {
+  return _queue.map(t => ({
+    roomId:    t.roomId,
+    entryKey:  t.entryKey ?? null,
+    offsetXPx: t.offsetXPx,
+    offsetYPx: t.offsetYPx,
+    vpWPx:     t.vpWPx,
+    vpHPx:     t.vpHPx,
+    scalePx:   t.scalePx,
+  }));
+}
+
+/**
  * Outcome of one `addZoneEntryViewportTasks` pass, so the caller can assert the
  * invariant that every unsatisfied zone-entry readiness requirement has an
  * executable or active task behind it.
@@ -1045,8 +1074,16 @@ export function addZoneEntryViewportTasks(
         entryKey,
         offsetXPx: off.offsetXPx,
         offsetYPx: off.offsetYPx,
-        vpWPx,
-        vpHPx,
+        // MUST be the SWEPT dimensions, not the raw viewport.  The coverage
+        // predicate this task exists to satisfy (`isWallPrewarmViewportCovered`
+        // via `collectZoneEntryReadinessReport`) tests `swept.vpWPx/vpHPx`,
+        // which are the base viewport grown by the spawn spread.  Warming only
+        // the base viewport built a strictly smaller region than the predicate
+        // demands: the task completed, was popped, the requirement was still
+        // uncovered, the next frame re-queued an identical task — an unbounded
+        // loop with the zone overlay stuck at "N/N".
+        vpWPx: swept.vpWPx,
+        vpHPx: swept.vpHPx,
         scalePx,
         transitionDir: undefined,
         wallDone: false,
