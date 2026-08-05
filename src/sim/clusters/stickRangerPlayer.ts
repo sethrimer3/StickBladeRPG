@@ -63,9 +63,10 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     }
   }
 
-  // Latch the one-shot jump input. The body runs on its own 30Hz accumulator,
-  // so a host tick may advance no body frame at all — queueing here (rather
-  // than applying an impulse directly) means the press is never swallowed.
+  // Latch the one-shot jump input. The body runs on its own fixed accumulator
+  // (30Hz x STICKMAN_TIME_SCALE), so a host tick may advance no body frame at
+  // all — queueing here rather than applying an impulse directly means the
+  // press is never swallowed.
   // applyClusterMovement clears the flag after the cluster loop, so reading it
   // here sees the current tick's press.
   if (world.playerJumpTriggeredFlag === 1) {
