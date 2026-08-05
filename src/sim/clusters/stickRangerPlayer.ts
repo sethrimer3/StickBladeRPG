@@ -19,6 +19,7 @@ import {
   createStickRangerBody,
   resetStickRangerBody,
   stepStickRangerBody,
+  requestStickRangerJump,
   SR_HIP,
   SR_HEAD,
   SR_FOOT_L,
@@ -60,6 +61,15 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     if (driftX * driftX + driftY * driftY > TELEPORT_RESYNC_DISTANCE * TELEPORT_RESYNC_DISTANCE) {
       resetStickRangerBody(body, cluster.positionXWorld, cluster.positionYWorld);
     }
+  }
+
+  // Latch the one-shot jump input. The body runs on its own 30Hz accumulator,
+  // so a host tick may advance no body frame at all — queueing here (rather
+  // than applying an impulse directly) means the press is never swallowed.
+  // applyClusterMovement clears the flag after the cluster loop, so reading it
+  // here sees the current tick's press.
+  if (world.playerJumpTriggeredFlag === 1) {
+    requestStickRangerJump(body);
   }
 
   const hipXBefore = body.x[SR_HIP];

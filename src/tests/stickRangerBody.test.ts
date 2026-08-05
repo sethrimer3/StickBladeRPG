@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createStickRangerBody,
   stepStickRangerBody,
+  requestStickRangerJump,
   getStickRangerRenderAlpha,
   getStickRangerRenderX,
   SR_FRAME_MS,
@@ -182,6 +183,93 @@ test('body recovers its posture after a hard landing', () => {
   advanceFrames(body, flatFloor(floorY), 0, 180);
   const height = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD];
   assert.ok(height > 15, `body failed to stand back up after landing, height ${height}`);
+});
+
+test('a queued jump launches the body off the ground', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+  const restingFeet = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5;
+
+  requestStickRangerJump(body);
+  let peakFeet = restingFeet;
+  for (let i = 0; i < 120; i++) {
+    stepStickRangerBody(body, floor, 0, SR_FRAME_MS);
+    const feet = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5;
+    if (feet < peakFeet) peakFeet = feet;
+  }
+  const apex = restingFeet - peakFeet;
+  assert.ok(apex > 12, `jump barely left the ground: apex ${apex} world units`);
+  assert.ok(apex < 60, `jump apex ran away to ${apex} world units`);
+});
+
+test('the whole body launches together instead of stretching apart', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+
+  // The impulse goes to every point equally so the constraints have nothing
+  // to resolve; a torso-only push would visibly stretch the figure.
+  requestStickRangerJump(body);
+  let minHeight = Infinity;
+  for (let i = 0; i < 60; i++) {
+    stepStickRangerBody(body, floor, 0, SR_FRAME_MS);
+    if (body.groundContactFlag === 1) continue; // in-flight only
+    const height = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD];
+    if (height < minHeight) minHeight = height;
+  }
+  assert.ok(minHeight > 14, `figure deformed in flight, height fell to ${minHeight}`);
+});
+
+test('landing is absorbed rather than crumpling the figure', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+
+  requestStickRangerJump(body);
+  let minHeight = Infinity;
+  for (let i = 0; i < 140; i++) {
+    stepStickRangerBody(body, floor, 0, SR_FRAME_MS);
+    const height = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD];
+    if (height < minHeight) minHeight = height;
+  }
+  // Without LANDING_ABSORB this bottomed out at 6.2 of a 16.5 standing height.
+  assert.ok(minHeight > 11, `landing crushed the figure to ${minHeight}`);
+});
+
+test('a mid-air jump is refused once coyote time has lapsed', () => {
+  const body = createStickRangerBody(100, 100);
+  advanceFrames(body, EMPTY_WORLD, 0, 30);   // well past JUMP_COYOTE_FRAMES
+  const beforeY = body.y[SR_HIP];
+  requestStickRangerJump(body);
+  advanceFrames(body, EMPTY_WORLD, 0, 10);
+  assert.ok(body.y[SR_HIP] > beforeY, 'body should still be falling, not double-jumping');
+});
+
+test('a jump queued just before landing still fires (jump buffer)', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 40);  // falling from height
+  // Queue while still airborne and a few frames from touchdown.
+  let framesToGround = 0;
+  while (body.groundContactFlag === 0 && framesToGround < 200) {
+    stepStickRangerBody(body, floor, 0, SR_FRAME_MS);
+    framesToGround++;
+  }
+  assert.ok(framesToGround < 200, 'test setup: body never reached the floor');
+
+  const restingFeet = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5;
+  requestStickRangerJump(body);
+  let peakFeet = restingFeet;
+  for (let i = 0; i < 90; i++) {
+    stepStickRangerBody(body, floor, 0, SR_FRAME_MS);
+    const feet = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5;
+    if (feet < peakFeet) peakFeet = feet;
+  }
+  assert.ok(restingFeet - peakFeet > 10, 'buffered jump was swallowed');
 });
 
 test('body never produces NaN, even when crushed between solids', () => {

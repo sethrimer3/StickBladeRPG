@@ -45,6 +45,9 @@ const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
 /** Head marker size in world units (Stick Ranger draws a 5x5 pixel block). */
 const HEAD_SIZE_WORLD = 5;
 
+/** Figure colour. White, so the stickman reads against this game's dark rock. */
+const FIGURE_COLOR = '#ffffff';
+
 /**
  * Strokes the stickman into `ctx`.
  *
@@ -64,7 +67,7 @@ export function renderStickRangerBody(
   const toScreenY = (i: number): number => getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx;
 
   ctx.save();
-  ctx.strokeStyle = '#000000';
+  ctx.strokeStyle = FIGURE_COLOR;
   ctx.lineWidth = Math.max(1, scalePx);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -79,7 +82,7 @@ export function renderStickRangerBody(
 
   // Head: filled square centred on the head point.
   const headSizePx = HEAD_SIZE_WORLD * scalePx;
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = FIGURE_COLOR;
   ctx.fillRect(
     toScreenX(SR_HEAD) - headSizePx * 0.5,
     toScreenY(SR_HEAD) - headSizePx * 0.5,

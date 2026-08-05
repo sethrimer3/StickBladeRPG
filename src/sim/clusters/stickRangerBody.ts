@@ -120,6 +120,45 @@ const COLLISION_SUBSTEP_DISTANCE = 4;
 //     whole simulation scaled — GRAVITY and LAUNCH_GRAVITY together with
 //     these — not a larger push here, which only tips it past the cliff.
 
+// ── Jump ────────────────────────────────────────────────────────────────────
+//
+// Stick Ranger's party never jumps on command, so there is no original to port
+// here — but the same mechanism does the work. A jump is one whole-body upward
+// position offset, exactly like the scatter impulse Stick Ranger applies on
+// death (`this.a[a][b].y += M(-1,-3)` across all 11 points). Verlet reads it as
+// velocity on the next frame, and because every point gets the same offset the
+// constraints have nothing to fight, so the figure launches intact instead of
+// being stretched apart by a torso-only push.
+
+/** Upward offset applied to every point on the frame a jump fires. */
+const JUMP_IMPULSE = 1.85;
+/**
+ * Fraction of velocity each point keeps on the frame it lands after a real
+ * fall. A DEPARTURE from Stick Ranger, which has no such rule.
+ *
+ * It is needed because Stick Ranger characters only ever fall a tile or two,
+ * whereas this game's rooms let the stickman fall far enough that the torso's
+ * downward momentum folds it onto the stopped feet: an unabsorbed landing
+ * crushed head-to-foot height from 16.5 to 6.2 and took ~30 frames to stand
+ * back up, i.e. a visible stumble after every jump.
+ *
+ * Applied only to points still moving downward, so it bleeds off impact
+ * without touching the horizontal motion that carries a running jump.
+ */
+const LANDING_ABSORB = 0.30;
+/** Airborne frames required before a touchdown counts as a real landing. */
+const LANDING_ABSORB_MIN_AIR_FRAMES = 8;
+/**
+ * Frames after leaving the ground during which a jump is still allowed
+ * (coyote time). `framesSinceGroundContact` already tracks this for the gait.
+ */
+const JUMP_COYOTE_FRAMES = 4;
+/**
+ * Frames a queued jump survives while airborne, so a press slightly before
+ * landing still fires on touchdown instead of being swallowed.
+ */
+const JUMP_BUFFER_FRAMES = 6;
+
 /** Horizontal impulse applied to the hip while a direction is held. */
 const STEER_HIP_PUSH = 0.10;
 /** Horizontal impulse applied to the chest — smallest, so the torso only leans. */
@@ -170,6 +209,15 @@ export interface StickRangerBody {
   groundContactFlag: 0 | 1;
   /** Leftover host time not yet consumed by a fixed body frame, milliseconds. */
   accumulatorMs: number;
+  /**
+   * Frames a pending jump request has left before it expires. Set by
+   * `requestStickRangerJump`; a jump can be asked for on a host tick that
+   * advances no body frame, so the request is latched here rather than acted
+   * on immediately.
+   */
+  jumpBufferFrames: number;
+  /** 1 for the single frame a jump actually fires — for SFX and effects. */
+  jumpFiredFlag: 0 | 1;
   /** Facing, for renderers that need it: -1 left, 1 right. */
   facingDirection: -1 | 1;
 }
@@ -186,6 +234,8 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     framesSinceGroundContact: 0,
     groundContactFlag: 0,
     accumulatorMs: 0,
+    jumpBufferFrames: 0,
+    jumpFiredFlag: 0,
     facingDirection: 1,
   };
   resetStickRangerBody(body, hipX, hipY);
@@ -210,6 +260,18 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.framesSinceGroundContact = 0;
   body.groundContactFlag = 0;
   body.accumulatorMs = 0;
+  body.jumpBufferFrames = 0;
+  body.jumpFiredFlag = 0;
+}
+
+/**
+ * Queues a jump. Fires on the next body frame where the figure is on (or has
+ * just left) the ground, and expires after `JUMP_BUFFER_FRAMES` otherwise.
+ * Safe to call every host tick the key is held — a queued jump is not
+ * re-armed until it has fired or lapsed.
+ */
+export function requestStickRangerJump(body: StickRangerBody): void {
+  body.jumpBufferFrames = JUMP_BUFFER_FRAMES;
 }
 
 /**
@@ -323,6 +385,26 @@ function isSolidAt(solid: SolidMask | null, x: number, y: number): boolean {
  */
 function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirection: number): void {
   body.framesSinceGroundContact += 1;
+  body.jumpFiredFlag = 0;
+
+  // ── 0. Jump ─────────────────────────────────────────────────────────────
+  // Fires before integration so the impulse is part of this frame's motion.
+  // Applied to every point equally: the constraints then have nothing to
+  // resolve and the figure leaves the ground in its current pose.
+  if (body.jumpBufferFrames > 0) {
+    body.jumpBufferFrames -= 1;
+    if (body.framesSinceGroundContact <= JUMP_COYOTE_FRAMES) {
+      for (let i = 0; i < SR_POINT_COUNT; i++) {
+        body.y[i] -= JUMP_IMPULSE;
+      }
+      body.jumpBufferFrames = 0;
+      body.jumpFiredFlag = 1;
+      // Push the gait counter past the launch window so the feet stop being
+      // driven down into the ground mid-takeoff, which otherwise cancels
+      // most of the impulse on the very next frame.
+      body.framesSinceGroundContact = LAUNCH_FRAMES;
+    }
+  }
 
   // ── 1. Integrate, with the gait's per-point gravity profile ──────────────
   const inLaunchWindow = body.framesSinceGroundContact < LAUNCH_FRAMES;
@@ -355,8 +437,20 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   }
 
   // ── 5. Ground contact resets the gait window ────────────────────────────
+  const wasAirborne = body.framesSinceGroundContact;
   body.groundContactFlag = contact ? 1 : 0;
-  if (contact) body.framesSinceGroundContact = 0;
+  if (contact) {
+    // Absorb a real landing (see LANDING_ABSORB). Verlet velocity is
+    // `current - previous`, so moving `previous` toward `current` scales the
+    // velocity down without moving the point itself.
+    if (wasAirborne >= LANDING_ABSORB_MIN_AIR_FRAMES) {
+      for (let i = 0; i < SR_POINT_COUNT; i++) {
+        const vy = body.y[i] - body.prevY[i];
+        if (vy > 0) body.prevY[i] = body.y[i] - vy * LANDING_ABSORB;
+      }
+    }
+    body.framesSinceGroundContact = 0;
+  }
 }
 
 /**
