@@ -5,6 +5,7 @@ import { GrappleWorldState, createGrappleWorldState } from './worldGrappleState'
 import { HazardWorldState, createHazardWorldState, MAX_WATER_ZONES } from './worldHazardState';
 import { type CombatMode, DEFAULT_COMBAT_MODE } from './combatMode';
 import { PixelMaterialSystem } from './pixelMaterials/pixelMaterialSystem';
+import type { StickRangerBody } from './clusters/stickRangerBody';
 import { NATIVE_WIDTH_PX, NATIVE_HEIGHT_PX } from './pixelMaterials/pixelMaterialTypes';
 import { createChallengeModeState, type ChallengeModeState } from './challengeMode';
 import type { RuntimeGate } from './gates/gateState';
@@ -581,6 +582,16 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * `loadRoomPixelMaterials` in screens/gameRoomPixelMaterials.ts.
    */
   pixelMaterialSystem: PixelMaterialSystem;
+
+  /**
+   * Stick Ranger stickman softbody for the player character.
+   *
+   * Active only while `characterId === 'stickman'`; when active it is
+   * authoritative for the player's position (the AABB cluster is driven from
+   * the body's hip rather than the other way round) and the normal player
+   * movement/collision passes are skipped. See sim/clusters/stickRangerBody.ts.
+   */
+  stickRangerBody: StickRangerBody | null;
 }
 
 export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
@@ -765,6 +776,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     momentumTrailYWorld: new Float32Array(MOMENTUM_TRAIL_MAX_POINTS),
     momentumTrailAgeTicks: new Uint8Array(MOMENTUM_TRAIL_MAX_POINTS),
     pixelMaterialSystem: new PixelMaterialSystem(NATIVE_WIDTH_PX, NATIVE_HEIGHT_PX),
+    stickRangerBody: null,
   };
 }
 

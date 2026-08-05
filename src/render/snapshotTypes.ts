@@ -15,6 +15,7 @@ export type { ClusterSnapshot } from './clusterSnapshotTypes';
 import type { ClusterSnapshot } from './clusterSnapshotTypes';
 import type { SecondaryWeaveGesturePhase } from '../input/secondaryWeaveGesture';
 import type { SurfaceRimStyle } from './walls/surfaceRimStyle';
+import type { StickRangerBody } from '../sim/clusters/stickRangerBody';
 
 export interface ParticleSnapshot {
   readonly positionXWorld:    Float32Array;
@@ -205,8 +206,14 @@ export interface WorldSnapshot {
   readonly newSwordHandAnchorXWorld: number;
   readonly newSwordHandAnchorYWorld: number;
   readonly newSwordCurrentAngleRad: number;
-  /** Selected character identifier ('knight', 'demonFox', 'princess', or 'outcast'). */
+  /** Selected character identifier ('stickman', 'knight', 'demonFox', 'princess', or 'outcast'). */
   readonly characterId: string;
+  /**
+   * Stick Ranger stickman softbody, when that character is selected.
+   * Held by reference (like the particle/wall typed arrays) rather than
+   * copied — the renderer only reads point positions from it.
+   */
+  readonly stickRangerBody: StickRangerBody | null;
   /** Number of active grasshoppers. */
   readonly grasshopperCount: number;
   /** X positions of grasshoppers (world units). */

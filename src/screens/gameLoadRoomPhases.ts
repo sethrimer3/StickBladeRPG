@@ -137,6 +137,7 @@ import { resetTimeStopFieldPlayerState } from '../sim/timeStopField/timeStopFiel
 import { resetPoisonExposureState } from '../sim/poisonField/poisonExposureState';
 import { resetVoidDashState } from '../sim/clusters/voidDash';
 import type { CombatMode } from '../sim/combatMode';
+import { STICKMAN_CHARACTER_ID } from '../sim/clusters/stickRangerPlayer';
 
 /**
  * Session-owned player configuration that must survive replacement of the
@@ -423,7 +424,14 @@ function applyPlayerWeaveWorldFields(
   world.playerSecondaryWeaveId         = effectiveWeaveLoadout.secondary.weaveId;
   world.canUsePlayerSecondaryWeaveFlag = effectiveWeaveLoadout.secondary.weaveId === WEAVE_NONE ? 0 : 1;
   world.isMoteSourceOrbitFlag          = world.playerPrimaryWeaveId === WEAVE_STORM ? 1 : 0;
-  world.characterId                    = ctx.progress?.characterId ?? 'knight';
+  // The Stick Ranger stickman is the player character. Forced rather than read
+  // from progress so existing saves (which persisted 'outcast') switch over
+  // too; restore the `ctx.progress?.characterId` read here to bring character
+  // selection back.
+  world.characterId                    = STICKMAN_CHARACTER_ID;
+  // A fresh room means a fresh body: drop the old one so it is rebuilt at the
+  // new spawn point instead of interpolating across the transition.
+  world.stickRangerBody                = null;
   resetGrappleDisplayRadius(world);
 }
 

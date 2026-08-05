@@ -97,6 +97,7 @@ interface _ReusableBacking {
   newSwordHandAnchorYWorld: number;
   newSwordCurrentAngleRad: number;
   characterId: string;
+  stickRangerBody: import('../sim/clusters/stickRangerBody').StickRangerBody | null;
   grasshopperCount: number;
   squareStampedeTrailXWorld: Float32Array;
   squareStampedeTrailYWorld: Float32Array;
@@ -288,6 +289,7 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
     newSwordHandAnchorYWorld: world.newSwordHandAnchorYWorld,
     newSwordCurrentAngleRad: world.newSwordCurrentAngleRad,
     characterId:              world.characterId,
+    stickRangerBody:          world.stickRangerBody,
     grasshopperCount:         world.grasshopperCount,
     grasshopperXWorld:        world.grasshopperXWorld,
     grasshopperYWorld:        world.grasshopperYWorld,
@@ -547,6 +549,7 @@ export function updateSnapshotInPlace(
   b.newSwordHandAnchorYWorld = world.newSwordHandAnchorYWorld;
   b.newSwordCurrentAngleRad = world.newSwordCurrentAngleRad;
   b.characterId               = world.characterId;
+  b.stickRangerBody           = world.stickRangerBody;
   b.grasshopperCount          = world.grasshopperCount;
 
   b.playerWeaveAimDirXWorld    = world.playerWeaveAimDirXWorld;

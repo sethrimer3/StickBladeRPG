@@ -44,6 +44,7 @@ import { computeSkidJumpSpeedWorld } from './skidJumpHeight';
 import { rechargeGrappleCharge } from './grappleShared';
 import { isVerdantDustEquipped, VERDANT_JUMP_LAUNCH_MULTIPLIER } from './verdantMobility';
 import { updateVerdantFlowerSpawn, type VerdantFlowerSpawnEvent } from './verdantFlowerSpawn';
+import { tickStickRangerPlayer, isStickRangerActive } from './stickRangerPlayer';
 
 /** Reused (never reallocated) scratch buffer for this tick's flower-bloom events. */
 const _verdantFlowerEventsScratch: VerdantFlowerSpawnEvent[] = [];
@@ -122,6 +123,15 @@ export function applyClusterMovement(world: WorldState): void {
   for (let ci = 0; ci < world.clusters.length; ci++) {
     const cluster = world.clusters[ci];
     if (cluster.isAliveFlag === 0) continue;
+
+    if (cluster.isPlayerFlag === 1 && isStickRangerActive(world)) {
+      // Stick Ranger stickman owns the player entirely: its own Verlet
+      // integration, its own elastic point-vs-solid collision, and its own
+      // emergent gait. Skip the AABB movement + collision passes below —
+      // running both would have the box fight the softbody every tick.
+      tickStickRangerPlayer(cluster, world);
+      continue;
+    }
 
     if (cluster.isPlayerFlag === 1) {
       tickPlayerMovement(cluster, world, dtSec);
