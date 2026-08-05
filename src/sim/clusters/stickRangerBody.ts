@@ -56,10 +56,54 @@ export const SR_FOOT_R = 10;
 /** Number of simulated body points. */
 export const SR_POINT_COUNT = 11;
 
-/** Fixed simulation step, in milliseconds. Stick Ranger runs at 30fps. */
-export const SR_FRAME_MS = 1000 / 30;
-/** Never advance more than this many body frames in one host tick (spiral guard). */
-const SR_MAX_FRAMES_PER_TICK = 4;
+/**
+ * How much faster than Stick Ranger this body runs. **The one feel knob.**
+ *
+ * Implemented as a pure time scale: the body still steps a fixed number of
+ * frames, each frame is still Stick Ranger's exact simulation with its exact
+ * constants — the frames simply arrive `STICKMAN_TIME_SCALE` times more often.
+ * Nothing about the dynamics is retuned, so the gait, the posture and the
+ * landing behaviour are bit-for-bit the same motion, just played faster.
+ *
+ * That matters, and is why this is a time scale rather than bigger gravity and
+ * bigger impulses. Multiplying the constants instead would change the shape of
+ * the motion: the walk cycle's stability margin sits close to a cliff (see
+ * STEER_FOOT_PUSH below), and scaling the pushes without scaling gravity in
+ * exact lockstep walks straight into it.
+ *
+ * What the scale does and does not change:
+ *   • Walk speed and fall speed scale with it.  (×S)
+ *   • Airtime and every other duration shrink with it.  (÷S)
+ *   • Jump apex, stride length, standing height are UNCHANGED — geometry is
+ *     scale-invariant, because apex = v²/2g and both v and g move together.
+ *
+ * Reference points, measured on a flat floor:
+ *
+ *   scale   walk speed      jump airtime    jump apex
+ *   1.0     16 units/sec    2.23 s          3.6 blocks   (exact Stick Ranger)
+ *   2.5     40 units/sec    0.89 s          3.6 blocks   (current)
+ *   4.0     64 units/sec    0.56 s          3.6 blocks   (matches this
+ *                                                        project's own 0.57s
+ *                                                        jump airtime)
+ *
+ * This project's own player runs at 105 units/sec, which no time scale reaches
+ * at a sane airtime — the gait's stride length is what it is, and pushing
+ * STEER_FOOT_PUSH harder to compensate hits the tumble cliff. Raising traversal
+ * speed beyond ~64 needs a longer stride, not a faster clock.
+ */
+export const STICKMAN_TIME_SCALE = 2.5;
+
+/**
+ * Fixed simulation step, in milliseconds. Stick Ranger runs at 30fps; the time
+ * scale above shortens the step rather than touching any physics constant.
+ */
+export const SR_FRAME_MS = 1000 / 30 / STICKMAN_TIME_SCALE;
+/**
+ * Never advance more than this much wall-clock time in one host tick (spiral
+ * guard). Expressed in frames, so it scales with the step size and always
+ * tolerates the same real-world backlog.
+ */
+const SR_MAX_FRAMES_PER_TICK = Math.ceil(4 * STICKMAN_TIME_SCALE);
 
 // ── Stick Ranger constants, verbatim ────────────────────────────────────────
 

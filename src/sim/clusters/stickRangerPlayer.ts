@@ -72,9 +72,6 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     requestStickRangerJump(body);
   }
 
-  const hipXBefore = body.x[SR_HIP];
-  const hipYBefore = body.y[SR_HIP];
-
   stepStickRangerBody(
     body,
     world.pixelMaterialSystem.solid,
@@ -86,12 +83,18 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
   cluster.positionXWorld = body.x[SR_HIP];
   cluster.positionYWorld = body.y[SR_HIP];
 
-  // Velocity in world-units-per-second, from the hip's motion this tick.
-  // Downstream consumers (SFX thresholds, camera lookahead, momentum trail)
-  // expect per-second units, whereas Verlet works in per-frame displacement.
+  // Velocity in world-units-per-second. Downstream consumers (SFX thresholds,
+  // camera lookahead, momentum trail) expect per-second units, whereas Verlet
+  // works in per-frame displacement.
+  //
+  // Read from the hip's own Verlet velocity rather than from how far it moved
+  // during this host tick: the body runs on its own clock, so a tick may
+  // advance zero body frames or two. Differencing across the tick would report
+  // zero on the former and double on the latter, making footstep SFX and
+  // camera lookahead flicker at the beat frequency between the two rates.
   const framesPerSecond = 1000 / SR_FRAME_MS;
-  cluster.velocityXWorld = (body.x[SR_HIP] - hipXBefore) * framesPerSecond;
-  cluster.velocityYWorld = (body.y[SR_HIP] - hipYBefore) * framesPerSecond;
+  cluster.velocityXWorld = (body.x[SR_HIP] - body.prevX[SR_HIP]) * framesPerSecond;
+  cluster.velocityYWorld = (body.y[SR_HIP] - body.prevY[SR_HIP]) * framesPerSecond;
 
   cluster.isGroundedFlag = body.groundContactFlag;
   cluster.isFacingLeftFlag = body.facingDirection < 0 ? 1 : 0;
