@@ -72,7 +72,7 @@ const ELECTRON_DEV_CSP = [
   "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
   "worker-src 'self' blob:",
 ].join("; ");
-const ELECTRON_APP_ICON_FILENAME = "Dustweaver_Icon.ico";
+const ELECTRON_APP_ICON_FILENAME = "StickBlade_Icon.ico";
 
 // ── Path resolution ───────────────────────────────────────────────────────────
 
