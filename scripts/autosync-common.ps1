@@ -39,7 +39,7 @@ function Test-DustWeaverRepositoryIdentity {
     if (Test-Path -LiteralPath $packagePath -PathType Leaf) {
         try { $packageName = [string]((Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).name) } catch { $packageName = '<unreadable>' }
     }
-    $valid = $normalizedRemote -eq 'sethrimer3/dustweaver' -and
+    $valid = ($normalizedRemote -eq 'sethrimer3/dustweaver' -or $normalizedRemote -eq 'sethrimer3/stickbladerpg') -and
         $missingFiles.Count -eq 0 -and
         $packageName -eq 'dustweaver'
     $result = [pscustomobject]@{
