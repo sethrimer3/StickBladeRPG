@@ -346,6 +346,101 @@ try {
         $result = Invoke-WorkflowScript 'resume-autosync.ps1' $other.FullName
         Assert-True ($result.ExitCode -ne 0) 'resume allowed non-main'
     }
+
+    # ---- Scheduled multi-repo runner -------------------------------------
+    #
+    # Regression coverage for the failure that let auto-sync commit an agent's
+    # in-progress tree twice while a lease was held: the scheduled runners only
+    # checked the legacy AUTOSYNC_PAUSED marker and never the per-agent lease
+    # directory, and the delegation branch keyed off the directory NAME being
+    # exactly 'StickBlade' (the checkout is 'StickBladeRPG').
+
+    function New-PlainRepository([string]$Name) {
+        $root = Join-Path $testRoot "scheduled\$Name"
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        & git init --initial-branch=main $root | Out-Null
+        & git -C $root config user.name 'StickBlade Auto-sync Tests'
+        & git -C $root config user.email 'autosync-tests@example.invalid'
+        Set-Content -LiteralPath (Join-Path $root 'seed.txt') -Value 'seed'
+        & git -C $root add -A
+        & git -C $root commit -m seed | Out-Null
+        return $root
+    }
+
+    function Invoke-ScheduledRunner([string]$ReposRoot) {
+        $arguments = @(
+            '-NoProfile', '-File',
+            (Join-Path $sourceRoot 'scripts\scheduled-sync-all-repos.ps1'),
+            '-RepositoriesRoot', $ReposRoot
+        )
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { $output = & powershell.exe @arguments 2>&1 } finally { $ErrorActionPreference = $previousPreference }
+        return ($output -join [Environment]::NewLine)
+    }
+
+    Invoke-Test 'scheduled runner honours an agent pause lease' {
+        $scheduledRoot = Join-Path $testRoot 'scheduled'
+        $plain = New-PlainRepository 'leased-repo'
+        $leases = Join-Path $plain '.git\AUTOSYNC_PAUSE_LEASES'
+        New-Item -ItemType Directory -Path $leases -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $leases 'agent-x.json') -Value '{"leaseId":"agent-x"}'
+
+        Set-Content -LiteralPath (Join-Path $plain 'half-written.txt') -Value 'in progress'
+        $head = (& git -C $plain rev-parse HEAD)
+        [void](Invoke-ScheduledRunner $scheduledRoot)
+
+        Assert-True ((& git -C $plain rev-parse HEAD) -eq $head) 'lease was ignored and work was committed'
+        $status = (& git -C $plain status --porcelain) -join "`n"
+        Assert-True ($status -match 'half-written.txt') 'in-progress file no longer dirty'
+    }
+
+    Invoke-Test 'scheduled runner honours the legacy pause marker' {
+        $scheduledRoot = Join-Path $testRoot 'scheduled'
+        $plain = New-PlainRepository 'marked-repo'
+        New-Item -ItemType File (Join-Path $plain '.git\AUTOSYNC_PAUSED') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $plain 'half-written.txt') -Value 'in progress'
+        $head = (& git -C $plain rev-parse HEAD)
+        [void](Invoke-ScheduledRunner $scheduledRoot)
+        Assert-True ((& git -C $plain rev-parse HEAD) -eq $head) 'pause marker was ignored'
+    }
+
+    Invoke-Test 'scheduled runner delegates by protocol presence, not directory name' {
+        $scheduledRoot = Join-Path $testRoot 'scheduled'
+        # Deliberately NOT named 'StickBlade' — this is the exact condition that
+        # routed the real checkout down the unguarded generic path.
+        $renamed = New-PlainRepository 'StickBladeRPG'
+        New-Item -ItemType Directory -Path (Join-Path $renamed 'scripts') -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $sourceRoot 'scripts\autosync-common.ps1') `
+            -Destination (Join-Path $renamed 'scripts\autosync-common.ps1')
+        Copy-Item -LiteralPath (Join-Path $sourceRoot 'scripts\autosync.ps1') `
+            -Destination (Join-Path $renamed 'scripts\autosync.ps1')
+        & git -C $renamed add -A
+        & git -C $renamed commit -m 'add protocol' | Out-Null
+
+        Set-Content -LiteralPath (Join-Path $renamed 'half-written.txt') -Value 'in progress'
+        $head = (& git -C $renamed rev-parse HEAD)
+        $log = Invoke-ScheduledRunner $scheduledRoot
+
+        Assert-True ($log -notmatch 'auto-commit') 'generic auto-commit path ran for a protocol repository'
+        Assert-True ((& git -C $renamed rev-parse HEAD) -eq $head) 'protocol repository was auto-committed'
+    }
+
+    Invoke-Test 'the machine-wide sync script checks pause leases' {
+        # The global runner lives outside this repository and cannot be executed
+        # here (it calls `gh repo list`), so assert its source honours leases.
+        # This is the script that actually produced the bad auto-commits.
+        $globalScript = Join-Path (Split-Path $sourceRoot -Parent) 'sync-repos.ps1'
+        if (-not (Test-Path -LiteralPath $globalScript -PathType Leaf)) {
+            Write-Host '  (skipped: machine-wide sync-repos.ps1 not present)'
+            return
+        }
+        $content = Get-Content -LiteralPath $globalScript -Raw
+        Assert-True ($content -match 'AUTOSYNC_PAUSE_LEASES') `
+            'sync-repos.ps1 does not check AUTOSYNC_PAUSE_LEASES; agent leases will be ignored'
+        Assert-True ($content -match 'AUTOSYNC_PAUSED') `
+            'sync-repos.ps1 does not check AUTOSYNC_PAUSED'
+    }
 } finally {
     Clear-LocalRemote
     Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {

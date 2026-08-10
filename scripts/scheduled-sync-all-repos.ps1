@@ -39,19 +39,52 @@ Get-ChildItem -LiteralPath $RepositoriesRoot -Directory | ForEach-Object {
     $repositoryName = $_.Name
     if (-not (Test-Path -LiteralPath (Join-Path $repository '.git'))) { return }
     try {
+        # Detect the repository-local protocol by its presence, NOT by directory
+        # name. The working copy has been checked out as both 'StickBlade' and
+        # 'StickBladeRPG'; a name equality test silently routed the latter down
+        # the generic path below, which ignores pause leases and auto-committed
+        # agents' in-progress work.
         $stickBladeScript = Join-Path $repository 'scripts\autosync.ps1'
-        if ($repositoryName -eq 'StickBlade' -and (Test-Path -LiteralPath $stickBladeScript)) {
-            . (Join-Path $repository 'scripts\autosync-common.ps1')
-            [void](Test-StickBladeRepositoryIdentity $repository -ThrowOnFailure)
-            Write-SyncLog 'Syncing StickBlade through repository safety protocol'
+        if (Test-Path -LiteralPath $stickBladeScript -PathType Leaf) {
+            $commonScript = Join-Path $repository 'scripts\autosync-common.ps1'
+            if (Test-Path -LiteralPath $commonScript -PathType Leaf) {
+                . $commonScript
+                # Only assert StickBlade's identity for a repository that
+                # actually claims to be StickBlade. Another repository adopting
+                # the same protocol layout must not be rejected outright.
+                $identity = Test-StickBladeRepositoryIdentity $repository
+                if (-not $identity.Valid -and $identity.PackageName -eq 'stickblade') {
+                    throw "StickBlade identity check failed for '$repository': origin '$($identity.Remote)', missing '$($identity.MissingFiles -join ', ')'."
+                }
+            }
+            Write-SyncLog "Syncing $repositoryName through its repository safety protocol"
             $output = & powershell.exe -NoProfile -NonInteractive -File $stickBladeScript -RepositoryRoot $repository 2>&1
-            Write-SyncLog "  StickBlade protocol: $($output -join [Environment]::NewLine)"
-            if ($LASTEXITCODE -ne 0) { Write-SyncLog "  StickBlade protocol stopped safely with exit code $LASTEXITCODE" }
+            Write-SyncLog "  protocol: $($output -join [Environment]::NewLine)"
+            if ($LASTEXITCODE -ne 0) { Write-SyncLog "  protocol stopped safely with exit code $LASTEXITCODE" }
             return
         }
 
         # Preserve the pre-existing behavior for repositories that have not
-        # adopted their own repository-local safety protocol.
+        # adopted their own repository-local safety protocol — but still honour
+        # an explicit pause. This generic path runs `add -A`, so ignoring a
+        # pause here would commit whatever an agent had half-written.
+        $gitDirOutput = & git -C $repository rev-parse --absolute-git-dir 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitDirOutput) {
+            $gitDir = ([string]($gitDirOutput | Select-Object -Last 1)).Trim()
+            if (Test-Path -LiteralPath (Join-Path $gitDir 'AUTOSYNC_PAUSED')) {
+                Write-SyncLog "Skipping $repositoryName; auto-sync is paused."
+                return
+            }
+            $leaseDirectory = Join-Path $gitDir 'AUTOSYNC_PAUSE_LEASES'
+            if (Test-Path -LiteralPath $leaseDirectory -PathType Container) {
+                $leases = @(Get-ChildItem -LiteralPath $leaseDirectory -File -ErrorAction SilentlyContinue)
+                if ($leases.Count -gt 0) {
+                    Write-SyncLog "Skipping $repositoryName; $($leases.Count) agent pause lease(s) active."
+                    return
+                }
+            }
+        }
+
         Write-SyncLog "Syncing $repositoryName"
         $status = & git -C $repository status --porcelain 2>&1
         if ($LASTEXITCODE -ne 0) { throw "git status failed: $($status -join [Environment]::NewLine)" }

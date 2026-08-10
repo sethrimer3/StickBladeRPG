@@ -57,6 +57,40 @@ threshold with `-StaleLeaseHours <hours>`. Stale or unreadable leases are never
 removed automatically: inspect their metadata and repository state before
 releasing that exact ID.
 
+## Who actually enforces a lease
+
+A lease only protects the tree if the process doing the committing checks for
+it. Three runners can commit this repository, and all three must check:
+
+| Runner | Location | Checks |
+|---|---|---|
+| `scripts/autosync.ps1` | this repo | marker + leases (always did) |
+| `scripts/scheduled-sync-all-repos.ps1` | this repo | marker + leases, and delegates to the repo-local protocol when `scripts/autosync.ps1` exists |
+| `sync-repos.ps1` | machine-wide, one directory above this repo | marker + leases, and delegates to the repo-local protocol |
+
+Fixed in BUILD 615 after auto-sync committed an agent's in-progress tree twice
+while a lease was held (commits `d53116ab` and `134e54ae`). Two independent
+defects:
+
+- The machine-wide `sync-repos.ps1` checked only the legacy `AUTOSYNC_PAUSED`
+  marker and never `AUTOSYNC_PAUSE_LEASES/`, so every agent lease was invisible
+  to it. This is the script that produced both bad commits.
+- `scheduled-sync-all-repos.ps1` selected the safe repository-local path with
+  `$repositoryName -eq 'StickBlade'`. The working copy is checked out as
+  `StickBladeRPG`, so it fell through to the generic `git add -A` path, which
+  had no pause check at all. Detection is now by presence of
+  `scripts/autosync.ps1`, not by directory name.
+
+`scripts/tests/autosync-integration.ps1` covers all of this: three functional
+tests drive the scheduled runner against temporary repositories holding a lease,
+a legacy marker, and a deliberately non-`StickBlade` directory name, plus a
+source guard asserting the machine-wide script still checks both. The three
+functional tests were verified to fail against the pre-fix runner.
+
+Note that `sync-repos.ps1` lives outside this repository and is therefore not
+version-controlled here. If it is restored from a backup or another machine,
+re-apply the lease check — the source-guard test will fail loudly if it regresses.
+
 ## Lock and recovery
 
 `.git/AUTOSYNC_RUNNING` prevents concurrent instances and records process ID and
