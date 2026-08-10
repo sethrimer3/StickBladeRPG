@@ -32,6 +32,7 @@ import { spawnBackgroundFluidParticles, spawnAllDustPiles, BACKGROUND_FLUID_COUN
 import { spawnEnemyClusters } from './gameEnemySpawn';
 import { initGrappleHunterChainParticles } from '../sim/clusters/grappleHunterAi';
 import { loadRoomHazards, loadRoomRopes, loadRoomFallingBlocks, loadRoomGrasshoppers } from './gameRoom';
+import { loadRoomPixelMaterials } from './gameRoomPixelMaterials';
 import { loadRoomChallengeElements } from './gameRoomChallenge';
 import { applyRoomWallTemplate, buildRoomWallTemplateIncremental } from './gameRoomWalls';
 import type { RoomRuntimeCache } from './roomRuntimeCache';
@@ -233,6 +234,11 @@ export function buildResidentWorldState(
     const _t = import.meta.env?.DEV ? performance.now() : 0;
     spawnAllDustPiles(rw);
     FP.recordLoadPhaseStep('Resident:dustPiles', import.meta.env?.DEV ? performance.now() - _t : 0);
+  }
+  {
+    const _t = import.meta.env?.DEV ? performance.now() : 0;
+    loadRoomPixelMaterials(rw, room);
+    FP.recordLoadPhaseStep('Resident:pixelMaterials', import.meta.env?.DEV ? performance.now() - _t : 0);
   }
 
   if (import.meta.env?.DEV) {
@@ -537,6 +543,18 @@ export function* createResidentBuildGenerator(
     } else { FP.recordLoadPhaseStep('Resident:dustPiles', 0); }
   }
   yield 'phaseE_dust';
+
+  // ── Phase E step 3: pixel materials / solid mask ──────────────────────────
+  {
+    const _t = import.meta.env?.DEV ? performance.now() : 0;
+    loadRoomPixelMaterials(rw, room);
+    if (import.meta.env?.DEV) {
+      const _ms = performance.now() - _t;
+      FP.recordLoadPhaseStep('Resident:pixelMaterials', _ms);
+      _warnLongPhase('phaseE_pixelMaterials', _ms, room.id, diagContext);
+    } else { FP.recordLoadPhaseStep('Resident:pixelMaterials', 0); }
+  }
+  yield 'phaseE_pixelMaterials';
 
   if (import.meta.env?.DEV) {
     console.log(

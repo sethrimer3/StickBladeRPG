@@ -189,7 +189,7 @@ const JUMP_IMPULSE = 1.85;
  * Applied only to points still moving downward, so it bleeds off impact
  * without touching the horizontal motion that carries a running jump.
  */
-const LANDING_ABSORB = 0.30;
+const LANDING_ABSORB = 0.15;
 /** Airborne frames required before a touchdown counts as a real landing. */
 const LANDING_ABSORB_MIN_AIR_FRAMES = 8;
 /**
@@ -214,6 +214,8 @@ const STEER_FOOT_PUSH = 0.50;
 const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [SR_HEAD, SR_CHEST, 3.6, 0.5, 0.5],
   [SR_CHEST, SR_HIP, 3.6, 0.5, 0.5],
+  // Direct spine constraint: keeps the head and hip from collapsing onto each other.
+  [SR_HEAD, SR_HIP, 7.2, 0.4, 0.4],
   [SR_CHEST, SR_SHOULDER_L, 4.8, 0.5, 0.5],
   [SR_CHEST, SR_SHOULDER_R, 4.8, 0.5, 0.5],
   [SR_SHOULDER_L, SR_HAND_L, 4.8, 0.5, 0.5],
@@ -468,10 +470,12 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     body.facingDirection = moveDirection < 0 ? -1 : 1;
   }
 
-  // ── 3. Constraints — ONE pass, soft weights ─────────────────────────────
-  for (let c = 0; c < CONSTRAINTS.length; c++) {
-    const [ia, ib, rest, wa, wb] = CONSTRAINTS[c];
-    constrain(body, ia, ib, rest, wa, wb);
+  // ── 3. Constraints — TWO passes, soft weights ───────────────────────────
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 0; c < CONSTRAINTS.length; c++) {
+      const [ia, ib, rest, wa, wb] = CONSTRAINTS[c];
+      constrain(body, ia, ib, rest, wa, wb);
+    }
   }
 
   // ── 4. Elastic collision ────────────────────────────────────────────────

@@ -25,6 +25,8 @@ import {
   type ResidentBuildManagerPort,
   type ResidentBuildSchedulerDeps,
 } from '../screens/residentBuildScheduler';
+import { buildResidentWorldState } from '../screens/residentWorldBuilder';
+import { createRoomRuntimeCache } from '../screens/roomRuntimeCache';
 
 // ── Test harness ──────────────────────────────────────────────────────────────
 
@@ -518,4 +520,22 @@ test('getRoomVersion reports the counter a freshly started build should capture'
   assert.equal(h.scheduler.getRoomVersion('a'), 1);
   assert.equal(h.scheduler.isBuildVersionCurrent('a', 1), true);
   assert.equal(h.scheduler.isBuildVersionCurrent('a', 0), false);
+});
+
+test('buildResidentWorldState populates pixelMaterialSystem.solid with wall solidity', () => {
+  const room = {
+    id: 'test_room_solids',
+    widthBlocks: 10,
+    heightBlocks: 10,
+    worldNumber: 1,
+    walls: [{ xBlock: 0, yBlock: 5, wBlock: 10, hBlock: 1, blockTheme: 'stone' }],
+    transitions: [],
+    enemies: [],
+  } as unknown as RoomDef;
+  const cache = createRoomRuntimeCache(10);
+  const rw = buildResidentWorldState(room, 12345, cache);
+  assert.ok(rw.pixelMaterialSystem, 'pixelMaterialSystem should exist');
+  assert.ok(rw.pixelMaterialSystem.solid, 'pixelMaterialSystem.solid should exist');
+  assert.equal(rw.pixelMaterialSystem.solid.isSolid(16, 40), true, 'wall cell should be solid');
+  assert.equal(rw.pixelMaterialSystem.solid.isSolid(16, 16), false, 'empty cell should not be solid');
 });
