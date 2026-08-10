@@ -368,9 +368,9 @@ export function isPlayerEquippableWeapon(def: WeaponDef): boolean {
  *
  * Phase 2 implemented contact weapons (`weaponSwing.ts`); Phase 2a added the
  * projectile kinds (`weaponProjectiles.ts`); Phase 2c added channelled staves
- * (`staffChannel.ts`) and orbiting spirit familiars (`spiritOrbs.ts`).
- * `summoner` remains data-only — persistent allied entities with their own AI
- * are their own system. See the follow-up item in `docs/Todo.md`.
+ * (`staffChannel.ts`) and orbiting spirit familiars (`spiritOrbs.ts`); Phase 2f
+ * added summoned familiars (`weaponSummons.ts`). Every donor weapon kind now
+ * has a runtime.
  *
  * Note this reports the KIND's coverage, not every donor flourish:
  *   • Twelve weapons declare on-expiry callbacks that spawn bespoke secondary
@@ -390,6 +390,7 @@ const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
   'magic',
   'staff',
   'spirit',
+  'summoner',
 ]);
 
 /** True when this weapon's kind has working combat behavior in the current build. */

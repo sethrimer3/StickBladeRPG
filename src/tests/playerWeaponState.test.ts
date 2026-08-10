@@ -64,10 +64,12 @@ describe('equipping', () => {
     assert.equal(state.equippedWeaponId, 'sword');
   });
 
-  test('a weapon kind with no runtime is refused', () => {
+  test('a weapon with no working effect is refused', () => {
     const state = createPlayerWeaponState();
-    // Summoner weapons need persistent allied entities — still unported.
-    assert.equal(equipPlayerWeapon(state, 'apiaryLexicon'), false);
+    // Every KIND now has a runtime, but these two staves' only effect is an
+    // unported bespoke aura, so equipping them would be a dead weapon.
+    assert.equal(equipPlayerWeapon(state, 'aegisStaff'), false);
+    assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), false);
     assert.equal(state.equippedWeaponId, null);
   });
 

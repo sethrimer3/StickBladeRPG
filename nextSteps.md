@@ -2387,3 +2387,52 @@ Important context for the next agent:
   this environment, so `requestAnimationFrame` never fires and the game loop is
   frozen. Equip one with `__dwEquip('emberStaff')` / `__dwEquip('tempestHalo')`
   and hold Q to try them in a real session.
+
+## STICK-RPG port — Phase 2f summoner runtime (BUILD 619)
+
+All 75 ported weapons now have a working runtime. `isWeaponRuntimeImplemented`
+returns true for every kind, pinned by a test that iterates the whole table.
+
+Landed: `src/sim/weapons/weaponSummons.ts` — a fixed-capacity (32) familiar pool.
+`summonCharges` familiars per cast spread around the caster, clamped to the
+weapon's own `maxActiveSummons` (20 bees / 4 birds / 3 spiders) by evicting
+oldest-first. Each seeks the nearest living enemy, bounces off terrain, damages
+on contact behind a 30-tick hit cooldown, recoils off its target so it visibly
+re-approaches, and expires after `summonLifetime`. 27 tests. Full suite
+3458/3458; build and lint clean.
+
+Design decisions worth keeping:
+
+- **A pool, not allied clusters.** `ClusterState` carries invariants this system
+  has no business touching: `countsTowardRoomCompletionFlag`, enemy-AI target
+  selection, the 64-slot reusable snapshot cluster pool, and the player-damage
+  router. Allied clusters would risk enemies targeting the player's own summons
+  and room completion miscounting. The pool mirrors `weaponProjectiles.ts` and
+  cannot disturb any of that. If summons ever need to be damageable or to
+  collide with the player, revisit — that is the point where a cluster starts
+  earning its cost.
+- **Locomotion is derived from data, not from `summonForm`.** A familiar that
+  declares `summonClimbLift`/`summonJumpStrength` is a grounded hopper (bird,
+  spider); one that does not is a free flier (bee). A new donor form therefore
+  behaves sensibly without editing the module.
+- Familiars are dismissed on room change (they belong to the room they were
+  called into) but SURVIVE a weapon swap, which is why `tickWeaponSummons` runs
+  regardless of what is equipped.
+
+Known gaps, both now tracked as Todo items:
+
+- **Phase 2g — souls/guardians.** All four summoners declare a soul-collection
+  and empowered-guardian mechanic (`maxSouls`, `soulRange`, `guardianRadius`,
+  `empowerCooldown`) that is entirely unimplemented. This matters most for
+  `soulbinderPrimer`, which declares NO `summonForm` at all — its basic cast
+  currently produces plain wisps on shared defaults, and the soul mechanic is
+  its actual identity. It is equippable and functional, but not yet itself.
+- **Phase 2h — renderers.** Staff beams, the charge meter, spirit orbs, and
+  familiars are all simulated but invisible; `weaponRenderer.ts` still draws
+  only blades and projectiles. Several weapon kinds are therefore functional but
+  cannot be seen. The state each renderer needs is already exposed
+  (`beamEndXWorld`/`beamActiveFlag`, `getSpiritOrbPosition`, the summon pool).
+- Not verified in a live browser session, same environment limitation as the
+  previous phases: the preview pane does not composite, so rAF never fires and
+  the game loop is frozen. `__dwEquip('apiaryLexicon')` then Q in a real
+  session.

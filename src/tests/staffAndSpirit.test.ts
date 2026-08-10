@@ -423,10 +423,10 @@ describe('integration through the player weapon', () => {
     assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), false);
   });
 
-  test('summoner weapons are still refused', () => {
+  test('summoner weapons gained a runtime in Phase 2f', () => {
     const state = createPlayerWeaponState();
-    assert.equal(equipPlayerWeapon(state, 'apiaryLexicon'), false);
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), false);
+    assert.equal(equipPlayerWeapon(state, 'apiaryLexicon'), true);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), true);
   });
 
   test('holding attack with a staff damages an enemy over time', () => {

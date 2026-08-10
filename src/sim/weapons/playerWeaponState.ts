@@ -49,6 +49,14 @@ import {
   type SpiritOrbState,
 } from './spiritOrbs';
 import {
+  castWeaponSummons,
+  createSummonPool,
+  isSummonerWeapon,
+  resetSummonPool,
+  tickWeaponSummons,
+  type SummonPool,
+} from './weaponSummons';
+import {
   createWeaponProjectilePool,
   fireRangedWeapon,
   getWeaponBurstCount,
@@ -91,6 +99,8 @@ export interface PlayerWeaponState {
   staff: StaffChannelState;
   /** Orbiting familiars for `kind: 'spirit'` weapons. */
   spiritOrbs: SpiritOrbState;
+  /** Summoned familiars for `kind: 'summoner'` weapons. */
+  summons: SummonPool;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -106,6 +116,7 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     attackStartedFlag: 0,
     staff: createStaffChannelState(),
     spiritOrbs: createSpiritOrbState(),
+    summons: createSummonPool(),
   };
 }
 
@@ -121,6 +132,9 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetWeaponProjectilePool(state.projectiles);
   resetStaffChannelState(state.staff);
   resetSpiritOrbs(state.spiritOrbs, getWeaponDef(state.equippedWeaponId));
+  // Familiars are bound to the room they were called into; a room change
+  // dismisses them rather than teleporting them along with the player.
+  resetSummonPool(state.summons);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -207,6 +221,23 @@ export function tryStartPlayerWeaponAttack(
   // so this is a request, not a one-shot trigger.
   if (def.kind === 'staff') {
     return requestStaffChannel(state.staff, def, aimXWorld, aimYWorld);
+  }
+
+  // Summoner weapons cast a group of familiars on a cooldown. The swing state
+  // serves purely as that cooldown timer; no arc is animated.
+  if (isSummonerWeapon(def)) {
+    if (!canStartWeaponSwing(state.swing)) return false;
+
+    const cast = castWeaponSummons(
+      state.summons, def,
+      player.positionXWorld, player.positionYWorld,
+      attack, rng,
+    );
+    if (cast.summonedCount === 0) return false;
+
+    state.swing.cooldownRemainingTicks = Math.max(1, getRangedCooldownTicks(def));
+    state.attackStartedFlag = 1;
+    return true;
   }
 
   // Spirit weapons are paced by their orb ring, not by a cooldown — every
@@ -310,6 +341,12 @@ export function tickPlayerWeapon(
   }
 
   tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
+
+  // Familiars outlive the weapon that called them, so this runs regardless of
+  // what is currently equipped — a swap does not dismiss an active swarm.
+  if (state.summons.liveCount > 0) {
+    tickWeaponSummons(world, state.summons);
+  }
 
   if (state.burstShotsRemaining > 0 && def !== null && player !== null) {
     state.burstCooldownTicks--;

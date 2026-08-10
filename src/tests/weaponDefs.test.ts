@@ -145,12 +145,20 @@ describe('weapon lookup', () => {
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['templarianWallShield']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['bow']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['wand']), true);
-    // Staff and spirit kinds (Phase 2c).
+    // Staff and spirit kinds (Phase 2c); summoner (Phase 2f).
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['emberStaff']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['spiritBand']), true);
-    // Summoner remains data-only: persistent allied entities are their own system.
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['soulbinderPrimer']), false);
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['soulbinderPrimer']), true);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), true);
+  });
+
+  test('every ported weapon kind now has a runtime', () => {
+    for (const id of WEAPON_IDS) {
+      assert.equal(
+        isWeaponRuntimeImplemented(WEAPONS[id]), true,
+        `${id} (kind ${WEAPONS[id].kind}) reports no runtime`,
+      );
+    }
   });
 
   test('base element defaults to physical', () => {
