@@ -6,7 +6,7 @@
  *   - Radiant Tether  (warm amber/gold palette)
  *   - Radiant Web     (cool teal/green palette)
  *
- * Design principles (from DustWeaver coding conventions):
+ * Design principles (from StickBlade coding conventions):
  *   • No allocations per frame — mote arrays are pre-allocated on first init.
  *   • Pixel-locked fillRect for motes (matches ODC / Constellation renderers).
  *   • Fake glow via translucent larger rect behind the core pixel.

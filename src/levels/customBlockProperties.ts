@@ -51,7 +51,7 @@ export type BreakResistancePreset = 'weak' | 'standard' | 'reinforced';
 /**
  * Phase 2F: how much a solid custom block attenuates PIXEL-MATERIAL wind
  * transmission (sand/water/sandstone wind, via PixelMaterialSystem.applyWindForce).
- * Named distinctly (not "WindResponsePreset") because DustWeaver already has an
+ * Named distinctly (not "WindResponsePreset") because StickBlade already has an
  * UNRELATED per-pixel-material "wind response" concept
  * (getMaterialWindResponse in pixelMaterialTypes.ts — how reactive a material
  * itself is to wind). This property controls only the TRANSMISSION term (how

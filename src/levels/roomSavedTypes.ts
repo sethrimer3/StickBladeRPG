@@ -157,8 +157,8 @@ export type SavedEnemyType =
   | 'orbitalDustCoreLarge'
   | 'dustBlockMimic'
   | 'dustBlockMimicLarge'
-  | 'dustWeaverArchitect'
-  | 'dustWeaverArchitectLarge'
+  | 'stickBladeArchitect'
+  | 'stickBladeArchitectLarge'
   | 'voidSingularity'
   | 'voidSingularityPair'
   | 'dustLeech'
@@ -181,7 +181,7 @@ export const SAVED_ENEMY_TYPES = [
   'wheel', 'beetle', 'bubble', 'iceBubble', 'squareStampede', 'goldenMimic',
   'beeSwarm', 'webSpider', 'dustConstellation', 'dustConstellationLarge',
   'orbitalDustCore', 'orbitalDustCoreLarge', 'dustBlockMimic', 'dustBlockMimicLarge',
-  'dustWeaverArchitect', 'dustWeaverArchitectLarge', 'voidSingularity',
+  'stickBladeArchitect', 'stickBladeArchitectLarge', 'voidSingularity',
   'voidSingularityPair', 'dustLeech', 'gridBlock1x1Slow', 'gridBlock1x1Medium',
   'gridBlock1x1Fast', 'gridBlock2x2Slow', 'gridBlock2x2Medium', 'gridBlock2x2Fast',
   'gridSnake', 'momentumTurret', 'slimeSnail', 'shadow', 'needleUrchin',

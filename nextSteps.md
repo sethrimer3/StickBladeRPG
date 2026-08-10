@@ -1,4 +1,4 @@
-# DustWeaver — Next Steps
+# StickBlade — Next Steps
 
 ## Current Documentation Status
 
@@ -510,14 +510,14 @@ Deliberately left unchanged (no demonstrated gap): the memory-budget eviction pa
 
 **What was done:**
 1. Updated `scripts/bake-room-wall-templates.mjs` to target `BAKED_WALL_SCHEMA_VERSION = 2` and support surface rim styles (`rimStyleIndex`, `rimStyles`), matching `src/levels/roomWallTemplateHash.ts` and `src/editor/roomJsonSerializer.ts`.
-2. Re-baked all 23 official campaign rooms (`ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/ROOMS/*_room.json`) so their `bakedWallTemplate` hash matches runtime calculations exactly.
+2. Re-baked all 23 official campaign rooms (`ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS/*_room.json`) so their `bakedWallTemplate` hash matches runtime calculations exactly.
 3. Verified idempotency: re-running the script skips all rooms as already valid.
 
 ---
 
 ## BUILD 428 — Per-Transition Profiler + computeRenderStateKey Memoization
 
-**Why:** The audit pass (problem statement: "DustWeaver ultimate room loading and rendering optimization") confirmed that the major architectural fixes (resident hot-swap, baked walls, trigger strips, chunk prewarm, schema v3, zone loader, incremental wall merge, entry warm) are already in place. To choose the next genuine bottleneck instead of speculating, we need per-transition measurements.
+**Why:** The audit pass (problem statement: "StickBlade ultimate room loading and rendering optimization") confirmed that the major architectural fixes (resident hot-swap, baked walls, trigger strips, chunk prewarm, schema v3, zone loader, incremental wall merge, entry warm) are already in place. To choose the next genuine bottleneck instead of speculating, we need per-transition measurements.
 
 **What was added:**
 
@@ -596,7 +596,7 @@ asset and register the URL in `ITEM_SPRITE_URL` inside `editorPalettePreview.ts`
 - `enemy_dust_constellation`, `enemy_dust_constellation_large` — procedural star
 - `enemy_orbital_dust_core`, `enemy_orbital_dust_core_large` — procedural orb
 - `enemy_dust_block_mimic`, `enemy_dust_block_mimic_large` — procedural block
-- `enemy_dust_weaver_architect`, `enemy_dust_weaver_architect_large` — procedural diamond
+- `enemy_stick_blade_architect`, `enemy_stick_blade_architect_large` — procedural diamond
 - `enemy_void_singularity`, `enemy_void_singularity_pair` — procedural void
 - `enemy_dust_leech` — procedural oval
 - `enemy_radiant_web` — procedural circle
@@ -633,7 +633,7 @@ The following area-based systems remain and were not changed in this pass:
 - **DEV scan fixed:** The DEV-only `bgWallGrid.reduce((n, v) => n + v, 0)` full-grid pass has been removed. `occupiedCells` is now counted during the painting loop (increment only when the target cell was previously 0), avoiding a second full-grid scan in the debug path.
 - **Constraint:** `src/sim/clusters/snakeAi.ts` reads `world.bgWallGrid[idx]` directly (line ~215). Any sparse path requires a compatibility adapter.
 - **Recommended next step:** If memory pressure from very large rooms becomes a concern, wrap `bgWallGrid` behind a `BgWallGridView` interface that picks dense vs. sparse based on a `DENSE_BG_GRID_MAX_CELLS = 65536` threshold. Gate behind the `65536` area check already logged in DEV.
-- **Audit closed (Todo.md, not currently justified):** Measured every current official campaign room (`ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/ROOMS/*_room.json`, `size` field, sorted by cell count):
+- **Audit closed (Todo.md, not currently justified):** Measured every current official campaign room (`ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS/*_room.json`, `size` field, sorted by cell count):
 
   | room | w × h | cells | dense bytes |
   |---|---|---|---|
@@ -1150,7 +1150,7 @@ This pass introduces `ResidentRoomManager` to preserve enemy state across room t
 #### Enemy restoration policy
 
 - **Restorable** (shallow-copy safe): all enemy types except the 8 complex types listed below.
-- **Not restorable in Phase 1** (complex global state): RadiantTether, RadiantWeb, DustConstellation, OrbitalDustCore, DustBlockMimic, DustWeaverArchitect, VoidSingularity, DustLeech.  These respawn fresh on revisit.
+- **Not restorable in Phase 1** (complex global state): RadiantTether, RadiantWeb, DustConstellation, OrbitalDustCore, DustBlockMimic, StickBladeArchitect, VoidSingularity, DustLeech.  These respawn fresh on revisit.
 - Dead restorable enemies stay dead.
 - Alive restorable enemies respawn at their frozen HP (partial health preserved).
 - Grapple hunter chains are re-initialised at fresh buffer indices after restoration.
@@ -1612,12 +1612,12 @@ If `liquidBodyBuilder.ts` still creates a temporary four-item `neighbours` array
 
 ---
 
-## Priority 3 — Dust Weaver Architect Polish
+## Priority 3 — Stick Blade Architect Polish
 
 ### Completed
 
 1. **Hit-flash visual on the Architect core**
-   `dustWeaverArchitectHitFlashTicks` is set in `forces.ts` when the Architect takes particle damage, and the renderer draws a bright expanding glow ring.
+   `stickBladeArchitectHitFlashTicks` is set in `forces.ts` when the Architect takes particle damage, and the renderer draws a bright expanding glow ring.
 
 2. **Dust Nail secondary attack**
    Fires one Dust Nail toward the player after the player stays outside `DWA_NAIL_MIN_RANGE_WORLD` for `DWA_NAIL_RANGE_PRESSURE_TICKS`, then respects `DWA_NAIL_COOLDOWN_TICKS`.
@@ -1965,8 +1965,8 @@ Contracts a follow-up agent must not "fix" blindly:
   data varies by platform/Electron version and the repo requires deterministic
   behaviour. `en` and `es` are listed separately even though they share the
   one/other rule.
-- The preference lives ONLY in localStorage `dustweaver-locale`
-  (legacy `dustweaver-language` is migrated forward and deleted). It is never
+- The preference lives ONLY in localStorage `stickblade-locale`
+  (legacy `stickblade-language` is migrated forward and deleted). It is never
   written to save slots, campaign JSON, or room data —
   `src/tests/i18nSimIsolation.test.ts` pins this.
 - `formatRunTimer` in `saveSlots.ts` is intentionally NOT localized (run times
@@ -2006,7 +2006,7 @@ NOT migrated yet (deliberately out of scope for this pass — add each file to
 Manual verification performed (Vite dev server + Browser pane): the i18n module
 was driven directly in the real browser bundle — runtime switching, per-key
 English fallback, invalid-locale fallback, plural selection, persistence to
-`localStorage['dustweaver-locale']`, live DOM re-binding, the canvas font stack
+`localStorage['stickblade-locale']`, live DOM re-binding, the canvas font stack
 (accepted by the real Canvas2D parser; accented Spanish measures normally, no
 tofu), and width-budgeted truncation of the translated control hint all behaved
 as specified. The rendered menus themselves could NOT be checked: the sandboxed

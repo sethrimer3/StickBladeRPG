@@ -365,10 +365,10 @@ export interface RoomEnemyDef {
   isDustBlockMimicFlag?: 0 | 1;
   /** 1 for the large Dust Block Mimic variant (2×2 block, more motes, higher HP). */
   isDustBlockMimicLargeFlag?: 0 | 1;
-  /** 1 if this enemy is a Dust Weaver Architect. */
-  isDustWeaverArchitectFlag?: 0 | 1;
-  /** 1 for the large Dust Weaver Architect variant (more motes, higher HP, larger patterns). */
-  isDustWeaverArchitectLargeFlag?: 0 | 1;
+  /** 1 if this enemy is a Stick Blade Architect. */
+  isStickBladeArchitectFlag?: 0 | 1;
+  /** 1 for the large Stick Blade Architect variant (more motes, higher HP, larger patterns). */
+  isStickBladeArchitectLargeFlag?: 0 | 1;
   /** 1 for a Void Singularity enemy. */
   isVoidSingularityFlag?: 0 | 1;
   /** 1 when this Void Singularity is part of the paired black hole / white hole variant. */

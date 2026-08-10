@@ -1,6 +1,6 @@
 
 ````markdown
-# DustWeaver Ordered Mote Economy and Weave Interaction Roadmap
+# StickBlade Ordered Mote Economy and Weave Interaction Roadmap
 
 ## Implementation Progress Log
 
@@ -262,7 +262,7 @@ shield, sword) and the snapshot layer is clean for renderer expansion.
 
 ## Purpose
 
-This document defines the staged implementation plan for DustWeaver's ordered mote economy, dynamic grapple range, and integrated Storm, Shield, Sword, Arrow, and Grapple Weave behavior.
+This document defines the staged implementation plan for StickBlade's ordered mote economy, dynamic grapple range, and integrated Storm, Shield, Sword, Arrow, and Grapple Weave behavior.
 
 The current codebase already has a Phase 1 Shield Sword MVP. That MVP added a `shield_sword` weave, a sword state machine, a visual sword renderer, auto-targeting, slash damage, and right-mouse transition into the existing Shield Weave crescent.
 
@@ -1669,7 +1669,7 @@ Player releases RMB:
 
 # Long-Term Design Direction
 
-This ordered mote queue should become one of DustWeaver's signature systems.
+This ordered mote queue should become one of StickBlade's signature systems.
 
 It turns dust loadout into a physical combat language:
 

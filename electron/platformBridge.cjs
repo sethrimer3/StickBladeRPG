@@ -17,7 +17,7 @@ const ACHIEVEMENT_IDS = [
   "FIRST_WEAVE",
   "FIRST_CLEAR",
   "STORMWEAVE_MASTER",
-  "DUSTWEAVER_COMPLETE",
+  "STICKBLADE_COMPLETE",
   "SPEED_RUNNER",
   "NO_HIT_ROOM",
   "MOTE_HOARDER",
@@ -29,8 +29,8 @@ const ACHIEVEMENT_IDS = [
 function loadSteamworks() {
   try {
     const steamworks = require("steamworks.js");
-    const appId = process.env.DUSTWEAVER_STEAM_APP_ID
-      ? Number(process.env.DUSTWEAVER_STEAM_APP_ID)
+    const appId = process.env.STICKBLADE_STEAM_APP_ID
+      ? Number(process.env.STICKBLADE_STEAM_APP_ID)
       : undefined;
     return appId !== undefined ? steamworks.init(appId) : steamworks.init();
   } catch {
@@ -196,7 +196,7 @@ function registerPlatformIpcHandlers() {
     }
   });
 
-  // Reads an installed Workshop package's workshop-meta.json + *.dwcampaign.json
+  // Reads an installed Workshop package's workshop-meta.json + *.sbcampaign.json
   // + a full file listing (for src/workshop/packageValidator.ts) from disk.
   // Mirrors src/workshop/steamWorkshopAdapter.ts::readInstalledWorkshopPackageFromDisk
   // — duplicated here (like every other Workshop handler in this file) because
@@ -245,9 +245,9 @@ function registerPlatformIpcHandlers() {
         return { ok: false, error: `Workshop package at "${localPath}" has an invalid workshop-meta.json: ${String(err && err.message ? err.message : err)}` };
       }
 
-      const campaignFiles = files.filter((f) => f.path.toLowerCase().endsWith(".dwcampaign.json"));
+      const campaignFiles = files.filter((f) => f.path.toLowerCase().endsWith(".sbcampaign.json"));
       if (campaignFiles.length === 0) {
-        return { ok: false, error: `Workshop package at "${localPath}" contains no .dwcampaign.json file` };
+        return { ok: false, error: `Workshop package at "${localPath}" contains no .sbcampaign.json file` };
       }
       let campaignData;
       try {

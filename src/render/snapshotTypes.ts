@@ -295,7 +295,7 @@ export interface WorldSnapshot {
   readonly dbmMoteTargetLocalY: Float32Array;
   readonly dbmMotePulsePhaseRad: Float32Array;
 
-  // ── Dust Weaver Architect world arrays ────────────────────────────────────
+  // ── Stick Blade Architect world arrays ────────────────────────────────────
   readonly dwaMoteAngleRad: Float32Array;
   readonly dwaMotePulsePhaseRad: Float32Array;
 

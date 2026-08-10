@@ -58,7 +58,7 @@ export let cacheGenerationId = 0;
  *
  * @param manifest            The validated room cache manifest.
  * @param campaignId          The campaign ID.
- * @param isOfficialCampaign  Whether this is the built-in DustWeaver campaign.
+ * @param isOfficialCampaign  Whether this is the built-in StickBlade campaign.
  * @param worldMap            The campaign's worldMap — stored so that
  *                            `loadRoomForGameplayAsync` can be called without
  *                            an explicit worldMap argument (e.g. from the
@@ -100,7 +100,7 @@ export function isRoomFileCacheActive(): boolean {
 
 /**
  * Returns true if the currently active room file cache belongs to the official
- * DustWeaver campaign.
+ * StickBlade campaign.
  *
  * Use this to decide whether to preserve the cache across main-menu visits:
  * the official campaign cache should remain active while the player is on the

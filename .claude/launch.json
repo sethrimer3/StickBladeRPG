@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "DustWeaver Dev",
+      "name": "StickBlade Dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
       "port": 5199,

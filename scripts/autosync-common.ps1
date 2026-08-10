@@ -1,6 +1,6 @@
 Set-StrictMode -Version Latest
 
-function Get-DustWeaverRepositoryRoot {
+function Get-StickBladeRepositoryRoot {
     param([string]$StartPath = $PSScriptRoot)
     $candidate = Get-Item -LiteralPath (Resolve-Path -LiteralPath $StartPath -ErrorAction Stop).Path
     if (-not $candidate.PSIsContainer) { $candidate = $candidate.Directory }
@@ -21,7 +21,7 @@ function Get-NormalizedGitHubRepository {
     return $null
 }
 
-function Test-DustWeaverRepositoryIdentity {
+function Test-StickBladeRepositoryIdentity {
     param(
         [Parameter(Mandatory)][string]$RepositoryRoot,
         [switch]$ThrowOnFailure
@@ -39,9 +39,9 @@ function Test-DustWeaverRepositoryIdentity {
     if (Test-Path -LiteralPath $packagePath -PathType Leaf) {
         try { $packageName = [string]((Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).name) } catch { $packageName = '<unreadable>' }
     }
-    $valid = ($normalizedRemote -eq 'sethrimer3/dustweaver' -or $normalizedRemote -eq 'sethrimer3/stickbladerpg') -and
+    $valid = ($normalizedRemote -eq 'sethrimer3/stickblade' -or $normalizedRemote -eq 'sethrimer3/stickbladerpg') -and
         $missingFiles.Count -eq 0 -and
-        $packageName -eq 'dustweaver'
+        $packageName -eq 'stickblade'
     $result = [pscustomobject]@{
         Valid = $valid
         RepositoryRoot = $resolvedRoot
@@ -51,7 +51,7 @@ function Test-DustWeaverRepositoryIdentity {
         PackageName = $packageName
     }
     if (-not $valid -and $ThrowOnFailure) {
-        throw "DustWeaver repository identity check failed. Resolved path: '$resolvedRoot'. Detected origin: '$remote'. Missing expected files: '$($missingFiles -join ', ')'. Package name: '$packageName'."
+        throw "StickBlade repository identity check failed. Resolved path: '$resolvedRoot'. Detected origin: '$remote'. Missing expected files: '$($missingFiles -join ', ')'. Package name: '$packageName'."
     }
     return $result
 }

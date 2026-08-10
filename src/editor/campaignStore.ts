@@ -313,7 +313,7 @@ export function createCampaignStore(
     }
     const exported: SavedCampaignV1 = {
       v: 1,
-      kind: 'DustWeaverCampaign',
+      kind: 'StickBladeCampaign',
       metadata: {
         version: (() => {
           const prev = baseCampaign.metadata?.version;

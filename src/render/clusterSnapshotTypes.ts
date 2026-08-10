@@ -272,22 +272,22 @@ export interface ClusterSnapshot {
   readonly dustBlockMimicLungeHitPlayerFlag: 0 | 1;
   readonly dustBlockMimicHitFlashTicks: number;
 
-  // ── Dust Weaver Architect ─────────────────────────────────────────────────
-  readonly isDustWeaverArchitectFlag: 0 | 1;
-  readonly isDustWeaverArchitectLargeFlag: 0 | 1;
-  readonly dustWeaverArchitectState: number;
-  readonly dustWeaverArchitectStateTicks: number;
-  readonly dustWeaverArchitectSlotIndex: number;
-  readonly dustWeaverArchitectSpawnXWorld: number;
-  readonly dustWeaverArchitectSpawnYWorld: number;
-  readonly dustWeaverArchitectBobPhaseRad: number;
-  readonly dustWeaverArchitectAttackCooldownTicks: number;
-  readonly dustWeaverArchitectBuildSiteXWorld: number;
-  readonly dustWeaverArchitectBuildSiteYWorld: number;
-  readonly dustWeaverArchitectBuildPatternIndex: number;
-  readonly dustWeaverArchitectHitFlashTicks: number;
-  readonly dustWeaverArchitectRangePressureTicks: number;
-  readonly dustWeaverArchitectNailCooldownTicks: number;
+  // ── Stick Blade Architect ─────────────────────────────────────────────────
+  readonly isStickBladeArchitectFlag: 0 | 1;
+  readonly isStickBladeArchitectLargeFlag: 0 | 1;
+  readonly stickBladeArchitectState: number;
+  readonly stickBladeArchitectStateTicks: number;
+  readonly stickBladeArchitectSlotIndex: number;
+  readonly stickBladeArchitectSpawnXWorld: number;
+  readonly stickBladeArchitectSpawnYWorld: number;
+  readonly stickBladeArchitectBobPhaseRad: number;
+  readonly stickBladeArchitectAttackCooldownTicks: number;
+  readonly stickBladeArchitectBuildSiteXWorld: number;
+  readonly stickBladeArchitectBuildSiteYWorld: number;
+  readonly stickBladeArchitectBuildPatternIndex: number;
+  readonly stickBladeArchitectHitFlashTicks: number;
+  readonly stickBladeArchitectRangePressureTicks: number;
+  readonly stickBladeArchitectNailCooldownTicks: number;
 
   // ── Void Singularity ────────────────────────────────────────────────────────
   readonly isVoidSingularityFlag: 0 | 1;

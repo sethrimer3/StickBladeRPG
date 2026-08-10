@@ -129,7 +129,7 @@ function checkTriggers(g: FallingBlockGroup, world: WorldState): void {
       //   • Anchor must be on or inside the group's actual tile shape.
       //   • Pull vector (anchor → player) must point within 30° of straight down.
       //   • Player must be actively retracting the rope by holding the crouch /
-      //     down key (playerCrouchHeldFlag).  In DustWeaver the same key serves
+      //     down key (playerCrouchHeldFlag).  In StickBlade the same key serves
       //     as both crouch-on-ground and rope-retract-while-grappling; simply
       //     hanging below the block without holding down does NOT trigger.
       if (world.isGrappleActiveFlag === 1 && world.playerCrouchHeldFlag === 1) {

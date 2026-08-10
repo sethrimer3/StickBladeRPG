@@ -3,8 +3,8 @@ param([string]$RepositoryRoot, [string]$LeaseId)
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'autosync-common.ps1')
 try {
-    $RepositoryRoot = if ($RepositoryRoot) { Get-DustWeaverRepositoryRoot $RepositoryRoot } else { Get-DustWeaverRepositoryRoot }
-    [void](Test-DustWeaverRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
+    $RepositoryRoot = if ($RepositoryRoot) { Get-StickBladeRepositoryRoot $RepositoryRoot } else { Get-StickBladeRepositoryRoot }
+    [void](Test-StickBladeRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
     $paths = Get-AutosyncPaths $RepositoryRoot
     if (Test-GitOperationInProgress $paths.GitDirectory) { throw 'an unresolved merge, rebase, cherry-pick, or revert is active' }
     $branch = Get-CurrentGitBranch $RepositoryRoot
@@ -25,9 +25,9 @@ try {
         $reasons = @()
         if ($pauseState.EmergencyPause) { $reasons += 'emergency marker' }
         if ($remaining.Count -gt 0) { $reasons += "leases: $($remaining -join ', ')" }
-        Write-Host "Released $(if ($LeaseId) { "lease '$LeaseId'" } else { 'the emergency marker' }); DustWeaver auto-sync remains paused by $($reasons -join '; ')."
+        Write-Host "Released $(if ($LeaseId) { "lease '$LeaseId'" } else { 'the emergency marker' }); StickBlade auto-sync remains paused by $($reasons -join '; ')."
     } else {
-        Write-Host 'DustWeaver auto-sync is active and will resume on its next scheduled run.'
+        Write-Host 'StickBlade auto-sync is active and will resume on its next scheduled run.'
     }
     exit 0
-} catch { Write-Error "Refusing to resume DustWeaver auto-sync: $($_.Exception.Message)"; exit 1 }
+} catch { Write-Error "Refusing to resume StickBlade auto-sync: $($_.Exception.Message)"; exit 1 }

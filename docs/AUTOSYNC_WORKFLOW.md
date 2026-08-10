@@ -1,6 +1,6 @@
-# DustWeaver Auto-Sync Workflow
+# StickBlade Auto-Sync Workflow
 
-DustWeaver's scheduled auto-sync can commit any dirty file. Coding agents must
+StickBlade's scheduled auto-sync can commit any dirty file. Coding agents must
 pause it so incomplete work, failed experiments, and unrelated local changes
 cannot become automatic commits.
 
@@ -22,7 +22,7 @@ when the pause/resume helpers are called without `-LeaseId`.
 The scheduled process checks for the emergency marker or any lease before
 staging, before committing, and before pulling, rebasing, or pushing. A paused
 run exits successfully without changing Git state. Every helper first verifies
-that the resolved repository is DustWeaver using its configured `origin`,
+that the resolved repository is StickBlade using its configured `origin`,
 expected files, and package metadata.
 
 ## Agent procedure
@@ -92,13 +92,13 @@ Task `\SyncGithubRepos` retains its ten-minute schedule, user context, hidden
 execution, and `C:\Users\srime\Documents\GitHub` working directory. It launches:
 
 ```text
-wscript.exe "C:\Users\srime\Documents\GitHub\DustWeaver\scripts\scheduled-sync-all-repos-hidden.vbs"
+wscript.exe "C:\Users\srime\Documents\GitHub\StickBlade\scripts\scheduled-sync-all-repos-hidden.vbs"
 ```
 
 That tracked wrapper runs `scripts/scheduled-sync-all-repos.ps1`, which verifies
-DustWeaver's identity and delegates it to `scripts/autosync.ps1`; other
+StickBlade's identity and delegates it to `scripts/autosync.ps1`; other
 repositories retain their prior behavior. While any lease or the emergency
-marker is present, DustWeaver exits successfully and the scheduler continues
+marker is present, StickBlade exits successfully and the scheduler continues
 servicing other repositories.
 
 Run the disposable Git-repository regression suite with:

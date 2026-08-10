@@ -93,7 +93,7 @@ const LAVA_ZONE_INVULN_TICKS = 30;
 const BREAKABLE_MOMENTUM_THRESHOLD_WORLD = 250.0;
 
 /**
- * Phase 2E break-resistance tiers, chosen from DustWeaver's real movement
+ * Phase 2E break-resistance tiers, chosen from StickBlade's real movement
  * speed scale (see src/sim/clusters/movementConstants.ts):
  *   - MAX_RUN_SPEED_WORLD_PER_SEC = 105 (legacy top-speed reference; the
  *     current Movement V2 grounded-input target is
@@ -116,7 +116,7 @@ const BREAKABLE_MOMENTUM_THRESHOLD_WORLD = 250.0;
  * 'reinforced' (350) sits above a fast dive alone (300) but is reachable by
  * combining a fast dive with elevated horizontal/grapple-zip momentum, or a
  * grapple-zip release chained into a dash — i.e. deliberately achievable
- * through normal high-speed DustWeaver mechanics, never impossible.
+ * through normal high-speed StickBlade mechanics, never impossible.
  */
 const BREAKABLE_RESISTANCE_WEAK_THRESHOLD_WORLD = 150.0;
 const BREAKABLE_RESISTANCE_REINFORCED_THRESHOLD_WORLD = 350.0;

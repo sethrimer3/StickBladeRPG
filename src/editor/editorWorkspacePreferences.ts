@@ -36,7 +36,7 @@ import {
 export const EDITOR_WORKSPACE_PREFS_VERSION = 2;
 
 /** Stable storage key for the built-in (non-custom) campaign. */
-export const BUILTIN_CAMPAIGN_WORKSPACE_KEY = 'DUSTWEAVER_CAMPAIGN';
+export const BUILTIN_CAMPAIGN_WORKSPACE_KEY = 'STICKBLADE_CAMPAIGN';
 
 const STORAGE_KEY_PREFIX = 'dw_editor_workspace_prefs_v1__';
 

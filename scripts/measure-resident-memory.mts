@@ -29,7 +29,7 @@ import { RoomRuntimeCache } from '../src/screens/roomRuntimeCache';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOMS_DIR = process.env.DW_ROOMS_DIR
-  ?? path.resolve(HERE, '../ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/ROOMS');
+  ?? path.resolve(HERE, '../ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS');
 
 /** Minimal canvas stand-in so the real builder path can run under node. */
 function installCanvasStub(): void {

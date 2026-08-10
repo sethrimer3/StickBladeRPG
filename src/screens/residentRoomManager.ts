@@ -375,7 +375,7 @@ function _isSimpleRestorable(cl: ClusterState): boolean {
     cl.isDustConstellationFlag   === 0 &&
     cl.isOrbitalDustCoreFlag     === 0 &&
     cl.isDustBlockMimicFlag      === 0 &&
-    cl.isDustWeaverArchitectFlag === 0 &&
+    cl.isStickBladeArchitectFlag === 0 &&
     cl.isVoidSingularityFlag     === 0 &&
     cl.isDustLeechFlag           === 0
   );
@@ -394,7 +394,7 @@ function _skipParticleSpawn(cl: ClusterState): boolean {
     cl.isDustConstellationFlag   === 1 ||
     cl.isOrbitalDustCoreFlag     === 1 ||
     cl.isDustBlockMimicFlag      === 1 ||
-    cl.isDustWeaverArchitectFlag === 1 ||
+    cl.isStickBladeArchitectFlag === 1 ||
     cl.isVoidSingularityFlag     === 1 ||
     cl.isDustLeechFlag           === 1 ||
     cl.isGridBlockEnemyFlag      === 1

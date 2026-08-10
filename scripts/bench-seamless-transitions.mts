@@ -51,7 +51,7 @@ import { computeEntranceOffset } from '../src/screens/roomPrewarmNeighborhood';
 import { RoomTransitionLoadCoordinator } from '../src/screens/roomTransitionLoadCoordinator';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOMS_DIR = process.env.DW_ROOMS_DIR ?? path.resolve(HERE, '../ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/ROOMS');
+const ROOMS_DIR = process.env.DW_ROOMS_DIR ?? path.resolve(HERE, '../ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS');
 
 const VP_W = 480, VP_H = 270, SCALE = 1;
 

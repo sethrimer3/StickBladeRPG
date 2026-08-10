@@ -1,7 +1,7 @@
 /**
  * Packed campaign discovery and loading.
  *
- * Any `.dwcampaign.json` files committed to ASSETS/CAMPAIGNS/CUSTOM/ are
+ * Any `.sbcampaign.json` files committed to ASSETS/CAMPAIGNS/CUSTOM/ are
  * automatically discovered at build time via import.meta.glob and made
  * available here without any manual manifest step.
  *
@@ -20,28 +20,28 @@ const BASE = import.meta.env?.BASE_URL ?? '/';
 // ── Official campaign constants ───────────────────────────────────────────────
 
 /**
- * Stable canonical file path for the official DustWeaver campaign.
+ * Stable canonical file path for the official StickBlade campaign.
  *
  * Runtime loading uses this path directly (no folder scanning). The editor
- * exports directly as `DustweaverCampaign.dwcampaign.json` — no renaming needed.
+ * exports directly as `StickbladeCampaign.sbcampaign.json` — no renaming needed.
  *
- * Served URL: `${BASE}CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json`
+ * Served URL: `${BASE}CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json`
  */
 const OFFICIAL_CAMPAIGN_FILE_PATH =
-  '/ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json';
+  '/ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json';
 
-const OFFICIAL_CAMPAIGN_ID = 'DUSTWEAVER_CAMPAIGN' as const;
+const OFFICIAL_CAMPAIGN_ID = 'STICKBLADE_CAMPAIGN' as const;
 
-// ── Build-time glob: discovers committed .dwcampaign.json files ──────────────
+// ── Build-time glob: discovers committed .sbcampaign.json files ──────────────
 
 /**
  * Vite discovers these file paths at build time. Each key is a project-relative
- * path like `/ASSETS/CAMPAIGNS/CUSTOM/my_campaign.dwcampaign.json`; the value
+ * path like `/ASSETS/CAMPAIGNS/CUSTOM/my_campaign.sbcampaign.json`; the value
  * is a lazy loader that resolves the file's URL when called.
  */
 const DISCOVERED_PACKED_CAMPAIGN_LOADERS = import.meta.env?.BASE_URL !== undefined
   ? import.meta.glob<string>(
-      '/ASSETS/CAMPAIGNS/CUSTOM/*.dwcampaign.json',
+      '/ASSETS/CAMPAIGNS/CUSTOM/*.sbcampaign.json',
       { query: '?url', import: 'default' },
     )
   : {};
@@ -53,11 +53,11 @@ const DISCOVERED_PACKED_CAMPAIGN_PATHS = Object.keys(DISCOVERED_PACKED_CAMPAIGN_
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Extracts a campaign id from a file path like `/ASSETS/CAMPAIGNS/CUSTOM/my_campaign.dwcampaign.json`. */
+/** Extracts a campaign id from a file path like `/ASSETS/CAMPAIGNS/CUSTOM/my_campaign.sbcampaign.json`. */
 function campaignIdFromPath(path: string): string {
   const normalised = path.replace(/\\/g, '/');
   const filename = normalised.split('/').pop() ?? '';
-  return filename.replace(/\.dwcampaign\.json$/, '');
+  return filename.replace(/\.sbcampaign\.json$/, '');
 }
 
 /** Summary info from a packed campaign file, suitable for listing. */
@@ -66,7 +66,7 @@ export interface PackedCampaignSummary {
   filePath: string;
 }
 
-/** Lists all .dwcampaign.json file paths discovered at build time. */
+/** Lists all .sbcampaign.json file paths discovered at build time. */
 export function listPackedCampaignPaths(): PackedCampaignSummary[] {
   return DISCOVERED_PACKED_CAMPAIGN_PATHS.map(filePath => ({
     id: campaignIdFromPath(filePath),
@@ -81,8 +81,8 @@ export function listPackedCampaignPaths(): PackedCampaignSummary[] {
 export async function fetchPackedCampaignFromPath(filePath: string): Promise<SavedCampaignV1 | null> {
   try {
     // Convert project-relative path to a URL the browser can fetch.
-    // /ASSETS/CAMPAIGNS/CUSTOM/foo.dwcampaign.json
-    // → <BASE>CAMPAIGNS/CUSTOM/foo.dwcampaign.json
+    // /ASSETS/CAMPAIGNS/CUSTOM/foo.sbcampaign.json
+    // → <BASE>CAMPAIGNS/CUSTOM/foo.sbcampaign.json
     const servePath = filePath.replace(/^\/ASSETS\//, '');
     const url = `${BASE}${servePath}`;
     const response = await fetch(url);
@@ -192,13 +192,13 @@ export function parsePackedCampaignFromJson(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Fetches the official DustWeaver campaign from its stable canonical path:
- * `ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json`
+ * Fetches the official StickBlade campaign from its stable canonical path:
+ * `ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json`
  *
  * Validates structure and required fields. Returns null (with a console error)
  * if the file is missing, unreachable, or fails validation. Does NOT throw.
  *
- * The campaign id `DUSTWEAVER_CAMPAIGN` intentionally uses uppercase, which is
+ * The campaign id `STICKBLADE_CAMPAIGN` intentionally uses uppercase, which is
  * valid in the schema (see `CAMPAIGN_ID_SAFE_RE`).
  */
 export async function fetchOfficialPackedCampaign(): Promise<SavedCampaignV1 | null> {
@@ -211,7 +211,7 @@ export async function fetchOfficialPackedCampaign(): Promise<SavedCampaignV1 | n
         console.warn(
           `[packedCampaignLoader] Official campaign file not found at "${url}". ` +
           'Export the campaign from the editor and place it at ' +
-          'ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json'
+          'ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json'
         );
       } else {
         console.error(

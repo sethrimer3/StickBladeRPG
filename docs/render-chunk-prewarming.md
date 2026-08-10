@@ -1,6 +1,6 @@
 # Render Chunk Prewarming
 
-DustWeaver prebakes wall and background render chunks for nearby rooms while the
+StickBlade prebakes wall and background render chunks for nearby rooms while the
 player is in the current room.  This means the first frames of a room transition
 are served from already-built canvases rather than cold-built tiles, eliminating
 the first-entry hitch on large rooms.

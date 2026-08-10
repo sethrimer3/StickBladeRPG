@@ -75,7 +75,7 @@ test('official editor wiring preserves a connected room across playtest, reopen,
   const unloaded = editorRoom('unloaded');
   unloaded.mapX = 9;
   const campaign = {
-    v: 1, kind: 'DustWeaverCampaign',
+    v: 1, kind: 'StickBladeCampaign',
     campaign: { id: 'TEST_CAMPAIGN', title: 'Test', initialRoomId: 'start' },
     metadata: { version: 1 },
     worldMap: {
@@ -146,7 +146,7 @@ test('official editor wiring preserves a connected room across playtest, reopen,
   });
   assert.equal(result.ok, true);
 
-  const packed = JSON.parse(fs.readFileSync(path.join(campaignDir, 'TEST_CAMPAIGN.dwcampaign.json'), 'utf8')) as SavedCampaignV1;
+  const packed = JSON.parse(fs.readFileSync(path.join(campaignDir, 'TEST_CAMPAIGN.sbcampaign.json'), 'utf8')) as SavedCampaignV1;
   const reloadedSession = createOfficialCampaignSession(packed);
   const reloaded = loadPersistedCampaignRoom(reloadedSession, new Map(), 'connected', 1);
   // A brand-new session/store has no in-memory cache, so this genuinely
@@ -184,7 +184,7 @@ test('visual-map room creation and door-linking persist through the store-aware 
     targetRoomId: '', targetSpawnBlock: [0, 0], positionBlock: 8,
   } as never);
   const campaign = {
-    v: 1, kind: 'DustWeaverCampaign',
+    v: 1, kind: 'StickBladeCampaign',
     campaign: { id: 'VM_TEST_CAMPAIGN', title: 'VM Test', initialRoomId: 'vm_start' },
     metadata: { version: 1 },
     worldMap: {
@@ -302,7 +302,7 @@ test('visual-map room creation and door-linking persist through the store-aware 
   });
   assert.equal(result.ok, true);
   const packed = JSON.parse(
-    fs.readFileSync(path.join(campaignDir, 'VM_TEST_CAMPAIGN.dwcampaign.json'), 'utf8'),
+    fs.readFileSync(path.join(campaignDir, 'VM_TEST_CAMPAIGN.sbcampaign.json'), 'utf8'),
   ) as SavedCampaignV1;
   assert.ok(packed.rooms.some(r => r.id === 'vm_added'));
   assert.ok(packed.rooms.some(r => r.id === 'vm_linked'));
@@ -339,7 +339,7 @@ test('regression: linking an unlinked transition on the CURRENTLY OPEN room stay
     targetRoomId: '', targetSpawnBlock: [0, 0], positionBlock: 8,
   } as never);
   const campaign = {
-    v: 1, kind: 'DustWeaverCampaign',
+    v: 1, kind: 'StickBladeCampaign',
     campaign: { id: 'CURRENT_ROOM_LINK_TEST', title: 'Current Room Link Test', initialRoomId: 'src_room' },
     metadata: { version: 1 },
     worldMap: {
@@ -434,7 +434,7 @@ test('regression: linking an unlinked transition on the CURRENTLY OPEN room stay
   // Redo the same scenario in a fresh session, then Cancel/Discard the
   // current room instead of saving.
   const discardCampaign = {
-    v: 1, kind: 'DustWeaverCampaign',
+    v: 1, kind: 'StickBladeCampaign',
     campaign: { id: 'DISCARD_TEST', title: 'Discard Test', initialRoomId: 'src_room' },
     metadata: { version: 1 },
     worldMap: {

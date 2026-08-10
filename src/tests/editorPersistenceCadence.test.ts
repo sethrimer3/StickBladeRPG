@@ -50,7 +50,7 @@ function makeSavedRoom(id: string) {
 function makeCampaign(roomIds: string[]): SavedCampaignV1 {
   return {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: { id: 'TEST_CAMPAIGN', title: 'Test Campaign', initialRoomId: roomIds[0] },
     metadata: { version: 1 },
     worldMap: { rooms: [] },

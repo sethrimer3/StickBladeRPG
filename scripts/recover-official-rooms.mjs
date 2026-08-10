@@ -4,15 +4,15 @@ import { execFileSync } from 'node:child_process';
 import campaignExport from '../electron/campaignExport.cjs';
 
 const root = process.cwd();
-const campaignDir = path.join(root, 'ASSETS', 'CAMPAIGNS', 'DUSTWEAVER_CAMPAIGN');
-const packedPath = path.join(campaignDir, 'DustweaverCampaign.dwcampaign.json');
+const campaignDir = path.join(root, 'ASSETS', 'CAMPAIGNS', 'STICKBLADE_CAMPAIGN');
+const packedPath = path.join(campaignDir, 'StickbladeCampaign.sbcampaign.json');
 const roomsDir = path.join(campaignDir, 'ROOMS');
 const sourceCommit = 'e9398bc0d941b4459b5ba70f8c9ba169cfdf1dbc';
-const sourcePath = 'ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json';
+const sourcePath = 'ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json';
 const skatingBackup = path.join(
   campaignDir,
   'BACKUPS',
-  'DustweaverCampaign_2026-07-25T01-59-10.834Z.dwcampaign.json',
+  'StickbladeCampaign_2026-07-25T01-59-10.834Z.sbcampaign.json',
 );
 
 const current = JSON.parse(fs.readFileSync(packedPath, 'utf8'));

@@ -1,5 +1,5 @@
 /**
- * Generator for ASSETS/CAMPAIGNS/CUSTOM/hand_drawn_dustweaver_map.dwcampaign.json
+ * Generator for ASSETS/CAMPAIGNS/CUSTOM/hand_drawn_stickblade_map.sbcampaign.json
  *
  * Greybox conversion of the 2026-04-26 hand-drawn "Dust, Wurm" map sketch.
  * Produces SavedCampaignV1 with SavedRoomV2 (v3) rooms.
@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUT = 'ASSETS/CAMPAIGNS/CUSTOM/hand_drawn_dustweaver_map.dwcampaign.json';
+const OUT = 'ASSETS/CAMPAIGNS/CUSTOM/hand_drawn_stickblade_map.sbcampaign.json';
 const ISO = '2026-07-01T00:00:00.000Z';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -961,11 +961,11 @@ const CAMPAIGN_SPAWN = [6, startFloorTop - 2];
 }
 const campaign = {
   v: 1,
-  kind: 'DustWeaverCampaign',
+  kind: 'StickBladeCampaign',
   metadata: { version: 1, lastEditedAt: ISO },
   campaign: {
-    id: 'hand_drawn_dustweaver_map',
-    title: 'DustWeaver Hand-Drawn Map Prototype',
+    id: 'hand_drawn_stickblade_map',
+    title: 'StickBlade Hand-Drawn Map Prototype',
     creator: 'GravyThyme',
     description: 'Greybox prototype of the April 2026 hand-drawn "Dust, Wurm" overworld sketch: desert surface, void pyramid, sunken ship, speed check, ice zone, central hub, light/dark shaft, dark zone, golden dust, grapple vault, overgrowth, magma, and the teleporter pyramid.',
     initialRoomId: 'room_desert_surface_start',

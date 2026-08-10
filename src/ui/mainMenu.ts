@@ -3,7 +3,7 @@
  *
  * Flow:
  *   1. Non-blurred background animation plays on loop; music starts (once).
- *   2. Title "DustWeaver" fades in.
+ *   2. Title "StickBlade" fades in.
  *   3. Any key / click → switch to blurred animation at the same frame,
  *      show menu options (Play, Settings, Exit).
  *   4. Play → 3 save-slot selection screen.
@@ -177,7 +177,7 @@ export function showMainMenu(root: HTMLElement, callbacks: MainMenuCallbacks): (
     discordBtn.style.transform = 'none';
   });
   discordBtn.addEventListener('click', () => {
-    const openExternal = window.dustweaverElectron?.openExternal;
+    const openExternal = window.stickbladeElectron?.openExternal;
     if (openExternal !== undefined) {
       void openExternal(DISCORD_INVITE_URL);
       return;

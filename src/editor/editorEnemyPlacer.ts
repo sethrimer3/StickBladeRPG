@@ -611,7 +611,7 @@ export function placeEnemyAtCursor(
       isDustBlockMimicFlag: 1,
       isDustBlockMimicLargeFlag: 1,
     });
-  } else if (item.id === 'enemy_dust_weaver_architect') {
+  } else if (item.id === 'enemy_stick_blade_architect') {
     room.enemies.push({
       uid: allocateUid(state),
       xBlock: bx,
@@ -641,10 +641,10 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 1,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 1,
+      isStickBladeArchitectLargeFlag: 0,
     });
-  } else if (item.id === 'enemy_dust_weaver_architect_large') {
+  } else if (item.id === 'enemy_stick_blade_architect_large') {
     room.enemies.push({
       uid: allocateUid(state),
       xBlock: bx,
@@ -674,8 +674,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 1,
-      isDustWeaverArchitectLargeFlag: 1,
+      isStickBladeArchitectFlag: 1,
+      isStickBladeArchitectLargeFlag: 1,
     });
   } else if (item.id === 'enemy_void_singularity') {
     room.enemies.push({
@@ -707,8 +707,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 0,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 0,
+      isStickBladeArchitectLargeFlag: 0,
       isVoidSingularityFlag: 1,
       isVoidSingularityPairFlag: 0,
     });
@@ -742,8 +742,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 0,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 0,
+      isStickBladeArchitectLargeFlag: 0,
       isVoidSingularityFlag: 1,
       isVoidSingularityPairFlag: 1,
     });
@@ -777,8 +777,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 0,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 0,
+      isStickBladeArchitectLargeFlag: 0,
       isVoidSingularityFlag: 0,
       isVoidSingularityPairFlag: 0,
       isDustLeechFlag: 1,
@@ -826,8 +826,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 0,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 0,
+      isStickBladeArchitectLargeFlag: 0,
       isVoidSingularityFlag: 0,
       isVoidSingularityPairFlag: 0,
       isDustLeechFlag: 0,
@@ -876,8 +876,8 @@ export function placeEnemyAtCursor(
       isOrbitalDustCoreLargeFlag: 0,
       isDustBlockMimicFlag: 0,
       isDustBlockMimicLargeFlag: 0,
-      isDustWeaverArchitectFlag: 0,
-      isDustWeaverArchitectLargeFlag: 0,
+      isStickBladeArchitectFlag: 0,
+      isStickBladeArchitectLargeFlag: 0,
       isVoidSingularityFlag: 0,
       isVoidSingularityPairFlag: 0,
       isDustLeechFlag: 0,

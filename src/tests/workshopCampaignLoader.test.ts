@@ -26,7 +26,7 @@ function validManifest(overrides: Record<string, unknown> = {}) {
 function validCampaign(overrides: Record<string, unknown> = {}) {
   return {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: {
       id: 'my_campaign',
       title: 'My Campaign',
@@ -70,7 +70,7 @@ test('installed valid item produces a playable CampaignSource', async () => {
   registerFakeInstalledPackage(localPath, {
     manifest: validManifest(),
     campaignData: validCampaign(),
-    files: [{ path: 'workshop-meta.json', sizeBytes: 100 }, { path: 'my_campaign.dwcampaign.json', sizeBytes: 200 }],
+    files: [{ path: 'workshop-meta.json', sizeBytes: 100 }, { path: 'my_campaign.sbcampaign.json', sizeBytes: 200 }],
   });
   const result = await loadCampaignSourceForWorkshopItem(item({ localPath }));
   assert.equal(result.ok, true);
@@ -88,7 +88,7 @@ test('Play callback flow: loadPackedCampaign returns the exact installed campaig
   registerFakeInstalledPackage(localPath, {
     manifest: validManifest({ campaignId: 'flow_campaign' }),
     campaignData: campaign,
-    files: [{ path: 'workshop-meta.json', sizeBytes: 100 }, { path: 'flow_campaign.dwcampaign.json', sizeBytes: 200 }],
+    files: [{ path: 'workshop-meta.json', sizeBytes: 100 }, { path: 'flow_campaign.sbcampaign.json', sizeBytes: 200 }],
   });
   const result = await loadCampaignSourceForWorkshopItem(item({ localPath }));
   assert.equal(result.ok, true);
@@ -137,7 +137,7 @@ test('malformed campaign data (missing required fields) is rejected before launc
   const localPath = '/fake/path/bad-campaign';
   registerFakeInstalledPackage(localPath, {
     manifest: validManifest(),
-    campaignData: { v: 1, kind: 'DustWeaverCampaign' },
+    campaignData: { v: 1, kind: 'StickBladeCampaign' },
     files: [{ path: 'workshop-meta.json', sizeBytes: 100 }],
   });
   const result = await loadCampaignSourceForWorkshopItem(item({ localPath }));
@@ -196,11 +196,11 @@ test('readInstalledWorkshopPackageFromDisk reads a valid on-disk package', () =>
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-workshop-'));
   try {
     fs.writeFileSync(path.join(dir, 'workshop-meta.json'), JSON.stringify(validManifest()));
-    fs.writeFileSync(path.join(dir, 'my_campaign.dwcampaign.json'), JSON.stringify(validCampaign()));
+    fs.writeFileSync(path.join(dir, 'my_campaign.sbcampaign.json'), JSON.stringify(validCampaign()));
     const pkg = readInstalledWorkshopPackageFromDisk(dir);
     assert.equal((pkg.manifest as { title: string }).title, 'My Campaign');
     assert.ok(pkg.files.some((f) => f.path === 'workshop-meta.json'));
-    assert.ok(pkg.files.some((f) => f.path === 'my_campaign.dwcampaign.json'));
+    assert.ok(pkg.files.some((f) => f.path === 'my_campaign.sbcampaign.json'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -209,7 +209,7 @@ test('readInstalledWorkshopPackageFromDisk reads a valid on-disk package', () =>
 test('readInstalledWorkshopPackageFromDisk rejects a directory missing workshop-meta.json', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-workshop-'));
   try {
-    fs.writeFileSync(path.join(dir, 'my_campaign.dwcampaign.json'), JSON.stringify(validCampaign()));
+    fs.writeFileSync(path.join(dir, 'my_campaign.sbcampaign.json'), JSON.stringify(validCampaign()));
     assert.throws(() => readInstalledWorkshopPackageFromDisk(dir), /workshop-meta\.json/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -220,7 +220,7 @@ test('readInstalledWorkshopPackageFromDisk rejects a directory missing the campa
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dw-workshop-'));
   try {
     fs.writeFileSync(path.join(dir, 'workshop-meta.json'), JSON.stringify(validManifest()));
-    assert.throws(() => readInstalledWorkshopPackageFromDisk(dir), /dwcampaign\.json/);
+    assert.throws(() => readInstalledWorkshopPackageFromDisk(dir), /sbcampaign\.json/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

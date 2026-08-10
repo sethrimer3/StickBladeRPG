@@ -130,7 +130,7 @@ export interface SurfaceExposureMap {
  * Minimal read-only view of tile solidity that `buildSurfaceExposureMap`
  * consumes. Deliberately independent of any particular room/wall data
  * structure — see `buildTileSolidityGridFromRoomWalls` below for the
- * DustWeaver-specific adapter.
+ * StickBlade-specific adapter.
  */
 export interface TileSolidityGrid {
   readonly widthBlocks: number;
@@ -382,7 +382,7 @@ export function filterVisibleSurfaceSegments(
   return map.segments.filter(isEligible);
 }
 
-// ── DustWeaver room-data adapter ───────────────────────────────────────────────
+// ── StickBlade room-data adapter ───────────────────────────────────────────────
 
 /** Minimal shape of wall rectangle data this adapter needs — matches `RoomWallDef` / `WallSnapshot` fields. */
 export interface SurfaceExposureWallLike {

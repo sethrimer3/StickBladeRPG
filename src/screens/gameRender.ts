@@ -20,7 +20,7 @@ import { renderRadiantWeb } from '../render/clusters/radiantWebRenderer';
 import { renderDustConstellations } from '../render/clusters/dustConstellationRenderer';
 import { renderOrbitalDustCores } from '../render/clusters/orbitalDustCoreRenderer';
 import { renderDustBlockMimics } from '../render/clusters/dustBlockMimicRenderer';
-import { renderDustWeaverArchitects } from '../render/clusters/dustWeaverArchitectRenderer';
+import { renderStickBladeArchitects } from '../render/clusters/stickBladeArchitectRenderer';
 import { renderVoidSingularities } from '../render/clusters/voidSingularityRenderer';
 import { renderDustLeeches } from '../render/clusters/dustLeechRenderer';
 import { collectVoidSphereScreenCircles, renderVoidSpheres } from '../render/clusters/heraldRenderer';
@@ -669,7 +669,7 @@ export function renderFrame(r: RenderFrameContext): void {
   renderDustConstellations(ctx, snapshot, ox, oy, zoom, isDebugMode);
   renderOrbitalDustCores(ctx, snapshot, ox, oy, zoom, isDebugMode);
   renderDustBlockMimics(ctx, snapshot, ox, oy, zoom, isDebugMode);
-  renderDustWeaverArchitects(ctx, snapshot, ox, oy, zoom, isDebugMode);
+  renderStickBladeArchitects(ctx, snapshot, ox, oy, zoom, isDebugMode);
   renderVoidSingularities(ctx, snapshot, ox, oy, zoom, isDebugMode);
   renderDustLeeches(ctx, snapshot, ox, oy, zoom, isDebugMode);
   renderGrappleCarryBlocks(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx);

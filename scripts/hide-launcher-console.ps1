@@ -11,9 +11,9 @@ if ($null -eq $launcherProcess -or $launcherProcess.MainWindowHandle -eq 0) {
   exit 0
 }
 
-Add-Type -Name WindowApi -Namespace DustWeaverLauncher -MemberDefinition @'
+Add-Type -Name WindowApi -Namespace StickBladeLauncher -MemberDefinition @'
 [DllImport("user32.dll")]
 public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
 '@
 
-[DustWeaverLauncher.WindowApi]::ShowWindow($launcherProcess.MainWindowHandle, 0) | Out-Null
+[StickBladeLauncher.WindowApi]::ShowWindow($launcherProcess.MainWindowHandle, 0) | Out-Null

@@ -10,15 +10,15 @@
 import type { LocaleId } from './types';
 import { normalizeLocaleId } from './locales';
 
-/** Current storage key. Follows the repo's `dustweaver-*` convention. */
-export const LOCALE_STORAGE_KEY = 'dustweaver-locale';
+/** Current storage key. Follows the repo's `stickblade-*` convention. */
+export const LOCALE_STORAGE_KEY = 'stickblade-locale';
 
 /**
  * Legacy key from an earlier ad-hoc preference format. Values may be a raw
  * BCP-47 string (`"es-ES"`) or a JSON blob (`{"language":"es"}`). Read once and
  * migrated forward, then removed.
  */
-export const LEGACY_LOCALE_STORAGE_KEY = 'dustweaver-language';
+export const LEGACY_LOCALE_STORAGE_KEY = 'stickblade-language';
 
 interface StorageLike {
   getItem(key: string): string | null;

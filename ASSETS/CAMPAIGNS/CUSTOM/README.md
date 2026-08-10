@@ -1,13 +1,13 @@
 # Custom Packed Campaigns
 
-This directory holds single-file packed custom campaigns in the `.dwcampaign.json` format.
+This directory holds single-file packed custom campaigns in the `.sbcampaign.json` format.
 
 ## How to add a custom campaign
 
 1. Create or export your campaign from the in-game editor using **Export Campaign JSON**.
 2. Place the exported file here:
    ```
-   ASSETS/CAMPAIGNS/CUSTOM/<campaign-id>.dwcampaign.json
+   ASSETS/CAMPAIGNS/CUSTOM/<campaign-id>.sbcampaign.json
    ```
 3. Commit the file to the repository.
 4. After the GitHub Pages build runs, the campaign will be automatically discovered and appear under **Main Menu → Custom Campaigns**.
@@ -16,9 +16,9 @@ Packed campaign files committed here are **automatically discovered** at build t
 
 ## File naming
 
-- Use the campaign's `id` field as the filename base: `<campaign-id>.dwcampaign.json`
+- Use the campaign's `id` field as the filename base: `<campaign-id>.sbcampaign.json`
 - Campaign IDs must contain only lowercase letters, digits, underscores (`_`), and hyphens (`-`).
-- Example: `my_cave_adventure.dwcampaign.json`
+- Example: `my_cave_adventure.sbcampaign.json`
 
 ## Format
 
@@ -27,7 +27,7 @@ See `src/levels/campaignSchema.ts` for the full `SavedCampaignV1` schema. The sh
 ```json
 {
   "v": 1,
-  "kind": "DustWeaverCampaign",
+  "kind": "StickBladeCampaign",
   "campaign": {
     "id": "my_cave_adventure",
     "title": "My Cave Adventure",
@@ -51,4 +51,4 @@ See `src/levels/campaignSchema.ts` for the full `SavedCampaignV1` schema. The sh
 ## GitHub Pages vs. future Steam/native builds
 
 - **GitHub Pages**: All packed campaigns must be committed to this folder and included in the build. GitHub Pages cannot scan for arbitrary files dropped in after deployment.
-- **Future Steam/native**: The same `.dwcampaign.json` format will be loadable from a user-writable `CustomCampaigns/` folder at runtime. The campaign source abstraction (`src/levels/campaignSource.ts`) is designed to support this without rewriting the UI or schema.
+- **Future Steam/native**: The same `.sbcampaign.json` format will be loadable from a user-writable `CustomCampaigns/` folder at runtime. The campaign source abstraction (`src/levels/campaignSource.ts`) is designed to support this without rewriting the UI or schema.

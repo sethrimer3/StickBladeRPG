@@ -17,7 +17,7 @@ import { isAchievementId, type AchievementId } from '../platform/achievementIds'
 export const SAVE_SLOT_COUNT = 3;
 
 /** localStorage key prefix. */
-const STORAGE_KEY_PREFIX = 'dustweaver_save_';
+const STORAGE_KEY_PREFIX = 'stickblade_save_';
 
 /** Serialisable save-slot data. */
 export interface SaveSlotData {

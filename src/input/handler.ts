@@ -303,7 +303,7 @@ export function applyGamepadInputSnapshot(
   if (pause && !gamepadPreviousState.pause) {
     let handledByOpenMenu = false;
     if (typeof window !== 'undefined') {
-      const event = new CustomEvent('dustweaver-gamepad-pause', { cancelable: true });
+      const event = new CustomEvent('stickblade-gamepad-pause', { cancelable: true });
       window.dispatchEvent(event);
       handledByOpenMenu = event.defaultPrevented;
     }

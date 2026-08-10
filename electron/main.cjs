@@ -16,7 +16,7 @@ registerPlatformIpcHandlers();
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "dustweaver",
+    scheme: "stickblade",
     privileges: {
       standard: true,
       secure: true,
@@ -41,9 +41,9 @@ ipcMain.handle("dw:open-external", async (_event, url) => {
 
 // ── Safety constants ──────────────────────────────────────────────────────────
 
-const ELECTRON_APP_ORIGIN = "dustweaver://app";
+const ELECTRON_APP_ORIGIN = "stickblade://app";
 const ELECTRON_DEV_SERVER_URL =
-  process.env.DUSTWEAVER_ELECTRON_DEV_URL ||
+  process.env.STICKBLADE_ELECTRON_DEV_URL ||
   process.env.ELECTRON_RENDERER_URL ||
   process.env.VITE_DEV_SERVER_URL ||
   "";
@@ -77,10 +77,10 @@ const ELECTRON_APP_ICON_FILENAME = "StickBlade_Icon.ico";
 // ── Path resolution ───────────────────────────────────────────────────────────
 
 /**
- * Resolves the absolute path to the DUSTWEAVER_CAMPAIGN directory.
+ * Resolves the absolute path to the STICKBLADE_CAMPAIGN directory.
  *
  * - Dev / unpackaged: writes directly into the project source tree at
- *   <repo>/ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN, using app.getAppPath() to
+ *   <repo>/ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN, using app.getAppPath() to
  *   locate the repo root reliably regardless of how the process was started.
  * - Packaged (asar): the app bundle is read-only, so we use the writable
  *   userData directory instead.
@@ -127,10 +127,10 @@ function registerElectronCsp() {
 }
 
 function registerElectronAppProtocol() {
-  protocol.handle("dustweaver", async (request) => {
+  protocol.handle("stickblade", async (request) => {
     const filePath = resolveDistFilePath(request.url);
     if (filePath === null) {
-      return new Response("Blocked invalid DustWeaver asset path.", {
+      return new Response("Blocked invalid StickBlade asset path.", {
         status: 403,
         headers: { "Content-Type": "text/plain; charset=utf-8", "Content-Security-Policy": ELECTRON_PROD_CSP },
       });
@@ -205,7 +205,7 @@ function registerElectronAppProtocol() {
  *
  * Validates that the payload is a SavedCampaignV1 for the official campaign,
  * then writes:
- *   <campaignDir>/DustweaverCampaign.dwcampaign.json
+ *   <campaignDir>/StickbladeCampaign.sbcampaign.json
  *   <campaignDir>/ROOMS/<roomId>_room.json   (one file per room)
  *   <campaignDir>/ROOMS/manifest.json        (enhanced manifest with hashes)
  *
@@ -218,7 +218,7 @@ ipcMain.handle("dw:save-official-campaign", async (_event, campaign) => {
       typeof campaign !== "object" ||
       campaign === null ||
       campaign.v !== 1 ||
-      campaign.kind !== "DustWeaverCampaign"
+      campaign.kind !== "StickBladeCampaign"
     ) {
       return { ok: false, error: "Payload is not a valid SavedCampaignV1 (missing v:1 or kind)" };
     }
@@ -360,7 +360,7 @@ ipcMain.handle("dw:export-campaign-with-progress", async (event, campaign, opts)
       typeof campaign !== "object" ||
       campaign === null ||
       campaign.v !== 1 ||
-      campaign.kind !== "DustWeaverCampaign"
+      campaign.kind !== "StickBladeCampaign"
     ) {
       const error = "Payload is not a valid SavedCampaignV1 (missing v:1 or kind)";
       sendProgress({ step: "error", message: error });
@@ -663,7 +663,7 @@ function createWindow() {
   // Only open DevTools when explicitly requested (e.g. `npm run electron:dev`),
   // not on every unpackaged launch — otherwise the desktop shortcut (which also
   // runs unpackaged via `npm run desktop`) would pop DevTools on every launch.
-  if (process.env.DUSTWEAVER_DEVTOOLS === "1") {
+  if (process.env.STICKBLADE_DEVTOOLS === "1") {
     win.webContents.openDevTools();
   }
 

@@ -48,7 +48,7 @@ function walkPackageFiles(fs: NodeFsModule, path: NodePathModule, rootDir: strin
 
 /**
  * Reads an installed Workshop package directory: `workshop-meta.json` at the
- * root, plus exactly one `*.dwcampaign.json` file (root or nested). Used by
+ * root, plus exactly one `*.sbcampaign.json` file (root or nested). Used by
  * both the real Steam adapter and, indirectly, documents the on-disk shape
  * `electron/platformBridge.cjs`'s `dw:workshop-read-package` handler mirrors
  * (that file cannot import this TS module directly — see its own docstring).
@@ -70,9 +70,9 @@ export function readInstalledWorkshopPackageFromDisk(localPath: string): Worksho
   }
   const manifest: unknown = JSON.parse(fs.readFileSync(path.join(resolvedRoot, 'workshop-meta.json'), 'utf8'));
 
-  const campaignFiles = files.filter((f) => f.path.toLowerCase().endsWith('.dwcampaign.json'));
+  const campaignFiles = files.filter((f) => f.path.toLowerCase().endsWith('.sbcampaign.json'));
   if (campaignFiles.length === 0) {
-    throw new Error(`Workshop package at "${localPath}" contains no .dwcampaign.json file`);
+    throw new Error(`Workshop package at "${localPath}" contains no .sbcampaign.json file`);
   }
   const campaignData: unknown = JSON.parse(fs.readFileSync(path.join(resolvedRoot, campaignFiles[0].path), 'utf8'));
 

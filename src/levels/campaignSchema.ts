@@ -1,14 +1,14 @@
 /**
  * Packed custom campaign schema (v1).
  *
- * A packed campaign is a single `.dwcampaign.json` file that encapsulates all
+ * A packed campaign is a single `.sbcampaign.json` file that encapsulates all
  * rooms, world-map data, and campaign metadata. It is the canonical format for
  * custom campaigns committed to the repository under ASSETS/CAMPAIGNS/CUSTOM/.
  *
  * Schema shape:
  * {
  *   "v": 1,
- *   "kind": "DustWeaverCampaign",
+ *   "kind": "StickBladeCampaign",
  *   "metadata": { "version": 1, "lastEditedAt": "2026-05-15T21:42:00.000Z" },
  *   "campaign": { id, title, creator, description, initialRoomId, ... },
  *   "worldMap": { worlds: [...], rooms: [...] },
@@ -17,7 +17,7 @@
  * }
  *
  * The `metadata` field is optional for backward compatibility — older
- * .dwcampaign.json files without it will still load successfully.
+ * .sbcampaign.json files without it will still load successfully.
  *
  * Rooms are stored in the compact SavedRoomV2 format reusing the existing
  * dehydrate/hydrate pipeline. No second room format is introduced.
@@ -38,7 +38,7 @@ import { PASSIVE_TECHNIQUE_DEFINITIONS, PassiveTechniqueId } from '../progressio
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const SAVED_CAMPAIGN_SCHEMA_VERSION = 1 as const;
-export const SAVED_CAMPAIGN_KIND = 'DustWeaverCampaign' as const;
+export const SAVED_CAMPAIGN_KIND = 'StickBladeCampaign' as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -130,7 +130,7 @@ export interface SavedCampaignRevisionMetadata {
 /** Single-file packed custom campaign, v1. */
 export interface SavedCampaignV1 {
   v: 1;
-  kind: 'DustWeaverCampaign';
+  kind: 'StickBladeCampaign';
   /** Optional export revision metadata. Absent in campaigns exported before BUILD 317. */
   metadata?: SavedCampaignRevisionMetadata;
   campaign: SavedCampaignMetadata;
@@ -179,7 +179,7 @@ export function validateSavedCampaign(data: unknown): string[] {
   if (typeof d['v'] !== 'number') {
     errors.push('Missing or non-numeric "v" (schema version) field');
   } else if (d['v'] !== 1) {
-    errors.push(`Unsupported schema version ${d['v']} — expected 1. Update DustWeaver to load this campaign.`);
+    errors.push(`Unsupported schema version ${d['v']} — expected 1. Update StickBlade to load this campaign.`);
     // Version mismatch makes all other checks meaningless.
     return errors;
   }

@@ -7,7 +7,7 @@
  *
  * Currently implemented source kinds:
  *   - bundled-folder-campaign:   ASSETS/CAMPAIGNS/<ID>/ + manifest.json
- *   - bundled-packed-campaign:   ASSETS/CAMPAIGNS/CUSTOM/<id>.dwcampaign.json
+ *   - bundled-packed-campaign:   ASSETS/CAMPAIGNS/CUSTOM/<id>.sbcampaign.json
  *   - imported-browser-campaign: user-imported via file picker, stored in localStorage
  *   - workshop-campaign:         installed Steam Workshop item, mapped via
  *                                `../workshop/workshopCampaignLoader.ts`
@@ -181,7 +181,7 @@ export async function listAllCampaignSources(): Promise<CampaignSource[]> {
     console.error('[campaignSource] Failed to load folder campaign manifest:', e);
   }
 
-  // 2. Bundled packed campaigns (ASSETS/CAMPAIGNS/CUSTOM/*.dwcampaign.json).
+  // 2. Bundled packed campaigns (ASSETS/CAMPAIGNS/CUSTOM/*.sbcampaign.json).
   try {
     const summaries = listPackedCampaignPaths();
     await Promise.all(summaries.map(async ({ filePath }) => {

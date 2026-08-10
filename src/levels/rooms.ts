@@ -193,11 +193,11 @@ export function unregisterRoom(roomId: string): void {
  * Loads the official campaign and populates ROOM_REGISTRY.
  *
  * Primary path: loads from the canonical packed campaign file
- * `ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json`.
+ * `ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json`.
  * World-map metadata (world names, map positions) is read from the campaign file.
  *
  * Fallback: if the packed file is unavailable or invalid, falls back to loading
- * individual room JSON files from `CAMPAIGNS/DUSTWEAVER_CAMPAIGN/ROOMS/`.
+ * individual room JSON files from `CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS/`.
  *
  * Must be called (and awaited) before the game starts.
  */
@@ -245,7 +245,7 @@ export async function initRoomRegistry(): Promise<void> {
   console.warn(
     '[rooms] Official packed campaign file unavailable — falling back to individual room JSON files. ' +
     'Export the campaign from the editor and place it at ' +
-    'ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/DustweaverCampaign.dwcampaign.json'
+    'ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json'
   );
   const rooms = await loadRoomJsonFiles();
   for (const [id, room] of rooms) {

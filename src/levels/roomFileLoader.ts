@@ -13,13 +13,13 @@
  *        the room is missing — caller must handle the missing-room case).
  *
  * Source-of-truth hierarchy (never invert):
- *   1. Campaign file (.dwcampaign.json)   — canonical, shareable
+ *   1. Campaign file (.sbcampaign.json)   — canonical, shareable
  *   2. ROOMS/manifest.json               — derived, staleness indicator
  *   3. ROOMS/<roomId>_room.json          — derived, runtime cache
  *
  * Browser / GitHub Pages:
- *   window.dustweaverElectron is absent in browser mode.  Every Electron-
- *   specific branch is guarded by checking window.dustweaverElectron before
+ *   window.stickbladeElectron is absent in browser mode.  Every Electron-
+ *   specific branch is guarded by checking window.stickbladeElectron before
  *   invoking any IPC.  Browser callers get the same ROOM_REGISTRY-based
  *   behaviour they always had.
  *
@@ -91,8 +91,8 @@ export async function computeContentHash(value: unknown): Promise<string> {
  * Returns the Electron IPC API if available. Absent in browser/GitHub Pages mode.
  * All Electron-specific branches MUST use this guard.
  */
-function getElectronApi(): (typeof window)['dustweaverElectron'] {
-  return typeof window !== 'undefined' ? window.dustweaverElectron : undefined;
+function getElectronApi(): (typeof window)['stickbladeElectron'] {
+  return typeof window !== 'undefined' ? window.stickbladeElectron : undefined;
 }
 
 /**
@@ -287,7 +287,7 @@ export async function generateCampaignRoomCache(
  * and can be connected to the existing `ExportProgressModal` if needed.
  *
  * Returns the validated manifest on success, or null on failure.
- * Browser mode (no dustweaverElectron) always returns null immediately.
+ * Browser mode (no stickbladeElectron) always returns null immediately.
  */
 export async function ensureCampaignRoomCache(
   campaign: SavedCampaignV1,

@@ -13,7 +13,7 @@ function Stop-IfPaused($Paths) {
         $reasons = @()
         if ($pauseState.EmergencyPause) { $reasons += 'emergency marker' }
         if ($pauseState.Leases.Count -gt 0) { $reasons += "$($pauseState.Leases.Count) agent lease(s)" }
-        Write-Host "DustWeaver auto-sync is paused by $($reasons -join ' and ')."
+        Write-Host "StickBlade auto-sync is paused by $($reasons -join ' and ')."
         return $true
     }
     return $false
@@ -80,15 +80,15 @@ function Restore-OriginalIndex {
 }
 
 try {
-    $RepositoryRoot = if ($RepositoryRoot) { Get-DustWeaverRepositoryRoot $RepositoryRoot } else { Get-DustWeaverRepositoryRoot }
-    [void](Test-DustWeaverRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
+    $RepositoryRoot = if ($RepositoryRoot) { Get-StickBladeRepositoryRoot $RepositoryRoot } else { Get-StickBladeRepositoryRoot }
+    [void](Test-StickBladeRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
     $paths = Get-AutosyncPaths $RepositoryRoot
 
     # Gate 1: before locking or staging.
     if (Stop-IfPaused $paths) { exit 0 }
     $lockState = Get-AutosyncLockState $paths.RunningLock
     if ($lockState.Exists) {
-        Write-Host "DustWeaver auto-sync did not start: $($lockState.Detail). Locks are never removed automatically."
+        Write-Host "StickBlade auto-sync did not start: $($lockState.Detail). Locks are never removed automatically."
         exit 0
     }
 
@@ -110,14 +110,14 @@ try {
         }
         $lockOwned = $true
     } catch [IO.IOException] {
-        Write-Host 'DustWeaver auto-sync did not start because another instance acquired the lock.'
+        Write-Host 'StickBlade auto-sync did not start because another instance acquired the lock.'
         exit 0
     }
 
     if (Stop-IfPaused $paths) { exit 0 }
     $branch = Get-CurrentGitBranch $RepositoryRoot
     if ($branch -ne 'main') {
-        Write-Host "DustWeaver auto-sync refused to run on branch '$branch'; main is required."
+        Write-Host "StickBlade auto-sync refused to run on branch '$branch'; main is required."
         exit 0
     }
     if (Test-GitOperationInProgress $paths.GitDirectory) { throw 'a Git operation is already active' }
@@ -165,17 +165,17 @@ try {
     if ([int]($ahead | Select-Object -Last 1) -gt 0) {
         Invoke-CheckedGit @('push', 'origin', 'main') $RepositoryRoot $GitTimeoutSeconds | Out-Null
     }
-    Write-Host 'DustWeaver auto-sync completed successfully.'
+    Write-Host 'StickBlade auto-sync completed successfully.'
     exit 0
 } catch {
     $originalError = $_.Exception.Message
     try {
         Restore-OriginalIndex
     } catch {
-        Write-Error "DustWeaver auto-sync stopped unsafely: $($_.Exception.Message)"
+        Write-Error "StickBlade auto-sync stopped unsafely: $($_.Exception.Message)"
         exit 1
     }
-    Write-Error "DustWeaver auto-sync stopped safely: $originalError"
+    Write-Error "StickBlade auto-sync stopped safely: $originalError"
     exit 1
 } finally {
     if ($lockOwned -and $null -ne $paths -and (Test-Path -LiteralPath $paths.RunningLock)) {

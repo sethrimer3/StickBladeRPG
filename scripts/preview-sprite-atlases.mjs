@@ -38,7 +38,7 @@ async function main() {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>DustWeaver Sprite Atlas Preview</title>
+  <title>StickBlade Sprite Atlas Preview</title>
   <style>
     body { margin: 24px; background: #14110d; color: #ead7a2; font-family: system-ui, sans-serif; }
     h1 { font-size: 24px; }
@@ -51,7 +51,7 @@ async function main() {
   </style>
 </head>
 <body>
-  <h1>DustWeaver Sprite Atlas Preview</h1>
+  <h1>StickBlade Sprite Atlas Preview</h1>
   <p>Derived developer preview. Runtime rendering is not enabled by default.</p>
   ${sections.join('\n')}
 </body>

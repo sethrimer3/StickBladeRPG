@@ -2,17 +2,17 @@
  * Electron preload script.
  *
  * Exposes a minimal, safe IPC surface to the renderer via contextBridge.
- * Only the specific API needed for DustWeaver project file I/O is exposed —
+ * Only the specific API needed for StickBlade project file I/O is exposed —
  * no raw fs, path, or ipcRenderer references are leaked.
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
 
 /**
- * Safe API surface exposed to the renderer as `window.dustweaverElectron`.
+ * Safe API surface exposed to the renderer as `window.stickbladeElectron`.
  *
- * saveOfficialCampaignToProject — legacy; writes the official DustWeaver
- * campaign directly to the project's ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN
+ * saveOfficialCampaignToProject — legacy; writes the official StickBlade
+ * campaign directly to the project's ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN
  * directory. Prefer `exportCampaignWithProgress` for new code.
  *
  * exportCampaignWithProgress — writes a campaign (official or custom) with
@@ -29,7 +29,7 @@ const { contextBridge, ipcRenderer } = require('electron');
  * directory.  Used by the runtime to validate whether cached room files are
  * still current.
  */
-contextBridge.exposeInMainWorld('dustweaverElectron', {
+contextBridge.exposeInMainWorld('stickbladeElectron', {
   /** Opens a trusted HTTPS URL in the user's default browser. */
   openExternal: (url) => ipcRenderer.invoke('dw:open-external', url),
 

@@ -277,11 +277,11 @@ export function startGame(canvas: HTMLCanvasElement, uiRoot: HTMLElement): void 
           // Editor mode uses registerRoomsFromPackedCampaign (see below) —
           // room files are derived artifacts, not editable source files.
           //
-          // In browser/GitHub Pages mode (no dustweaverElectron) the packed
+          // In browser/GitHub Pages mode (no stickbladeElectron) the packed
           // campaign path is used unchanged.
           let usedFileCache = false;
-          if (typeof window !== 'undefined' && window.dustweaverElectron !== undefined) {
-            const electronApi = window.dustweaverElectron;
+          if (typeof window !== 'undefined' && window.stickbladeElectron !== undefined) {
+            const electronApi = window.stickbladeElectron;
 
             // Minimal overlay shown during the quick manifest validation step.
             const statusDiv = document.createElement('div');

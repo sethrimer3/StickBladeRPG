@@ -20,7 +20,7 @@
 
 import { WorldState } from './world';
 import { applyODCHit } from './clusters/orbitalDustCoreAi';
-import { DWA_HIT_FLASH_TICKS } from './clusters/dustWeaverArchitectConfig';
+import { DWA_HIT_FLASH_TICKS } from './clusters/stickBladeArchitectConfig';
 import {
   MOMENTUM_COMBAT_MIN_HORIZONTAL_SPEED,
   MOMENTUM_COMBAT_MIN_SPEED,
@@ -42,7 +42,7 @@ export function computeMomentumDamage(totalSpeed: number): number {
  * Apply momentum collision damage to a single enemy cluster.
  * Mirrors the special-case routing in particles/forces.ts so that:
  *   - Orbital Dust Core → ring-aware handler (applyODCHit)
- *   - Dust Weaver Architect → HP damage + hit flash
+ *   - Stick Blade Architect → HP damage + hit flash
  *   - Rolling enemies → HP damage + aggro trigger
  *   - Bubble enemies → HP reduction only (let bubbleAi.ts handle pop animation)
  *   - All others → HP damage, isAlive=0 on death
@@ -76,8 +76,8 @@ function applyMomentumEnemyHit(
   }
 
   // DWA hit flash
-  if (enemy.isDustWeaverArchitectFlag === 1 && dmg > 0) {
-    enemy.dustWeaverArchitectHitFlashTicks = DWA_HIT_FLASH_TICKS;
+  if (enemy.isStickBladeArchitectFlag === 1 && dmg > 0) {
+    enemy.stickBladeArchitectHitFlashTicks = DWA_HIT_FLASH_TICKS;
   }
 
   // Rolling enemy aggro (~3 s at 60 fps)

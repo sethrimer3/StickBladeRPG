@@ -12,7 +12,7 @@ This file only covers what a human needs to do outside the repo.
 2. Note the numeric App ID.
 3. Add a `steam_appid.txt` file next to the built executable containing just
    the App ID (Steamworks convention — required for local testing without
-   launching via Steam), and/or set the `DUSTWEAVER_STEAM_APP_ID` environment
+   launching via Steam), and/or set the `STICKBLADE_STEAM_APP_ID` environment
    variable, which `electron/platformBridge.cjs` reads when initializing
    `steamworks.js`.
 4. Install the `steamworks.js` npm package as an optional/native dependency
@@ -22,7 +22,7 @@ This file only covers what a human needs to do outside the repo.
 ## 2. Configure achievements in the Steamworks dashboard
 
 For each ID in `src/platform/achievementIds.ts` (`FIRST_WEAVE`,
-`FIRST_CLEAR`, `STORMWEAVE_MASTER`, `DUSTWEAVER_COMPLETE`, `SPEED_RUNNER`,
+`FIRST_CLEAR`, `STORMWEAVE_MASTER`, `STICKBLADE_COMPLETE`, `SPEED_RUNNER`,
 `NO_HIT_ROOM`, `MOTE_HOARDER`, `ICE_FREEZE_CHAIN`, `WORKSHOP_AUTHOR`,
 `WORKSHOP_SUBSCRIBER`):
 
@@ -66,7 +66,7 @@ against a running Steam client with the game launched through Steam:
   completion. Also verify the localized error states surface correctly and
   leave the menu usable: an item still downloading (not yet installed), an
   item removed from Steam between listing and Play, and a manually corrupted
-  package (missing `workshop-meta.json` or `.dwcampaign.json`, or an
+  package (missing `workshop-meta.json` or `.sbcampaign.json`, or an
   unsupported `formatVersion`).
 
 ## 5. Known gaps left for the Steam integration pass

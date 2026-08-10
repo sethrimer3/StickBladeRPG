@@ -236,7 +236,7 @@ function sumZoneCells(zones: readonly RoomZoneDef[] | undefined): number {
  * already-serialized data, so it's safe to call on rooms that have never
  * been loaded into a screen (see `analyzeCampaignComplexity`).
  *
- * Procedurally-spawned content: DustWeaver's current RoomDef schema only
+ * Procedurally-spawned content: StickBlade's current RoomDef schema only
  * contains authored/static placements (no runtime spawner definitions), so
  * there is nothing procedural to account for today. If a spawner-style field
  * is added later (e.g. `{ maxConcurrent: number }`), it should contribute

@@ -356,7 +356,7 @@ export function createEditorUI(
 
   // ── Save and Export Campaign button ──────────────────────────────────────
   // Always shows "Save and Export Campaign" regardless of whether this is a custom
-  // campaign session or the main DustWeaver campaign.
+  // campaign session or the main StickBlade campaign.
   const exportAllBtn = makeBtn('📦 Save and Export Campaign', () => callbacks?.onExportCampaignJson?.());
   exportAllBtn.style.cssText += `
     width: 100%; padding: 8px; font-size: 12px; margin-bottom: 10px;

@@ -143,11 +143,11 @@ const ITEM_VISUAL: Readonly<Record<string, ProceduralVisual>> = Object.freeze({
     extraCss: `border: 2px solid rgba(180,160,60,0.6); box-sizing: border-box;`,
     glyph: 'L',
   },
-  enemy_dust_weaver_architect: {
+  enemy_stick_blade_architect: {
     bg: '#2a0845',
     extraCss: `clip-path: polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%); border: 2px solid rgba(160,60,220,0.9);`,
   },
-  enemy_dust_weaver_architect_large: {
+  enemy_stick_blade_architect_large: {
     bg: '#300a50',
     extraCss: `clip-path: polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%); border: 2px solid rgba(160,60,220,0.9);`,
     glyph: 'L',

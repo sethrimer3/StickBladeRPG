@@ -55,9 +55,9 @@ export function onStormweaveMaxRank(): void {
   void getPlatformAdapter().unlockAchievement('STORMWEAVE_MASTER');
 }
 
-/** Called when the base campaign is completed. Unlocks DUSTWEAVER_COMPLETE. */
+/** Called when the base campaign is completed. Unlocks STICKBLADE_COMPLETE. */
 export function onCampaignCompleted(): void {
-  void getPlatformAdapter().unlockAchievement('DUSTWEAVER_COMPLETE');
+  void getPlatformAdapter().unlockAchievement('STICKBLADE_COMPLETE');
 }
 
 /** Called after a successful Workshop publish. Unlocks WORKSHOP_AUTHOR. */

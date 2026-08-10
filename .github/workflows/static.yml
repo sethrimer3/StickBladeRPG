@@ -1,4 +1,4 @@
-# Build and deploy DustWeaver to GitHub Pages
+# Build and deploy StickBlade to GitHub Pages
 name: Deploy to GitHub Pages
 
 on:

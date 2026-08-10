@@ -126,7 +126,7 @@ export function createNewCampaignSession(params: CreateNewCampaignParams): Edita
 
   const campaign: SavedCampaignV1 = {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: meta,
     worldMap,
     rooms: [initialRoom],
@@ -232,7 +232,7 @@ export function assembleExportCampaign(
 
   const exported: SavedCampaignV1 = {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     metadata: {
       version: (() => {
         const prev = session.campaign.metadata?.version;

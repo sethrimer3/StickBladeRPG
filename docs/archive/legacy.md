@@ -1,4 +1,4 @@
-# DustWeaver — Legacy & Removed Logic
+# StickBlade — Legacy & Removed Logic
 
 This file documents significant logic that was changed or removed, and explains
 why the old approach was replaced.  See `docs/decisions/DECISIONS.md` for the current design.
@@ -97,7 +97,7 @@ corresponding initialisation in `createWorldState`, the snapshot copy in
 ## Rationale for Not Adding a Tile-Occupancy Grid
 
 The problem statement suggested preserving a separate tile grid for exact collision
-queries.  After analysis, DustWeaver's merged-rectangle system already produces
+queries.  After analysis, StickBlade's merged-rectangle system already produces
 exact integer boundaries (all tile edges are multiples of BLOCK_SIZE_MEDIUM = 8 wu),
 so there are no sub-pixel gaps between adjacent merged rectangles.  A separate tile
 grid would duplicate data, add complexity, and require two collision systems to stay

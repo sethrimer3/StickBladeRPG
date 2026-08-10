@@ -1,10 +1,10 @@
-/** Registry of all known DustWeaver Steam achievement IDs. */
+/** Registry of all known StickBlade Steam achievement IDs. */
 
 export const ACHIEVEMENT_IDS = [
   'FIRST_WEAVE',
   'FIRST_CLEAR',
   'STORMWEAVE_MASTER',
-  'DUSTWEAVER_COMPLETE',
+  'STICKBLADE_COMPLETE',
   'SPEED_RUNNER',
   'NO_HIT_ROOM',
   'MOTE_HOARDER',

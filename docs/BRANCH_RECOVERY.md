@@ -15,7 +15,7 @@ review; this policy change does not delete or merge them.
   the newer field-mutation integration already on `main`; the remaining legacy
   live-snapshot campaign-spawn redo compatibility was restored with focused
   regression coverage.
-- `claude/dustweaver-background-modifier-zgmhx8`: recovered previously on
+- `claude/stickblade-background-modifier-zgmhx8`: recovered previously on
   `main` as `9172a7b9`, with later editor-layer hardening built on top.
 - `claude/cracked-block-shattering-h1cmft`: patch-equivalent implementation is
   already on `main`.
@@ -23,7 +23,7 @@ review; this policy change does not delete or merge them.
   room foundation. The feature remains gated behind the existing
   `cameraAlwaysCentered && renderAdjacentRooms` setting and draws only
   render-safe terrain snapshots; it never ticks a neighboring simulation.
-- `claude/dustweaver-weave-extensions-fvxl70`: recovered through the concurrent
+- `claude/stickblade-weave-extensions-fvxl70`: recovered through the concurrent
   `13547658` integration on `main`, including the Bow/Sword/Storm behavior and
   its focused deterministic tests. The active Todo still governs the eventual
   migration/removal of the legacy secondary-ability controls; this recovery

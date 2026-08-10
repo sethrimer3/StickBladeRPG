@@ -1,5 +1,5 @@
 /**
- * Pure helpers for mapping a `dustweaver://app/...` request URL to a
+ * Pure helpers for mapping a `stickblade://app/...` request URL to a
  * filesystem path under `dist/`, and picking a Content-Type for it.
  *
  * Extracted from main.cjs so these can be unit-tested without requiring
@@ -49,7 +49,7 @@ function getContentTypeForPath(filePath) {
 }
 
 /**
- * Maps a `dustweaver://app/<path>` request URL to an absolute filesystem
+ * Maps a `stickblade://app/<path>` request URL to an absolute filesystem
  * path under `<distDir>`. Returns null if the resolved path would escape
  * `distDir` (path-traversal guard).
  *

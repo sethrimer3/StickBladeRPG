@@ -102,7 +102,7 @@ export async function buildCustomCampaignsUI(
   importBtn.addEventListener('click', () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.dwcampaign.json';
+    input.accept = '.sbcampaign.json';
     input.addEventListener('change', () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -255,7 +255,7 @@ export async function buildCustomCampaignsUI(
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${campaign.campaign.id}.dwcampaign.json`;
+            a.download = `${campaign.campaign.id}.sbcampaign.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

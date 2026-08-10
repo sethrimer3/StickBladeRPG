@@ -92,11 +92,11 @@ const ROOM_FILE_SUFFIX = "_room.json";
 /** Maximum number of rolling backups to keep per campaign. */
 const MAX_BACKUPS = 10;
 /** Only the official campaign ID is allowed through the official write path. */
-const OFFICIAL_CAMPAIGN_ID = "DUSTWEAVER_CAMPAIGN";
+const OFFICIAL_CAMPAIGN_ID = "STICKBLADE_CAMPAIGN";
 /** Packed campaign filename for the official campaign. */
-const PACKED_CAMPAIGN_FILENAME = "DustweaverCampaign.dwcampaign.json";
+const PACKED_CAMPAIGN_FILENAME = "StickbladeCampaign.sbcampaign.json";
 /** Base name used for official campaign backup files (no extension). */
-const OFFICIAL_BACKUP_BASE_NAME = "DustweaverCampaign";
+const OFFICIAL_BACKUP_BASE_NAME = "StickbladeCampaign";
 
 // ── Atomic file write helpers ─────────────────────────────────────────────────
 
@@ -214,7 +214,7 @@ function ensureRollingBackup(packedPath, backupsDir, backupBaseName, maxBackups)
   }
 
   const timestamp = safeTimestampForFilename(new Date());
-  const backupFilename = `${backupBaseName}_${timestamp}.dwcampaign.json`;
+  const backupFilename = `${backupBaseName}_${timestamp}.sbcampaign.json`;
   const backupPath = path.join(backupsDir, backupFilename);
 
   try {
@@ -230,7 +230,7 @@ function ensureRollingBackup(packedPath, backupsDir, backupBaseName, maxBackups)
 
 /**
  * Keeps only the newest `maxBackups` backup files in `backupsDir`.
- * Identifies backups by the pattern `<backupBaseName>_*.dwcampaign.json`.
+ * Identifies backups by the pattern `<backupBaseName>_*.sbcampaign.json`.
  * Files are sorted lexicographically (ISO timestamps sort correctly as strings).
  */
 function pruneBackups(backupsDir, backupBaseName, maxBackups) {
@@ -242,7 +242,7 @@ function pruneBackups(backupsDir, backupBaseName, maxBackups) {
   }
 
   const prefix = `${backupBaseName}_`;
-  const suffix = ".dwcampaign.json";
+  const suffix = ".sbcampaign.json";
   const backupFiles = files
     .filter(f => f.startsWith(prefix) && f.endsWith(suffix))
     .sort(); // ISO timestamps sort lexicographically → oldest first
@@ -531,7 +531,7 @@ async function exportCampaignToDisk({ campaign, campaignMeta, campaignId, rooms,
   // ── Rolling backup of the existing packed campaign file ───────────────────
   const packedFilename = isOfficialCampaign
     ? PACKED_CAMPAIGN_FILENAME
-    : `${campaignId}.dwcampaign.json`;
+    : `${campaignId}.sbcampaign.json`;
   const packedPath = path.join(campaignDir, packedFilename);
   const backupBaseName = isOfficialCampaign ? OFFICIAL_BACKUP_BASE_NAME : campaignId;
 

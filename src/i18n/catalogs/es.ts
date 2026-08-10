@@ -31,7 +31,7 @@ export const ES_CATALOG: Partial<Record<TranslationKey, CatalogEntry>> = {
   'mainMenu.customCampaigns': 'Campañas personalizadas',
   'mainMenu.exit': 'Salir',
   'mainMenu.build': 'Compilación {number}',
-  'mainMenu.discordAria': 'Únete al servidor de Discord de DustWeaver',
+  'mainMenu.discordAria': 'Únete al servidor de Discord de StickBlade',
 
   // Save slots
   'saveSlots.heading': 'Selecciona una partida',
@@ -60,11 +60,11 @@ export const ES_CATALOG: Partial<Record<TranslationKey, CatalogEntry>> = {
   // Custom campaigns
   'customCampaigns.heading': 'Campañas personalizadas',
   'customCampaigns.createNew': '✦ Crear campaña nueva',
-  'customCampaigns.import': '📥 Importar campaña (.dwcampaign.json)',
+  'customCampaigns.import': '📥 Importar campaña (.sbcampaign.json)',
   'customCampaigns.loading': 'Cargando campañas…',
   'customCampaigns.emptyTitle': 'No se han encontrado campañas personalizadas.',
   'customCampaigns.emptyHint':
-    'Añade archivos <code>.dwcampaign.json</code> a <code>ASSETS/CAMPAIGNS/CUSTOM/</code> '
+    'Añade archivos <code>.sbcampaign.json</code> a <code>ASSETS/CAMPAIGNS/CUSTOM/</code> '
     + 'o importa un archivo de campaña más arriba.',
   'customCampaigns.badgeBundledFolder': 'Carpeta incluida',
   'customCampaigns.badgePacked': 'Campaña empaquetada',

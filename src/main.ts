@@ -45,7 +45,7 @@ function createStartupLoadingScreen(): {
   ].join(';');
 
   const title = document.createElement('div');
-  title.textContent = 'DustWeaver';
+  title.textContent = 'StickBlade';
   title.style.cssText = 'font-size:clamp(2rem,6vw,4.5rem);text-transform:uppercase;text-shadow:0 0 40px rgba(212,168,75,.35)';
 
   const status = document.createElement('div');
@@ -97,8 +97,8 @@ async function initAndStart(): Promise<void> {
   // Gameplay mode: prefer derived room files so only the start room is loaded
   // at startup.  Adjacent rooms are preloaded lazily by the preload scheduler.
   // Editor mode: not reached here — editor calls initRoomRegistry() separately.
-  if (typeof window !== 'undefined' && window.dustweaverElectron !== undefined) {
-    const electronApi = window.dustweaverElectron;
+  if (typeof window !== 'undefined' && window.stickbladeElectron !== undefined) {
+    const electronApi = window.stickbladeElectron;
     try {
       const packedCampaign = await fetchOfficialPackedCampaign();
       if (packedCampaign !== null) {

@@ -19,7 +19,7 @@ function validManifest(overrides: Record<string, unknown> = {}) {
 function validCampaign() {
   return {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: {
       id: 'my_campaign',
       title: 'My Campaign',

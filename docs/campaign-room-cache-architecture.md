@@ -4,11 +4,11 @@
 
 ## Overview
 
-DustWeaver uses a **two-tier file architecture** for campaign data:
+StickBlade uses a **two-tier file architecture** for campaign data:
 
 | Tier | File | Status | Description |
 |------|------|--------|-------------|
-| 1 | `<campaign>.dwcampaign.json` | **Canonical** | The full packed campaign; single shareable source of truth |
+| 1 | `<campaign>.sbcampaign.json` | **Canonical** | The full packed campaign; single shareable source of truth |
 | 2 | `ROOMS/*.json` + `ROOMS/manifest.json` | **Derived cache** | Generated from the campaign file; never edited by hand |
 
 The campaign file is the only file users ever need to share.  All derived files
@@ -38,7 +38,7 @@ are regenerated automatically when needed.
    contexts (see [Progress UI](#progress-ui)).
 
 5. **Browser / GitHub Pages is never broken.**  All Electron-specific code is
-   guarded behind `if (window.dustweaverElectron !== undefined)`.  Browser
+   guarded behind `if (window.stickbladeElectron !== undefined)`.  Browser
    users get the same download-based export they always had.
 
 6. **Derived files are preferred at runtime when valid.**  In Electron, once the
@@ -50,11 +50,11 @@ are regenerated automatically when needed.
 
 ## File Locations
 
-### Official DustWeaver campaign (Electron dev build)
+### Official StickBlade campaign (Electron dev build)
 ```
 <repo>/
-  ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN/
-    DustweaverCampaign.dwcampaign.json  ← canonical
+  ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/
+    StickbladeCampaign.sbcampaign.json  ← canonical
     ROOMS/
       manifest.json                     ← enhanced manifest (derived)
       lobby_room.json                   ← derived room file
@@ -64,8 +64,8 @@ are regenerated automatically when needed.
 ### Official campaign (Electron packaged build)
 ```
 userData/
-  CAMPAIGNS/DUSTWEAVER_CAMPAIGN/
-    DustweaverCampaign.dwcampaign.json
+  CAMPAIGNS/STICKBLADE_CAMPAIGN/
+    StickbladeCampaign.sbcampaign.json
     ROOMS/
       manifest.json
       ...
@@ -75,7 +75,7 @@ userData/
 ```
 userData/
   CUSTOM_CAMPAIGNS/<campaign-id>/
-    <campaign-id>.dwcampaign.json      ← canonical
+    <campaign-id>.sbcampaign.json      ← canonical
     ROOMS/
       manifest.json                    ← derived
       room_0_0_room.json               ← derived
@@ -90,8 +90,8 @@ userData/
 
 ```json
 {
-  "campaignId": "DUSTWEAVER_CAMPAIGN",
-  "campaignName": "DustWeaver",
+  "campaignId": "STICKBLADE_CAMPAIGN",
+  "campaignName": "StickBlade",
   "campaignHash": "a3f2bc7e1d405c90",
   "campaignVersion": 7,
   "campaignSchemaVersion": 1,
@@ -193,7 +193,7 @@ Renderer (game.ts or main.ts)          Main Process (electron/main.cjs)
    │  ◄─ { step: 'serializing', … }         │
    │    cb fires → modal lazily created,     │
    │    statusDiv hidden                     │
-   │  ◄─ { step: 'writing-campaign', … }    ├─ Write .dwcampaign.json
+   │  ◄─ { step: 'writing-campaign', … }    ├─ Write .sbcampaign.json
    │  ◄─ { step: 'exporting-room', … } ×N  ├─ For each room: hash → skip/write
    │  ◄─ { step: 'writing-manifest', … }   ├─ Write manifest.json
    │  ◄─ { step: 'cleaning-stale', … }     ├─ Remove orphan files
@@ -215,7 +215,7 @@ almost instantly.
 | `step` | Additional fields | When emitted |
 |--------|-------------------|-------------|
 | `'serializing'` | — | Before writing anything (validation complete) |
-| `'writing-campaign'` | — | About to write the `.dwcampaign.json` file |
+| `'writing-campaign'` | — | About to write the `.sbcampaign.json` file |
 | `'exporting-room'` | `roomIndex`, `totalRooms`, `roomId` | For each room processed |
 | `'writing-manifest'` | — | About to write `manifest.json` |
 | `'cleaning-stale'` | — | About to scan for orphan room files |
@@ -227,8 +227,8 @@ The modal's detail line shows `N / M rooms — <roomId> (pct%)` for each
 
 ### Browser / GitHub Pages
 
-In browser mode `window.dustweaverElectron` is `undefined`.  The entire
-`if (window.dustweaverElectron !== undefined)` block in `game.ts` and `main.ts`
+In browser mode `window.stickbladeElectron` is `undefined`.  The entire
+`if (window.stickbladeElectron !== undefined)` block in `game.ts` and `main.ts`
 is skipped.  No status overlay, no progress modal, no Electron IPC is attempted.
 The packed campaign path (`registerRoomsFromPackedCampaign` / `initRoomRegistry`)
 is used unchanged.
@@ -255,7 +255,7 @@ Renderer                               Main Process (IPC)
    ├─ electronApi.exportCampaignWithProgress ─►
    │                                         ├─ Validate payload
    │  ◄─ { step: 'serializing', ... }        │
-   │  ◄─ { step: 'writing-campaign', ... }   ├─ Write .dwcampaign.json
+   │  ◄─ { step: 'writing-campaign', ... }   ├─ Write .sbcampaign.json
    │  ◄─ { step: 'exporting-room', ... }     ├─ For each room:
    │    (repeated N times)                   │    compute hash
    │                                         │    skip if unchanged
@@ -283,11 +283,11 @@ Progress status text examples:
 
 In browser (GitHub Pages) mode the user downloads **two files**:
 
-1. **`[campaignId].dwcampaign.json`** (or `DustweaverCampaign.dwcampaign.json`)  
+1. **`[campaignId].sbcampaign.json`** (or `StickbladeCampaign.sbcampaign.json`)  
    The canonical packed campaign.  This is the only file needed to re-import
    the campaign.
 
-2. **`[campaignId]_ROOMS.zip`** (or `DustweaverCampaign_ROOMS.zip`)  
+2. **`[campaignId]_ROOMS.zip`** (or `StickbladeCampaign_ROOMS.zip`)  
    A derived room-cache ZIP with the same structure as the Electron ROOMS/
    directory.  Useful for inspection, tooling, or seeding a server-side cache.
 
@@ -305,11 +305,11 @@ store-only, no-dependency ZIP builder).  Room hashes and campaign hash are
 computed via `computeContentHash` (Web Crypto SHA-256), matching the Electron
 manifest format exactly.
 
-The main `.dwcampaign.json` download starts immediately (synchronously); the
+The main `.sbcampaign.json` download starts immediately (synchronously); the
 ZIP download fires immediately afterwards (`void downloadRoomCacheZip(...)`).
 Both downloads are triggered by separate `<a>.click()` calls.
 
-**Source-of-truth rule:** the `.dwcampaign.json` is canonical; the ZIP is a
+**Source-of-truth rule:** the `.sbcampaign.json` is canonical; the ZIP is a
 derived convenience artifact.  Sharing only the JSON is always sufficient.
 
 In DEV builds, timing logs are emitted to the console:
@@ -330,8 +330,8 @@ Backup location: `<campaignDir>/BACKUPS/`
 
 Backup filename pattern:
 ```
-DustweaverCampaign_2026-05-21T03-44-12-123Z.dwcampaign.json
-<campaignId>_2026-05-21T03-44-12-123Z.dwcampaign.json
+StickbladeCampaign_2026-05-21T03-44-12-123Z.sbcampaign.json
+<campaignId>_2026-05-21T03-44-12-123Z.sbcampaign.json
 ```
 
 Rules:
@@ -428,7 +428,7 @@ because the saved room wasn't yet loaded.
 
 ### Browser / GitHub Pages
 
-`window.dustweaverElectron` is absent.  The file-cache path is skipped.
+`window.stickbladeElectron` is absent.  The file-cache path is skipped.
 `initRoomRegistry()` / `registerRoomsFromPackedCampaign()` are used as before.
 All rooms are loaded at startup (unchanged behaviour).
 
@@ -538,7 +538,7 @@ ROOM_REGISTRY.get(roomId)
 
 ## Custom Campaign First-Load Cache Generation
 
-When a user opens a custom `.dwcampaign.json` for play in Electron and no valid
+When a user opens a custom `.sbcampaign.json` for play in Electron and no valid
 room cache exists:
 
 1. A minimal "Checking room cache…" text overlay is shown immediately.
@@ -655,12 +655,12 @@ in `src/levels/roomFileLoader.ts` are intentional mirrors.  Both do:
 
 1. Create a new campaign in the editor.
 2. Click **Export Campaign**.
-3. The full `.dwcampaign.json` file and all derived room files are written to
+3. The full `.sbcampaign.json` file and all derived room files are written to
    `userData/CUSTOM_CAMPAIGNS/<id>/`.
 
 ### Via file share
 
-1. Recipient places `<campaign>.dwcampaign.json` in the custom campaigns folder.
+1. Recipient places `<campaign>.sbcampaign.json` in the custom campaigns folder.
 2. On first play (Electron), `ensureCampaignRoomCache` detects the missing/stale
    manifest and triggers automatic regeneration with a full progress UI before
    gameplay starts.

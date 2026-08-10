@@ -2,8 +2,8 @@ import { getStoredFloat, setStoredFloat } from '../utils/storage';
 
 // ── Audio Volume ─────────────────────────────────────────────────────────────
 
-const MUSIC_VOLUME_STORAGE_KEY = 'dustweaver-music-volume';
-const SFX_VOLUME_STORAGE_KEY = 'dustweaver-sfx-volume';
+const MUSIC_VOLUME_STORAGE_KEY = 'stickblade-music-volume';
+const SFX_VOLUME_STORAGE_KEY = 'stickblade-sfx-volume';
 const DEFAULT_MUSIC_VOLUME = 0.7;
 const DEFAULT_SFX_VOLUME = 0.7;
 
@@ -25,7 +25,7 @@ export function setSfxVolume(volume: number): void {
 
 // ── Graphics Quality ─────────────────────────────────────────────────────────
 
-const GRAPHICS_QUALITY_STORAGE_KEY = 'dustweaver-graphics-quality';
+const GRAPHICS_QUALITY_STORAGE_KEY = 'stickblade-graphics-quality';
 export type GraphicsQuality = 'low' | 'med' | 'high';
 const DEFAULT_GRAPHICS_QUALITY: GraphicsQuality = 'med';
 
@@ -48,21 +48,21 @@ export interface RenderSizeOption {
   heightPx: number;
 }
 
-const RENDER_SIZE_STORAGE_KEY = 'dustweaver-render-size-id';
-const OFFENSIVE_DUST_OUTLINE_STORAGE_KEY = 'dustweaver-offensive-dust-outline-enabled';
-const REACHABLE_EDGE_GLOW_OPACITY_STORAGE_KEY = 'dustweaver-reachable-edge-glow-opacity';
-const INFLUENCE_CIRCLE_OPACITY_STORAGE_KEY = 'dustweaver-influence-circle-opacity';
-const INFLUENCE_HIGHLIGHT_WIDTH_STORAGE_KEY = 'dustweaver-influence-highlight-width';
-const DOUBLE_JUMP_TO_GRAPPLE_STORAGE_KEY = 'dustweaver-double-jump-to-grapple';
-const PIXEL_SPEEDOMETER_STORAGE_KEY = 'dustweaver-pixel-speedometer-enabled';
-const PIXEL_SPEEDOMETER_PLACEMENT_STORAGE_KEY = 'dustweaver-pixel-speedometer-placement';
-const PIXEL_SPEEDOMETER_TOTAL_STORAGE_KEY = 'dustweaver-pixel-speedometer-total-enabled';
-const PIXEL_SPEEDOMETER_HORIZONTAL_STORAGE_KEY = 'dustweaver-pixel-speedometer-horizontal-enabled';
-const PIXEL_SPEEDOMETER_VERTICAL_STORAGE_KEY = 'dustweaver-pixel-speedometer-vertical-enabled';
-const PIXEL_SPEED_GRAPH_STORAGE_KEY = 'dustweaver-pixel-speed-graph-enabled';
-const PIXEL_SPEED_GRAPH_OPACITY_STORAGE_KEY = 'dustweaver-pixel-speed-graph-opacity';
-const SPEEDRUN_TIMER_STORAGE_KEY = 'dustweaver-speedrun-timer-enabled';
-const AIR_CURRENTS_DEBUG_STORAGE_KEY = 'dustweaver-air-currents-debug-enabled';
+const RENDER_SIZE_STORAGE_KEY = 'stickblade-render-size-id';
+const OFFENSIVE_DUST_OUTLINE_STORAGE_KEY = 'stickblade-offensive-dust-outline-enabled';
+const REACHABLE_EDGE_GLOW_OPACITY_STORAGE_KEY = 'stickblade-reachable-edge-glow-opacity';
+const INFLUENCE_CIRCLE_OPACITY_STORAGE_KEY = 'stickblade-influence-circle-opacity';
+const INFLUENCE_HIGHLIGHT_WIDTH_STORAGE_KEY = 'stickblade-influence-highlight-width';
+const DOUBLE_JUMP_TO_GRAPPLE_STORAGE_KEY = 'stickblade-double-jump-to-grapple';
+const PIXEL_SPEEDOMETER_STORAGE_KEY = 'stickblade-pixel-speedometer-enabled';
+const PIXEL_SPEEDOMETER_PLACEMENT_STORAGE_KEY = 'stickblade-pixel-speedometer-placement';
+const PIXEL_SPEEDOMETER_TOTAL_STORAGE_KEY = 'stickblade-pixel-speedometer-total-enabled';
+const PIXEL_SPEEDOMETER_HORIZONTAL_STORAGE_KEY = 'stickblade-pixel-speedometer-horizontal-enabled';
+const PIXEL_SPEEDOMETER_VERTICAL_STORAGE_KEY = 'stickblade-pixel-speedometer-vertical-enabled';
+const PIXEL_SPEED_GRAPH_STORAGE_KEY = 'stickblade-pixel-speed-graph-enabled';
+const PIXEL_SPEED_GRAPH_OPACITY_STORAGE_KEY = 'stickblade-pixel-speed-graph-opacity';
+const SPEEDRUN_TIMER_STORAGE_KEY = 'stickblade-speedrun-timer-enabled';
+const AIR_CURRENTS_DEBUG_STORAGE_KEY = 'stickblade-air-currents-debug-enabled';
 const DEFAULT_RENDER_SIZE_ID = '1080p';
 
 const RENDER_SIZE_OPTIONS: RenderSizeOption[] = [
@@ -147,7 +147,7 @@ export function setOffensiveDustOutlineEnabled(isEnabled: boolean): void {
 
 // ── Momentum Combat Golden Trail ─────────────────────────────────────────────
 
-const MOMENTUM_TRAIL_STORAGE_KEY = 'dustweaver-momentum-trail-enabled';
+const MOMENTUM_TRAIL_STORAGE_KEY = 'stickblade-momentum-trail-enabled';
 
 /**
  * Whether the golden high-speed trail renders while the player is in the
@@ -289,7 +289,7 @@ export const WORLD_VIEW_PRESETS: readonly WorldViewPreset[] = [
   { id: 'far',    label: 'Far',    virtualHeight: 540, description: '960×540 · 2× at 1080p' },
 ];
 
-const WORLD_VIEW_STORAGE_KEY  = 'dustweaver-world-view';
+const WORLD_VIEW_STORAGE_KEY  = 'stickblade-world-view';
 const DEFAULT_WORLD_VIEW_ID: WorldViewPresetId = 'normal';
 
 export function getWorldViewPresetId(): WorldViewPresetId {
@@ -312,7 +312,7 @@ export function getActiveWorldViewPreset(): WorldViewPreset {
 
 // ── Always Center Camera ─────────────────────────────────────────────────────
 
-const ALWAYS_CENTER_CAMERA_STORAGE_KEY = 'dustweaver-always-center-camera';
+const ALWAYS_CENTER_CAMERA_STORAGE_KEY = 'stickblade-always-center-camera';
 
 /**
  * When true, the camera always centres on the player with no room-edge clamping.
@@ -329,7 +329,7 @@ export function setAlwaysCenterCamera(enabled: boolean): void {
 
 // ── Render Adjacent Rooms (child of Always Center Camera) ─────────────────────
 
-const RENDER_ADJACENT_ROOMS_STORAGE_KEY = 'dustweaver-render-adjacent-rooms';
+const RENDER_ADJACENT_ROOMS_STORAGE_KEY = 'stickblade-render-adjacent-rooms';
 
 /**
  * Child option of "Camera Always Centered".  When effective, the game renders
@@ -363,7 +363,7 @@ export function getEffectiveRenderAdjacentRooms(): boolean {
 
 // ── Advanced Wall Jumps ──────────────────────────────────────────────────────
 
-const ADVANCED_WALL_JUMPS_STORAGE_KEY = 'dustweaver-advanced-wall-jumps';
+const ADVANCED_WALL_JUMPS_STORAGE_KEY = 'stickblade-advanced-wall-jumps';
 
 /**
  * When false (default), any jump press while next to a quality wall — not
@@ -386,7 +386,7 @@ export function setAdvancedWallJumpsEnabled(enabled: boolean): void {
 
 import type { CombatMode } from '../sim/combatMode';
 
-const COMBAT_MODE_STORAGE_KEY = 'dustweaver-combat-mode';
+const COMBAT_MODE_STORAGE_KEY = 'stickblade-combat-mode';
 
 export function getCombatModeFromStorage(): CombatMode {
   return localStorage.getItem(COMBAT_MODE_STORAGE_KEY) === 'legacy' ? 'legacy' : 'momentum';

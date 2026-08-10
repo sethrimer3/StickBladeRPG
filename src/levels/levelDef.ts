@@ -1,5 +1,5 @@
 /**
- * Level definition types for DustWeaver.
+ * Level definition types for StickBlade.
  *
  * Positions and sizes are expressed as fractions of the screen dimensions
  * (0–1) so layouts scale to any resolution.  The game screen converts them

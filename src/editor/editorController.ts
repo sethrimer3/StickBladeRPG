@@ -457,10 +457,10 @@ export function createEditorController(
     source: 'main',
     campaign: {
       v: 1,
-      kind: 'DustWeaverCampaign',
+      kind: 'StickBladeCampaign',
       campaign: {
-        id: 'DUSTWEAVER_CAMPAIGN',
-        title: 'DustWeaver',
+        id: 'STICKBLADE_CAMPAIGN',
+        title: 'StickBlade',
         creator: 'GravyThyme',
         description: '',
         initialRoomId: loadedMainCampaignSpawn?.roomId ?? 'lobby',
@@ -486,7 +486,7 @@ export function createEditorController(
   // scroll) — never room/campaign data, never dirty/history, never exported.
   // activeCampaignSession.campaign.campaign.id is stable for the lifetime of
   // this controller (one controller per campaign-editing session), including
-  // the built-in campaign (id 'DUSTWEAVER_CAMPAIGN').
+  // the built-in campaign (id 'STICKBLADE_CAMPAIGN').
   const workspaceCampaignKey = activeCampaignSession.campaign.campaign.id;
   const workspaceSaver = createDebouncedWorkspacePreferencesSaver(workspaceCampaignKey);
 

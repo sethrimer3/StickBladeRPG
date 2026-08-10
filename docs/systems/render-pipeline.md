@@ -1,4 +1,4 @@
-# DustWeaver — Architecture
+# StickBlade — Architecture
 
 ## Render Pipeline
 

@@ -5,7 +5,7 @@ pushd "%~dp0"
 if errorlevel 1 goto error
 
 if not exist package.json (
-  echo Missing package.json. Run this launcher from the DustWeaver repository root.
+  echo Missing package.json. Run this launcher from the StickBlade repository root.
   goto error
 )
 

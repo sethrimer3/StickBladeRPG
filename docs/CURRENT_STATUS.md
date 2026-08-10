@@ -4,7 +4,7 @@ Last updated by AI repo Bible pass. Verify against source before relying on any 
 
 ## Project state
 
-DustWeaver is an active TypeScript/Vite game with Electron development support. The current source and docs describe a deterministic particle/cluster-based action platformer/metroidvania-style game with custom campaign/editor support, lazy room loading, room transitions, render chunk caching, resident-room work, and compact room data formats.
+StickBlade is an active TypeScript/Vite game with Electron development support. The current source and docs describe a deterministic particle/cluster-based action platformer/metroidvania-style game with custom campaign/editor support, lazy room loading, room transitions, render chunk caching, resident-room work, and compact room data formats.
 
 The top-level `README.md` is broad and older in some gameplay details, but still useful for core simulation/rendering principles: fixed-step deterministic simulation, snapshot-based rendering, particle/cluster entities, and layer separation. `nextSteps.md`, `docs/decisions/performanceOptimizationDecisions.md`, and `docs/render-chunk-prewarming.md` are more useful for recent room-loading and performance work.
 

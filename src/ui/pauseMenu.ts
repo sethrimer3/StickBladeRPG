@@ -577,14 +577,14 @@ export function showPauseMenu(
     destroy();
     callbacks.onResume();
   }
-  window.addEventListener('dustweaver-gamepad-pause', onGamepadPause);
+  window.addEventListener('stickblade-gamepad-pause', onGamepadPause);
 
   function destroy(): void {
     i18n.dispose();
     keybindingsCleanup?.();
     keybindingsCleanup = null;
     window.removeEventListener('keydown', onKey);
-    window.removeEventListener('dustweaver-gamepad-pause', onGamepadPause);
+    window.removeEventListener('stickblade-gamepad-pause', onGamepadPause);
     if (exitConfirmTimerId !== undefined) {
       clearTimeout(exitConfirmTimerId);
       exitConfirmTimerId = undefined;

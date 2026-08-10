@@ -472,11 +472,11 @@ function bakeRoom(filePath) {
 // ── Main: walk campaign room files in manifest order ──────────────────────────
 
 const campaignsDir = join(REPO_ROOT, 'ASSETS', 'CAMPAIGNS');
-const manifestPath = join(campaignsDir, 'DUSTWEAVER_CAMPAIGN', 'ROOMS', 'manifest.json');
+const manifestPath = join(campaignsDir, 'STICKBLADE_CAMPAIGN', 'ROOMS', 'manifest.json');
 
 /** Resolve the room JSON file path from a room ID. */
 function roomFilePath(roomId) {
-  return join(campaignsDir, 'DUSTWEAVER_CAMPAIGN', 'ROOMS', `${roomId}_room.json`);
+  return join(campaignsDir, 'STICKBLADE_CAMPAIGN', 'ROOMS', `${roomId}_room.json`);
 }
 
 let roomIds;
@@ -495,7 +495,7 @@ try {
 } catch {
   // Fall back to discovering all *_room.json files alphabetically.
   const { readdirSync } = await import('node:fs');
-  roomIds = readdirSync(join(campaignsDir, 'DUSTWEAVER_CAMPAIGN', 'ROOMS'))
+  roomIds = readdirSync(join(campaignsDir, 'STICKBLADE_CAMPAIGN', 'ROOMS'))
     .filter(f => f.endsWith('_room.json'))
     .map(f => f.replace('_room.json', ''))
     .sort();

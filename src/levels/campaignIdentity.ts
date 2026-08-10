@@ -1,4 +1,4 @@
-export const MAIN_CAMPAIGN_ID = 'DUSTWEAVER_CAMPAIGN';
+export const MAIN_CAMPAIGN_ID = 'STICKBLADE_CAMPAIGN';
 
 let activeCampaignId = MAIN_CAMPAIGN_ID;
 

@@ -9,8 +9,8 @@ param(
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'autosync-common.ps1')
 try {
-    $RepositoryRoot = if ($RepositoryRoot) { Get-DustWeaverRepositoryRoot $RepositoryRoot } else { Get-DustWeaverRepositoryRoot }
-    [void](Test-DustWeaverRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
+    $RepositoryRoot = if ($RepositoryRoot) { Get-StickBladeRepositoryRoot $RepositoryRoot } else { Get-StickBladeRepositoryRoot }
+    [void](Test-StickBladeRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
     $paths = Get-AutosyncPaths $RepositoryRoot
     $pauseDescription = $null
     if ($LeaseId) {
@@ -52,7 +52,7 @@ try {
     while ($true) {
         $lockState = Get-AutosyncLockState $paths.RunningLock
         if (-not $lockState.Exists) {
-            Write-Host "DustWeaver auto-sync is paused by $pauseDescription and quiescent. It is safe to begin editing."
+            Write-Host "StickBlade auto-sync is paused by $pauseDescription and quiescent. It is safe to begin editing."
             exit 0
         }
         if (-not $lockState.Active) {
@@ -63,7 +63,7 @@ try {
             Write-Error "Pause was requested, but auto-sync is still running ($($lockState.Detail)) after $WaitTimeoutSeconds seconds. Do not begin editing. The $pauseDescription remains in place."
             exit 1
         }
-        Write-Host "Waiting for DustWeaver auto-sync to finish ($($lockState.Detail))..."
+        Write-Host "Waiting for StickBlade auto-sync to finish ($($lockState.Detail))..."
         Start-Sleep -Seconds 1
     }
-} catch { Write-Error "Could not pause DustWeaver auto-sync: $($_.Exception.Message)"; exit 1 }
+} catch { Write-Error "Could not pause StickBlade auto-sync: $($_.Exception.Message)"; exit 1 }

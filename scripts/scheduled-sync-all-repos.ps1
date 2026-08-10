@@ -39,14 +39,14 @@ Get-ChildItem -LiteralPath $RepositoriesRoot -Directory | ForEach-Object {
     $repositoryName = $_.Name
     if (-not (Test-Path -LiteralPath (Join-Path $repository '.git'))) { return }
     try {
-        $dustWeaverScript = Join-Path $repository 'scripts\autosync.ps1'
-        if ($repositoryName -eq 'DustWeaver' -and (Test-Path -LiteralPath $dustWeaverScript)) {
+        $stickBladeScript = Join-Path $repository 'scripts\autosync.ps1'
+        if ($repositoryName -eq 'StickBlade' -and (Test-Path -LiteralPath $stickBladeScript)) {
             . (Join-Path $repository 'scripts\autosync-common.ps1')
-            [void](Test-DustWeaverRepositoryIdentity $repository -ThrowOnFailure)
-            Write-SyncLog 'Syncing DustWeaver through repository safety protocol'
-            $output = & powershell.exe -NoProfile -NonInteractive -File $dustWeaverScript -RepositoryRoot $repository 2>&1
-            Write-SyncLog "  DustWeaver protocol: $($output -join [Environment]::NewLine)"
-            if ($LASTEXITCODE -ne 0) { Write-SyncLog "  DustWeaver protocol stopped safely with exit code $LASTEXITCODE" }
+            [void](Test-StickBladeRepositoryIdentity $repository -ThrowOnFailure)
+            Write-SyncLog 'Syncing StickBlade through repository safety protocol'
+            $output = & powershell.exe -NoProfile -NonInteractive -File $stickBladeScript -RepositoryRoot $repository 2>&1
+            Write-SyncLog "  StickBlade protocol: $($output -join [Environment]::NewLine)"
+            if ($LASTEXITCODE -ne 0) { Write-SyncLog "  StickBlade protocol stopped safely with exit code $LASTEXITCODE" }
             return
         }
 

@@ -62,7 +62,7 @@ import { applyWebSpiderAI } from './clusters/webSpiderAi';
 import { applyDustConstellationAI } from './clusters/dustConstellationAi';
 import { applyOrbitalDustCoreAI } from './clusters/orbitalDustCoreAi';
 import { applyDustBlockMimicAI } from './clusters/dustBlockMimicAi';
-import { applyDustWeaverArchitectAI } from './clusters/dustWeaverArchitectAi';
+import { applyStickBladeArchitectAI } from './clusters/stickBladeArchitectAi';
 import { applyVoidSingularityAI } from './clusters/voidSingularityAi';
 import { applyDustLeechAI } from './clusters/dustLeechAi';
 import { applySnakeAI } from './clusters/snakeAi';
@@ -269,7 +269,7 @@ export function tick(world: WorldState): void {
   applyDustConstellationAI(world);
   applyOrbitalDustCoreAI(world);
   applyDustBlockMimicAI(world);
-  applyDustWeaverArchitectAI(world);
+  applyStickBladeArchitectAI(world);
   applyVoidSingularityAI(world);
   applyDustLeechAI(world);
   applySnakeAI(world);

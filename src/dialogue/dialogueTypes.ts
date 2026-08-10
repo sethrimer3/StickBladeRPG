@@ -1,7 +1,7 @@
 /**
  * dialogueTypes.ts — Dialogue and conversation data model.
  *
- * WHY HIGH-RESOLUTION: DustWeaver's game world renders at a fixed 480×270
+ * WHY HIGH-RESOLUTION: StickBlade's game world renders at a fixed 480×270
  * virtual pixel canvas upscaled with nearest-neighbour sampling for a
  * pixelated retro look. Rendering dialogue text into that virtual canvas
  * would make it blurry and pixelated. The dialogue overlay is instead drawn

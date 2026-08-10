@@ -30,7 +30,7 @@ The following gaps or defects were found in the Phase 1A implementation and addr
 
 ## Schema and Folder Layout
 
-Custom block definitions are stored **inline** in the packed campaign JSON (`*.dwcampaign.json`) under the top-level `customBlockDefs` array. No separate folder or file-per-block layout is used; the entire custom-block library travels with the campaign.
+Custom block definitions are stored **inline** in the packed campaign JSON (`*.sbcampaign.json`) under the top-level `customBlockDefs` array. No separate folder or file-per-block layout is used; the entire custom-block library travels with the campaign.
 
 > **Note:** the shape below is the legacy schemaVersion-1 format, kept for compatibility. See "Phase 2A: Safe Predefined Properties" further down for the current schemaVersion-2 format (`properties` object replaces `behavior`), which is what the editor now writes on every save.
 
@@ -1232,7 +1232,7 @@ tiers directly.
 | `reinforced` | 350 | Above a fast dive alone (`FAST_MAX_FALL_APPROACH_PER_SEC` = 300) but reachable by combining a fast dive with horizontal sprint/grapple-zip momentum, or chaining a grapple-zip release into a dash — deliberately achievable through normal high-speed play, never impossible. |
 
 These values were chosen after surveying `src/sim/clusters/movementConstants.ts`
-and `grappleZip.ts` for DustWeaver's real movement speed scale (`MAX_RUN_SPEED_WORLD_PER_SEC`
+and `grappleZip.ts` for StickBlade's real movement speed scale (`MAX_RUN_SPEED_WORLD_PER_SEC`
 = 105, sprint ≈ 157.5, `GRAPPLE_ZIP_SPEED_WORLD_PER_SEC` = 210,
 `FAST_MAX_FALL_APPROACH_PER_SEC` = 300) rather than picked arbitrarily.
 
@@ -1493,7 +1493,7 @@ multiplier, callback, or asset path is ever present in JSON.
 
 ### The Two Wind-Response Concepts (Naming Disambiguation)
 
-DustWeaver already had an unrelated "wind response" concept before this
+StickBlade already had an unrelated "wind response" concept before this
 phase: `getMaterialWindResponse(material)` in `pixelMaterialTypes.ts`, a
 per-material multiplier (sand `1`, 2×2 sand `0.55`, water `1.3`, sandstone
 `0.6`) describing how reactive a material itself is to wind that reaches it.

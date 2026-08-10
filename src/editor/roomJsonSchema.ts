@@ -96,8 +96,8 @@ export interface RoomJsonEnemy {
   isOrbitalDustCoreLarge?: boolean;
   isDustBlockMimic?: boolean;
   isDustBlockMimicLarge?: boolean;
-  isDustWeaverArchitect?: boolean;
-  isDustWeaverArchitectLarge?: boolean;
+  isStickBladeArchitect?: boolean;
+  isStickBladeArchitectLarge?: boolean;
   isVoidSingularity?: boolean;
   isVoidSingularityPair?: boolean;
   isDustLeech?: boolean;

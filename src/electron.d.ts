@@ -2,7 +2,7 @@
  * Type declarations for the Electron preload API surface.
  *
  * When running inside Electron, the preload script exposes
- * `window.dustweaverElectron` via contextBridge. In browser/GitHub Pages
+ * `window.stickbladeElectron` via contextBridge. In browser/GitHub Pages
  * mode this property is absent, so all consumers must check for it first.
  */
 
@@ -10,7 +10,7 @@ import type { SavedCampaignV1 } from './levels/campaignSchema';
 import type { ExportProgressEvent } from './levels/roomCacheManifest';
 import type { RoomCacheManifest } from './levels/roomCacheManifest';
 
-/** Result returned by all dustweaverElectron IPC calls. */
+/** Result returned by all stickbladeElectron IPC calls. */
 export interface ElectronSaveResult {
   ok: boolean;
   /** Present when ok is false. Human-readable error description. */
@@ -31,7 +31,7 @@ export interface ElectronSaveResult {
 export interface ExportCampaignOptions {
   /**
    * When true, the official campaign project path is used
-   * (ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN or userData/CAMPAIGNS/DUSTWEAVER_CAMPAIGN).
+   * (ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN or userData/CAMPAIGNS/STICKBLADE_CAMPAIGN).
    * When false (default), the campaign is written to userData/CUSTOM_CAMPAIGNS/<id>/.
    */
   isOfficialCampaign?: boolean;
@@ -88,16 +88,16 @@ export interface ValidateRoomCacheFilesResult {
 }
 
 /** Narrow IPC API exposed by the Electron preload script. */
-export interface DustWeaverElectronAPI {
+export interface StickBladeElectronAPI {
   /** Opens an HTTPS URL in the user's default browser. */
   openExternal?(url: string): Promise<boolean>;
 
   /**
-   * Legacy: writes the official DustWeaver campaign directly to the project's
-   * ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN directory.
+   * Legacy: writes the official StickBlade campaign directly to the project's
+   * ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN directory.
    * Prefer `exportCampaignWithProgress` for new code.
    *
-   * @param campaign  A validated SavedCampaignV1 with campaign.id === 'DUSTWEAVER_CAMPAIGN'.
+   * @param campaign  A validated SavedCampaignV1 with campaign.id === 'STICKBLADE_CAMPAIGN'.
    * @returns         Resolves to { ok: true } on success or { ok: false, error } on failure.
    */
   saveOfficialCampaignToProject(campaign: SavedCampaignV1): Promise<ElectronSaveResult>;
@@ -208,6 +208,6 @@ declare global {
      * Present only when running inside Electron (injected by preload.cjs).
      * Always check for existence before calling — absent in browser mode.
      */
-    dustweaverElectron?: DustWeaverElectronAPI;
+    stickbladeElectron?: StickBladeElectronAPI;
   }
 }

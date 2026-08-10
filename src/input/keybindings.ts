@@ -78,7 +78,7 @@ export const DEFAULT_CONTROLLER_BINDINGS: Record<ControllerAction, string> = {
 
 // ─── Storage ─────────────────────────────────────────────────────────────────
 
-const KB_BINDINGS_STORAGE_KEY = 'dustweaver-kb-bindings';
+const KB_BINDINGS_STORAGE_KEY = 'stickblade-kb-bindings';
 
 // In-memory cache — initialised lazily on first access.
 let _kbBindings: Record<KeyboardAction, string> | null = null;

@@ -190,3 +190,8 @@ export class RoomRuntimeCache {
     return this._map.size;
   }
 }
+
+export function createRoomRuntimeCache(capacity = 16): RoomRuntimeCache {
+  return new RoomRuntimeCache(capacity);
+}
+

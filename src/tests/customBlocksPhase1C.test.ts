@@ -316,7 +316,7 @@ describe('Symlink-safe path containment', () => {
 
   test('14. legitimate paths inside the campaign directory are accepted', () => {
     const allowed = tmpDir;
-    const target = path.join(tmpDir, 'campaign.dwcampaign.json');
+    const target = path.join(tmpDir, 'campaign.sbcampaign.json');
     const result = checkPathInsideCampaignDir(target, allowed, 'packed campaign');
     assert.equal(result.ok, true, `expected ok=true, got: ${result.ok ? '' : (result as {ok:false;error:string}).error}`);
   });

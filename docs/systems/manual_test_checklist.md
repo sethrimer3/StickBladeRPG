@@ -1,7 +1,7 @@
-# DustWeaver — Manual Test Checklist
+# StickBlade — Manual Test Checklist
 
 ## Main Menu
-- [ ] App launches showing "DustWeaver" title on black background
+- [ ] App launches showing "StickBlade" title on black background
 - [ ] Save slot buttons visible (3 slots)
 - [ ] Selecting an empty save slot transitions to Character Select
 

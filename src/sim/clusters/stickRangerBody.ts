@@ -160,7 +160,7 @@ const COLLISION_SUBSTEP_DISTANCE = 4;
 //     Stick Ranger's gravity constants.
 //   • That top speed (~16 world units/sec) is deliberately Stick-Ranger-slow
 //     and is about a sixth of this project's MAX_RUN_SPEED_WORLD_PER_SEC of
-//     105. Making the stickman traverse rooms at DustWeaver pace needs the
+//     105. Making the stickman traverse rooms at StickBlade pace needs the
 //     whole simulation scaled — GRAVITY and LAUNCH_GRAVITY together with
 //     these — not a larger push here, which only tips it past the cliff.
 

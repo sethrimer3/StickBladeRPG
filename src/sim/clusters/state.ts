@@ -885,14 +885,14 @@ export interface ClusterState {
   /** Ticks remaining for the hit-flash visual. */
   dustBlockMimicHitFlashTicks: number;
 
-  // ---- Dust Weaver Architect (isDustWeaverArchitectFlag === 1) ----------------
+  // ---- Stick Blade Architect (isStickBladeArchitectFlag === 1) ----------------
   /**
-   * 1 if this cluster is a Dust Weaver Architect — a hovering dust-core enemy
+   * 1 if this cluster is a Stick Blade Architect — a hovering dust-core enemy
    * that weaves temporary destructible blocks into the arena.
    */
-  isDustWeaverArchitectFlag: 0 | 1;
+  isStickBladeArchitectFlag: 0 | 1;
   /** 1 for the large variant (more motes, higher HP, larger block patterns). */
-  isDustWeaverArchitectLargeFlag: 0 | 1;
+  isStickBladeArchitectLargeFlag: 0 | 1;
   /**
    * Current AI state:
    *   0 = idle          — motes orbit, cooldown countdown
@@ -901,34 +901,34 @@ export interface ClusterState {
    *   3 = recover       — motes relax, cooldown begins
    *   4 = dying         — core collapses, owned blocks crumble
    */
-  dustWeaverArchitectState: number;
+  stickBladeArchitectState: number;
   /** Ticks elapsed in the current state. */
-  dustWeaverArchitectStateTicks: number;
+  stickBladeArchitectStateTicks: number;
   /** WorldState slot index for per-Architect mote arrays (-1 if unallocated). */
-  dustWeaverArchitectSlotIndex: number;
+  stickBladeArchitectSlotIndex: number;
   /** X of the spawn point (world units). */
-  dustWeaverArchitectSpawnXWorld: number;
+  stickBladeArchitectSpawnXWorld: number;
   /** Y of the spawn point (world units). */
-  dustWeaverArchitectSpawnYWorld: number;
+  stickBladeArchitectSpawnYWorld: number;
   /** Phase angle for the idle bob animation (radians). */
-  dustWeaverArchitectBobPhaseRad: number;
+  stickBladeArchitectBobPhaseRad: number;
   /** Remaining ticks before the next build cycle starts. */
-  dustWeaverArchitectAttackCooldownTicks: number;
+  stickBladeArchitectAttackCooldownTicks: number;
   /** X of the chosen build site center (world units). */
-  dustWeaverArchitectBuildSiteXWorld: number;
+  stickBladeArchitectBuildSiteXWorld: number;
   /** Y of the chosen build site center (world units). */
-  dustWeaverArchitectBuildSiteYWorld: number;
+  stickBladeArchitectBuildSiteYWorld: number;
   /** Index into DWA_PATTERNS for the chosen build pattern. */
-  dustWeaverArchitectBuildPatternIndex: number;
+  stickBladeArchitectBuildPatternIndex: number;
   /** Ticks remaining for the hit-flash visual. */
-  dustWeaverArchitectHitFlashTicks: number;
+  stickBladeArchitectHitFlashTicks: number;
   /**
    * Counts up while the player stays outside DWA_NAIL_MIN_RANGE_WORLD.
    * Resets to 0 when the player comes within range or a nail is fired.
    */
-  dustWeaverArchitectRangePressureTicks: number;
+  stickBladeArchitectRangePressureTicks: number;
   /** Cooldown ticks remaining after firing a Dust Nail (counts down to 0). */
-  dustWeaverArchitectNailCooldownTicks: number;
+  stickBladeArchitectNailCooldownTicks: number;
 
   // ── Void Singularity ────────────────────────────────────────────────────────
   /** 1 if this cluster is a Void Singularity or Void Singularity Pair. */
@@ -1353,21 +1353,21 @@ export function createClusterState(
     dustBlockMimicLungeDistCovered: 0,
     dustBlockMimicLungeHitPlayerFlag: 0,
     dustBlockMimicHitFlashTicks: 0,
-    isDustWeaverArchitectFlag: 0,
-    isDustWeaverArchitectLargeFlag: 0,
-    dustWeaverArchitectState: 0,
-    dustWeaverArchitectStateTicks: 0,
-    dustWeaverArchitectSlotIndex: -1,
-    dustWeaverArchitectSpawnXWorld: positionXWorld,
-    dustWeaverArchitectSpawnYWorld: positionYWorld,
-    dustWeaverArchitectBobPhaseRad: 0,
-    dustWeaverArchitectAttackCooldownTicks: 0,
-    dustWeaverArchitectBuildSiteXWorld: 0,
-    dustWeaverArchitectBuildSiteYWorld: 0,
-    dustWeaverArchitectBuildPatternIndex: 0,
-    dustWeaverArchitectHitFlashTicks: 0,
-    dustWeaverArchitectRangePressureTicks: 0,
-    dustWeaverArchitectNailCooldownTicks: 0,
+    isStickBladeArchitectFlag: 0,
+    isStickBladeArchitectLargeFlag: 0,
+    stickBladeArchitectState: 0,
+    stickBladeArchitectStateTicks: 0,
+    stickBladeArchitectSlotIndex: -1,
+    stickBladeArchitectSpawnXWorld: positionXWorld,
+    stickBladeArchitectSpawnYWorld: positionYWorld,
+    stickBladeArchitectBobPhaseRad: 0,
+    stickBladeArchitectAttackCooldownTicks: 0,
+    stickBladeArchitectBuildSiteXWorld: 0,
+    stickBladeArchitectBuildSiteYWorld: 0,
+    stickBladeArchitectBuildPatternIndex: 0,
+    stickBladeArchitectHitFlashTicks: 0,
+    stickBladeArchitectRangePressureTicks: 0,
+    stickBladeArchitectNailCooldownTicks: 0,
     isVoidSingularityFlag: 0,
     isVoidSingularityPairFlag: 0,
     voidSingularityState: 0,

@@ -9,7 +9,7 @@ import {
   MAX_ORBITAL_DUST_CORES,
   MOTES_PER_ODC_SLOT,
   MAX_DUST_BLOCK_MIMICS,
-  MAX_DUST_WEAVER_ARCHITECTS,
+  MAX_STICK_BLADE_ARCHITECTS,
   MAX_MOTES_PER_DWA,
   MAX_VOID_SINGULARITIES,
   MAX_MOTES_PER_VS,
@@ -91,8 +91,8 @@ import {
   DWA_SMALL_MOTE_COUNT,
   DWA_LARGE_MOTE_COUNT,
   DWA_BUILD_COOLDOWN_TICKS,
-} from '../sim/clusters/dustWeaverArchitectConfig';
-import { DWA_STATE_IDLE } from '../sim/clusters/dustWeaverArchitectAi';
+} from '../sim/clusters/stickBladeArchitectConfig';
+import { DWA_STATE_IDLE } from '../sim/clusters/stickBladeArchitectAi';
 import {
   VS_HP,
   VSP_HP,
@@ -694,13 +694,13 @@ export function spawnEnemyClusters(
           world.dbmMotePulsePhaseRad[idx]   = (m / moteCount) * Math.PI * 2;
         }
       }
-    } else if (enemyDef.isDustWeaverArchitectFlag === 1) {
+    } else if (enemyDef.isStickBladeArchitectFlag === 1) {
       // Allocate a DWA slot
       let slotIndex = -1;
-      for (let si = 0; si < MAX_DUST_WEAVER_ARCHITECTS; si++) {
+      for (let si = 0; si < MAX_STICK_BLADE_ARCHITECTS; si++) {
         let taken = false;
         for (let ci2 = 0; ci2 < world.clusters.length; ci2++) {
-          if (world.clusters[ci2].dustWeaverArchitectSlotIndex === si) {
+          if (world.clusters[ci2].stickBladeArchitectSlotIndex === si) {
             taken = true;
             break;
           }
@@ -708,23 +708,23 @@ export function spawnEnemyClusters(
         if (!taken) { slotIndex = si; break; }
       }
 
-      const isLarge = (enemyDef.isDustWeaverArchitectLargeFlag ?? 0) as 0 | 1;
+      const isLarge = (enemyDef.isStickBladeArchitectLargeFlag ?? 0) as 0 | 1;
       const hp       = isLarge === 1 ? DWA_LARGE_HP : DWA_SMALL_HP;
       const moteCount = isLarge === 1 ? DWA_LARGE_MOTE_COUNT : DWA_SMALL_MOTE_COUNT;
 
-      enemyCluster.isDustWeaverArchitectFlag              = 1;
-      enemyCluster.isDustWeaverArchitectLargeFlag         = isLarge;
-      enemyCluster.dustWeaverArchitectSlotIndex           = slotIndex;
-      enemyCluster.dustWeaverArchitectState               = DWA_STATE_IDLE;
-      enemyCluster.dustWeaverArchitectStateTicks          = 0;
-      enemyCluster.dustWeaverArchitectSpawnXWorld         = ex;
-      enemyCluster.dustWeaverArchitectSpawnYWorld         = ey;
-      enemyCluster.dustWeaverArchitectBobPhaseRad         = 0;
-      enemyCluster.dustWeaverArchitectAttackCooldownTicks = DWA_BUILD_COOLDOWN_TICKS;
-      enemyCluster.dustWeaverArchitectBuildSiteXWorld     = ex;
-      enemyCluster.dustWeaverArchitectBuildSiteYWorld     = ey;
-      enemyCluster.dustWeaverArchitectBuildPatternIndex   = 0;
-      enemyCluster.dustWeaverArchitectHitFlashTicks       = 0;
+      enemyCluster.isStickBladeArchitectFlag              = 1;
+      enemyCluster.isStickBladeArchitectLargeFlag         = isLarge;
+      enemyCluster.stickBladeArchitectSlotIndex           = slotIndex;
+      enemyCluster.stickBladeArchitectState               = DWA_STATE_IDLE;
+      enemyCluster.stickBladeArchitectStateTicks          = 0;
+      enemyCluster.stickBladeArchitectSpawnXWorld         = ex;
+      enemyCluster.stickBladeArchitectSpawnYWorld         = ey;
+      enemyCluster.stickBladeArchitectBobPhaseRad         = 0;
+      enemyCluster.stickBladeArchitectAttackCooldownTicks = DWA_BUILD_COOLDOWN_TICKS;
+      enemyCluster.stickBladeArchitectBuildSiteXWorld     = ex;
+      enemyCluster.stickBladeArchitectBuildSiteYWorld     = ey;
+      enemyCluster.stickBladeArchitectBuildPatternIndex   = 0;
+      enemyCluster.stickBladeArchitectHitFlashTicks       = 0;
       enemyCluster.halfWidthWorld                         = DWA_HALF_W;
       enemyCluster.halfHeightWorld                        = DWA_HALF_H;
       enemyCluster.healthPoints                           = hp;
@@ -917,7 +917,7 @@ export function spawnEnemyClusters(
       enemyCluster.isDustConstellationFlag === 1 ||
       enemyCluster.isOrbitalDustCoreFlag === 1 ||
       enemyCluster.isDustBlockMimicFlag === 1 ||
-      enemyCluster.isDustWeaverArchitectFlag === 1 ||
+      enemyCluster.isStickBladeArchitectFlag === 1 ||
       enemyCluster.isVoidSingularityFlag === 1 ||
       enemyCluster.isDustLeechFlag === 1 ||
       enemyCluster.isGridSnakeEnemyFlag === 1 ||

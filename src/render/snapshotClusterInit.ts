@@ -156,21 +156,21 @@ export function _makeEmptyCluster(): _MutableCluster {
     dustBlockMimicLungeDistCovered: 0,
     dustBlockMimicLungeHitPlayerFlag: 0,
     dustBlockMimicHitFlashTicks: 0,
-    isDustWeaverArchitectFlag: 0,
-    isDustWeaverArchitectLargeFlag: 0,
-    dustWeaverArchitectState: 0,
-    dustWeaverArchitectStateTicks: 0,
-    dustWeaverArchitectSlotIndex: -1,
-    dustWeaverArchitectSpawnXWorld: 0,
-    dustWeaverArchitectSpawnYWorld: 0,
-    dustWeaverArchitectBobPhaseRad: 0,
-    dustWeaverArchitectAttackCooldownTicks: 0,
-    dustWeaverArchitectBuildSiteXWorld: 0,
-    dustWeaverArchitectBuildSiteYWorld: 0,
-    dustWeaverArchitectBuildPatternIndex: 0,
-    dustWeaverArchitectHitFlashTicks: 0,
-    dustWeaverArchitectRangePressureTicks: 0,
-    dustWeaverArchitectNailCooldownTicks: 0,
+    isStickBladeArchitectFlag: 0,
+    isStickBladeArchitectLargeFlag: 0,
+    stickBladeArchitectState: 0,
+    stickBladeArchitectStateTicks: 0,
+    stickBladeArchitectSlotIndex: -1,
+    stickBladeArchitectSpawnXWorld: 0,
+    stickBladeArchitectSpawnYWorld: 0,
+    stickBladeArchitectBobPhaseRad: 0,
+    stickBladeArchitectAttackCooldownTicks: 0,
+    stickBladeArchitectBuildSiteXWorld: 0,
+    stickBladeArchitectBuildSiteYWorld: 0,
+    stickBladeArchitectBuildPatternIndex: 0,
+    stickBladeArchitectHitFlashTicks: 0,
+    stickBladeArchitectRangePressureTicks: 0,
+    stickBladeArchitectNailCooldownTicks: 0,
     isVoidSingularityFlag: 0,
     isVoidSingularityPairFlag: 0,
     voidSingularityState: 0,
@@ -376,21 +376,21 @@ export function _fillCluster(dst: _MutableCluster, src: ClusterState): void {
   dst.dustBlockMimicLungeDistCovered  = src.dustBlockMimicLungeDistCovered;
   dst.dustBlockMimicLungeHitPlayerFlag = src.dustBlockMimicLungeHitPlayerFlag;
   dst.dustBlockMimicHitFlashTicks     = src.dustBlockMimicHitFlashTicks;
-  dst.isDustWeaverArchitectFlag              = src.isDustWeaverArchitectFlag;
-  dst.isDustWeaverArchitectLargeFlag         = src.isDustWeaverArchitectLargeFlag;
-  dst.dustWeaverArchitectState               = src.dustWeaverArchitectState;
-  dst.dustWeaverArchitectStateTicks          = src.dustWeaverArchitectStateTicks;
-  dst.dustWeaverArchitectSlotIndex           = src.dustWeaverArchitectSlotIndex;
-  dst.dustWeaverArchitectSpawnXWorld         = src.dustWeaverArchitectSpawnXWorld;
-  dst.dustWeaverArchitectSpawnYWorld         = src.dustWeaverArchitectSpawnYWorld;
-  dst.dustWeaverArchitectBobPhaseRad         = src.dustWeaverArchitectBobPhaseRad;
-  dst.dustWeaverArchitectAttackCooldownTicks = src.dustWeaverArchitectAttackCooldownTicks;
-  dst.dustWeaverArchitectBuildSiteXWorld     = src.dustWeaverArchitectBuildSiteXWorld;
-  dst.dustWeaverArchitectBuildSiteYWorld     = src.dustWeaverArchitectBuildSiteYWorld;
-  dst.dustWeaverArchitectBuildPatternIndex   = src.dustWeaverArchitectBuildPatternIndex;
-  dst.dustWeaverArchitectHitFlashTicks       = src.dustWeaverArchitectHitFlashTicks;
-  dst.dustWeaverArchitectRangePressureTicks  = src.dustWeaverArchitectRangePressureTicks;
-  dst.dustWeaverArchitectNailCooldownTicks   = src.dustWeaverArchitectNailCooldownTicks;
+  dst.isStickBladeArchitectFlag              = src.isStickBladeArchitectFlag;
+  dst.isStickBladeArchitectLargeFlag         = src.isStickBladeArchitectLargeFlag;
+  dst.stickBladeArchitectState               = src.stickBladeArchitectState;
+  dst.stickBladeArchitectStateTicks          = src.stickBladeArchitectStateTicks;
+  dst.stickBladeArchitectSlotIndex           = src.stickBladeArchitectSlotIndex;
+  dst.stickBladeArchitectSpawnXWorld         = src.stickBladeArchitectSpawnXWorld;
+  dst.stickBladeArchitectSpawnYWorld         = src.stickBladeArchitectSpawnYWorld;
+  dst.stickBladeArchitectBobPhaseRad         = src.stickBladeArchitectBobPhaseRad;
+  dst.stickBladeArchitectAttackCooldownTicks = src.stickBladeArchitectAttackCooldownTicks;
+  dst.stickBladeArchitectBuildSiteXWorld     = src.stickBladeArchitectBuildSiteXWorld;
+  dst.stickBladeArchitectBuildSiteYWorld     = src.stickBladeArchitectBuildSiteYWorld;
+  dst.stickBladeArchitectBuildPatternIndex   = src.stickBladeArchitectBuildPatternIndex;
+  dst.stickBladeArchitectHitFlashTicks       = src.stickBladeArchitectHitFlashTicks;
+  dst.stickBladeArchitectRangePressureTicks  = src.stickBladeArchitectRangePressureTicks;
+  dst.stickBladeArchitectNailCooldownTicks   = src.stickBladeArchitectNailCooldownTicks;
   dst.isVoidSingularityFlag                  = src.isVoidSingularityFlag;
   dst.isVoidSingularityPairFlag              = src.isVoidSingularityPairFlag;
   dst.voidSingularityState                   = src.voidSingularityState;

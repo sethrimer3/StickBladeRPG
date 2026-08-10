@@ -1,4 +1,4 @@
-# DustWeaver Refactoring Plan
+# StickBlade Refactoring Plan
 
 This document describes a plan to split the largest monolithic source files into
 smaller, focused modules.  The goal is to improve organization and make it easier

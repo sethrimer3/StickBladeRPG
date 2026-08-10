@@ -1,5 +1,5 @@
 /**
- * The Electron custom-protocol handler (`dustweaver://app/...`) maps request
+ * The Electron custom-protocol handler (`stickblade://app/...`) maps request
  * URLs to files under dist/ via resolveDistFilePath() in
  * electron/distFilePathResolver.cjs (a pure, Electron-free module extracted
  * from main.cjs specifically so it's unit-testable). Confirms the Outcast
@@ -21,7 +21,7 @@ const electronDir = resolve(process.cwd(), 'electron');
 const distDir = resolve(process.cwd(), 'dist');
 
 test('the Outcast standing sprite URL resolves into dist/ without escaping it', () => {
-  const resolved = resolveDistFilePath('dustweaver://app/SPRITES/PLAYERS/outcast/outcast_standing.png', electronDir);
+  const resolved = resolveDistFilePath('stickblade://app/SPRITES/PLAYERS/outcast/outcast_standing.png', electronDir);
   assert.equal(resolved, join(distDir, 'SPRITES', 'PLAYERS', 'outcast', 'outcast_standing.png'));
   assert.ok(resolved!.startsWith(distDir + sep));
 });
@@ -39,7 +39,7 @@ test('path-traversal attempts never resolve to a path outside dist/', () => {
   // still rooted under dist/ — the guard (or the URL parser upstream of it)
   // never lets a request escape.
   for (const payload of ['../../../etc/passwd', '%2e%2e/%2e%2e/%2e%2e/etc/passwd', '..%2f..%2f..%2fetc%2fpasswd']) {
-    const resolved = resolveDistFilePath(`dustweaver://app/${payload}`, electronDir);
+    const resolved = resolveDistFilePath(`stickblade://app/${payload}`, electronDir);
     assert.ok(
       resolved === null || resolved.startsWith(distDir + sep),
       `payload "${payload}" escaped dist/: ${resolved}`,
@@ -48,6 +48,6 @@ test('path-traversal attempts never resolve to a path outside dist/', () => {
 });
 
 test('the root URL resolves to index.html', () => {
-  const resolved = resolveDistFilePath('dustweaver://app/', electronDir);
+  const resolved = resolveDistFilePath('stickblade://app/', electronDir);
   assert.equal(resolved, join(distDir, 'index.html'));
 });

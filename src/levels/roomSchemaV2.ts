@@ -147,8 +147,8 @@ export function enemyFlagsToType(e: RoomJsonEnemy): SavedEnemyType {
   if (e.isOrbitalDustCore) return 'orbitalDustCore';
   if (e.isDustBlockMimic && e.isDustBlockMimicLarge) return 'dustBlockMimicLarge';
   if (e.isDustBlockMimic) return 'dustBlockMimic';
-  if (e.isDustWeaverArchitect && e.isDustWeaverArchitectLarge) return 'dustWeaverArchitectLarge';
-  if (e.isDustWeaverArchitect) return 'dustWeaverArchitect';
+  if (e.isStickBladeArchitect && e.isStickBladeArchitectLarge) return 'stickBladeArchitectLarge';
+  if (e.isStickBladeArchitect) return 'stickBladeArchitect';
   if (e.isVoidSingularity && e.isVoidSingularityPair) return 'voidSingularityPair';
   if (e.isVoidSingularity) return 'voidSingularity';
   if (e.isDustLeech) return 'dustLeech';

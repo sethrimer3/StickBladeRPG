@@ -105,7 +105,7 @@ test('a key missing from spanish falls back to the english string, per key', () 
   freshEnglish();
   setLocale('es');
   // Deliberately untranslated (proper noun) — must show the English source, not a key.
-  assert.equal(t('mainMenu.title'), 'DustWeaver');
+  assert.equal(t('mainMenu.title'), 'StickBlade');
   // Neighbouring keys are still Spanish: fallback is per key, not per catalog.
   assert.equal(t('mainMenu.play'), 'Jugar');
   freshEnglish();

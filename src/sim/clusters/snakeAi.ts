@@ -74,7 +74,7 @@ const _neighborDx = [-1, 0, 1, -1, 1, -1, 0, 1] as const;
 const _neighborDy = [-1, -1, -1, 0, 0, 1, 1, 1] as const;
 
 // Pre-allocated A* scratch buffers for up to 256×128 = 32768 cells.
-// Sized conservatively; DustWeaver rooms are typically well under this limit.
+// Sized conservatively; StickBlade rooms are typically well under this limit.
 const _ASTAR_MAX_CELLS = 32768;
 const _astarGScore    = new Float32Array(_ASTAR_MAX_CELLS);
 const _astarFScore    = new Float32Array(_ASTAR_MAX_CELLS);

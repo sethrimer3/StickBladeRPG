@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-07-03
 
-This document consolidates room-loading and room-transition optimization work that has been discussed, implemented, reverted, or researched for DustWeaver. It is meant to prevent repeated work and to give future AI/code agents a single place to check before proposing another generic room-loading pass.
+This document consolidates room-loading and room-transition optimization work that has been discussed, implemented, reverted, or researched for StickBlade. It is meant to prevent repeated work and to give future AI/code agents a single place to check before proposing another generic room-loading pass.
 
 Scope caveat: this file is a source-and-discussion consolidation, not a full Git-history audit. Because the repository was reverted after some atlas work, this document distinguishes between **current/retained mechanisms**, **previously attempted or reverted work**, and **research candidates**. Verify current source before treating any item as live code.
 
@@ -422,7 +422,7 @@ These are candidates, not recommendations to implement blindly. Each should be g
 
 Why it may help: if heavy wall/background chunk rasterization still happens on the main thread, the browser can miss idle windows or produce long frames. `OffscreenCanvas` can run canvas work in a worker, and `transferToImageBitmap()` can produce transferable display-ready bitmaps.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Move part of wall/background chunk rasterization into a dedicated render-prewarm worker.
 - Send a serializable render command stream plus pre-decoded assets or atlas/image bitmaps.
@@ -443,7 +443,7 @@ Evidence needed:
 
 Why it may help: `createImageBitmap()` creates bitmap objects asynchronously from images/blobs/canvases and can reduce first-draw decode/upload stalls in some cases.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Add a `bitmapAssetCache` beside the normal image cache.
 - Feature-detect `createImageBitmap` and keep `HTMLImageElement.decode()` fallback.
@@ -478,7 +478,7 @@ Runtime caution:
 
 Why it may help: current prewarm caches may be session-memory only. Official campaign rooms revisited across launches could benefit from persistent entry-viewport render products or intermediate manifests.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Persist compact chunk manifests first: visible entry chunks, bounds, render-state key, asset revision, dirty dependencies.
 - Later consider encoded PNG/WebP chunk images for static official campaigns.
@@ -494,7 +494,7 @@ Risks:
 
 Why it may help: JSON parse/hydration can still be a cold-path cost after moving to derived room files and baked wall templates.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - For official campaign exports, add optional binary sidecars for static runtime fields: baked wall typed arrays, blocker keys, decorations, adjacency, and dimensions.
 - Keep canonical JSON as source of truth.
@@ -509,7 +509,7 @@ Risks:
 
 Why it may help: preload/chunk-warm work may need more consistent background scheduling than raw `requestIdleCallback` in some environments.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Create a single `backgroundWorkScheduler` abstraction using:
   1. `scheduler.postTask(..., { priority: 'background' })` where available;
@@ -526,7 +526,7 @@ Risks:
 
 Why it may help: game timers may not attribute GC, style/layout, image decode/upload, Canvas internals, or browser-internal work. Long Animation Frames can report frames delayed beyond 50 ms and provide script timing attribution where supported.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Add DEV-only `PerformanceObserver` for `long-animation-frame` entries.
 - Correlate LoAF entries with room transition IDs.
@@ -540,7 +540,7 @@ Risks:
 
 Why it may help: if the remaining delay is first-entry resident build, the fix may be earlier prediction rather than more micro-optimization.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Build resident worlds in priority order:
   1. current room direct exits;
@@ -557,7 +557,7 @@ Risks:
 
 Why it may help: if lighting changes invalidate whole wall chunks, splitting base tile rasterization from lighting/shadow overlays could reduce entry warm and prewarm costs.
 
-Possible DustWeaver application:
+Possible StickBlade application:
 
 - Cache base wall/background chunks keyed by geometry/theme.
 - Cache or compute lighting overlays separately keyed by lighting/blocker state.
@@ -672,4 +672,4 @@ __dwLastTransition()
 
 ## Bottom line
 
-DustWeaver has already had broad, sophisticated room-loading optimization attempts. Future work should not be another generic "optimize room loading" pass. It should be measurement-led and targeted to the slowest observed transition phase or readiness miss reason. Recent sprite atlas runtime work is specifically marked unsafe because it caused black/missing room visuals; do not reintroduce it as a runtime path until legacy rendering can be proven completely unaffected when atlas mode is disabled.
+StickBlade has already had broad, sophisticated room-loading optimization attempts. Future work should not be another generic "optimize room loading" pass. It should be measurement-led and targeted to the slowest observed transition phase or readiness miss reason. Recent sprite atlas runtime work is specifically marked unsafe because it caused black/missing room visuals; do not reintroduce it as a runtime path until legacy rendering can be proven completely unaffected when atlas mode is disabled.

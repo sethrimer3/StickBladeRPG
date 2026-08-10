@@ -94,7 +94,7 @@ function makeUnregisteredLinkedRoomDef(id: string, sourceRoomId: string): RoomDe
 
 function makeSession(rooms: EditorRoomData[], initialRoomId: string): SavedCampaignV1 {
   return {
-    v: 1, kind: 'DustWeaverCampaign',
+    v: 1, kind: 'StickBladeCampaign',
     campaign: { id: 'COORD_TEST', title: 'Coordinator Test', initialRoomId },
     metadata: { version: 1 },
     worldMap: {

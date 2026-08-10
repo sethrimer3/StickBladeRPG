@@ -1,4 +1,4 @@
-# DustWeaver — Rendering Performance Diagnosis
+# StickBlade — Rendering Performance Diagnosis
 
 _Originally written for the room-transition performance improvement pass (BUILD 259). Updated in BUILD 401+ to cover in-room gameplay freezes._
 

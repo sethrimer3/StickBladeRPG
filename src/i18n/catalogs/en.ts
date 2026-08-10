@@ -29,7 +29,7 @@ export const EN_CATALOG = {
   'common.percent': '{value}%',
 
   // ── Main menu ─────────────────────────────────────────────────────────────
-  'mainMenu.title': 'DustWeaver',
+  'mainMenu.title': 'StickBlade',
   'mainMenu.pressAnyKey': 'Press any key',
   'mainMenu.play': 'Play',
   'mainMenu.settings': 'Settings',
@@ -37,7 +37,7 @@ export const EN_CATALOG = {
   'mainMenu.exit': 'Exit',
   'mainMenu.build': 'Build {number}',
   'mainMenu.discord': 'Discord',
-  'mainMenu.discordAria': 'Join the DustWeaver Discord server',
+  'mainMenu.discordAria': 'Join the StickBlade Discord server',
 
   // ── Save slots ────────────────────────────────────────────────────────────
   'saveSlots.heading': 'Select Save Slot',
@@ -68,11 +68,11 @@ export const EN_CATALOG = {
   // never translated — only the surrounding chrome is.
   'customCampaigns.heading': 'Custom Campaigns',
   'customCampaigns.createNew': '✦ Create New Campaign',
-  'customCampaigns.import': '📥 Import Campaign (.dwcampaign.json)',
+  'customCampaigns.import': '📥 Import Campaign (.sbcampaign.json)',
   'customCampaigns.loading': 'Loading campaigns…',
   'customCampaigns.emptyTitle': 'No custom campaigns found.',
   'customCampaigns.emptyHint':
-    'Add <code>.dwcampaign.json</code> files to <code>ASSETS/CAMPAIGNS/CUSTOM/</code> '
+    'Add <code>.sbcampaign.json</code> files to <code>ASSETS/CAMPAIGNS/CUSTOM/</code> '
     + 'or import a campaign file above.',
   'customCampaigns.badgeBundledFolder': 'Built-in folder',
   'customCampaigns.badgePacked': 'Packed campaign',

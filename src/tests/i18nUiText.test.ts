@@ -107,11 +107,11 @@ test('bound attributes (accessibility text) are translated and updated', () => {
   const i18n = createLocaleBindings();
   const button = createStubElement('button');
   i18n.bindAttribute(button, 'aria-label', 'mainMenu.discordAria');
-  assert.equal(button.getAttribute('aria-label'), 'Join the DustWeaver Discord server');
+  assert.equal(button.getAttribute('aria-label'), 'Join the StickBlade Discord server');
   setLocale('es');
   assert.equal(
     button.getAttribute('aria-label'),
-    'Únete al servidor de Discord de DustWeaver',
+    'Únete al servidor de Discord de StickBlade',
   );
   i18n.dispose();
   setLocale('en');

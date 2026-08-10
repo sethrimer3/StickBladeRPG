@@ -84,7 +84,7 @@ function makeTmpDir(): string {
 function makeCampaign(roomIds: string[]): TestCampaign {
   return {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: { id: 'TEST_CAMPAIGN', title: 'Test Campaign' },
     metadata: { version: 1 },
     worldMap: { rooms: roomIds.map((id) => ({ id })) },
@@ -216,7 +216,7 @@ test('Crimson Throne room (boss enemy + dialogue triggers) writes and hashes nor
   // room file through the actual write path to confirm it serializes,
   // hashes, and writes like any other room.
   const roomPath = path.join(
-    __dirname, '..', '..', 'ASSETS', 'CAMPAIGNS', 'DUSTWEAVER_CAMPAIGN', 'ROOMS', 'crimson_throne_room.json',
+    __dirname, '..', '..', 'ASSETS', 'CAMPAIGNS', 'STICKBLADE_CAMPAIGN', 'ROOMS', 'crimson_throne_room.json',
   );
   const crimsonThroneRoom = JSON.parse(fs.readFileSync(roomPath, 'utf8')) as TestRoom & Record<string, unknown>;
   assert.ok('enemies' in crimsonThroneRoom, 'fixture must still contain the boss enemy data');
@@ -232,7 +232,7 @@ test('Crimson Throne room (boss enemy + dialogue triggers) writes and hashes nor
 
   const campaign: TestCampaign = {
     v: 1,
-    kind: 'DustWeaverCampaign',
+    kind: 'StickBladeCampaign',
     campaign: { id: 'TEST_CAMPAIGN', title: 'Test Campaign' },
     metadata: { version: 1 },
     worldMap: { rooms: rooms.map((room) => ({ id: room.id })) },
@@ -283,7 +283,7 @@ test('rolling backups are pruned to MAX_BACKUPS after repeated exports', async (
   }
 
   const backupsDir = path.join(campaignDir, 'BACKUPS');
-  const backups = fs.readdirSync(backupsDir).filter((f) => f.endsWith('.dwcampaign.json'));
+  const backups = fs.readdirSync(backupsDir).filter((f) => f.endsWith('.sbcampaign.json'));
   assert.equal(backups.length, MAX_BACKUPS);
 });
 
@@ -301,7 +301,7 @@ test('export refuses a world-map room without a payload before writing anything'
   assert.equal(result.ok, false);
   assert.match(result.error, /world-map IDs without payloads: unrecovered/);
   assert.equal(fs.readFileSync(protectedPath, 'utf8'), '{"id":"unrecovered","body":"recover me"}');
-  assert.equal(fs.existsSync(path.join(campaignDir, 'TEST_CAMPAIGN.dwcampaign.json')), false);
+  assert.equal(fs.existsSync(path.join(campaignDir, 'TEST_CAMPAIGN.sbcampaign.json')), false);
   assert.equal(fs.existsSync(path.join(roomsDir, 'manifest.json')), false);
 });
 

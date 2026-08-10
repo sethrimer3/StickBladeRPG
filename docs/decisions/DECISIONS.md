@@ -1,4 +1,4 @@
-# DustWeaver — Design Decisions
+# StickBlade — Design Decisions
 
 ## RNG
 - Using xoshiro128** PRNG seeded with a fixed integer.
@@ -861,7 +861,7 @@ resolves residual overlap from ramps or stacked geometry near the anchor.
 
 ### Merged Wall Rectangles are the Authoritative Solid Source
 
-DustWeaver does NOT maintain a separate tile-occupancy grid at runtime.  The merged
+StickBlade does NOT maintain a separate tile-occupancy grid at runtime.  The merged
 wall rectangles written by `loadRoomWalls()` (gameRoom.ts) are the canonical solid
 geometry.  They are the sole input to:
 - `raycastWalls()` — used for grapple fire, LOS checks, and the miss-chain swept tip
@@ -1060,7 +1060,7 @@ Decisions:
 - **Adjacent-room rendering is a separate, optional, render-only radius-1 view.**
   It is gated by the effective setting `cameraAlwaysCentered && renderAdjacentRooms`
   (`getEffectiveRenderAdjacentRooms()` in `ui/renderSettings.ts`). The child
-  setting is stored independently under `dustweaver-render-adjacent-rooms`
+  setting is stored independently under `stickblade-render-adjacent-rooms`
   (default off) so its checked state survives the parent being toggled; turning
   the parent off immediately disables the effective state without clearing the
   child. When the effective setting is off, no adjacency work is performed.

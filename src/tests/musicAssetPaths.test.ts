@@ -18,5 +18,5 @@ test('configured music paths exactly match public MUSIC assets', () => {
 });
 
 test('title menu uses the canonical shared URL', () => {
-  assert.equal(resolveMusicAssetUrl('/DustWeaver/', 'titleMenu'), '/DustWeaver/MUSIC/titleMenu.mp3');
+  assert.equal(resolveMusicAssetUrl('/StickBlade/', 'titleMenu'), '/StickBlade/MUSIC/titleMenu.mp3');
 });

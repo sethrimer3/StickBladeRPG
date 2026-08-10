@@ -6,7 +6,7 @@
  * their content hashes, and the campaign metadata needed to detect staleness.
  *
  * Source-of-truth hierarchy (never invert this):
- *   1. Campaign file (.dwcampaign.json) — canonical, human-shareable.
+ *   1. Campaign file (.sbcampaign.json) — canonical, human-shareable.
  *   2. manifest.json               — derived; tracks room-file state.
  *   3. Individual room files        — derived; generated from the campaign.
  *
@@ -66,7 +66,7 @@ export interface RoomCacheEntry {
 
 /** Full room cache manifest written alongside the individual room files. */
 export interface RoomCacheManifest {
-  /** Campaign ID — matches `campaign.id` in the .dwcampaign.json file. */
+  /** Campaign ID — matches `campaign.id` in the .sbcampaign.json file. */
   campaignId: string;
   /** Human-readable campaign name for diagnostics. */
   campaignName: string;
@@ -206,7 +206,7 @@ export type ExportProgressStep =
 
 /**
  * Progress event payload sent by `dw:export-campaign-with-progress`.
- * The renderer receives these via `dustweaverElectron.onExportProgress()`.
+ * The renderer receives these via `stickbladeElectron.onExportProgress()`.
  */
 export interface ExportProgressEvent {
   step: ExportProgressStep;

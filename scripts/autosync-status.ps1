@@ -7,10 +7,10 @@ param(
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'autosync-common.ps1')
 try {
-    $RepositoryRoot = if ($RepositoryRoot) { Get-DustWeaverRepositoryRoot $RepositoryRoot } else { Get-DustWeaverRepositoryRoot }
-    $identity = Test-DustWeaverRepositoryIdentity $RepositoryRoot
+    $RepositoryRoot = if ($RepositoryRoot) { Get-StickBladeRepositoryRoot $RepositoryRoot } else { Get-StickBladeRepositoryRoot }
+    $identity = Test-StickBladeRepositoryIdentity $RepositoryRoot
     if (-not $identity.Valid) {
-        throw "DustWeaver repository identity check failed. Resolved path: '$($identity.RepositoryRoot)'. Detected origin: '$($identity.Remote)'."
+        throw "StickBlade repository identity check failed. Resolved path: '$($identity.RepositoryRoot)'. Detected origin: '$($identity.Remote)'."
     }
     $paths = Get-AutosyncPaths $RepositoryRoot
     $pauseState = Get-AutosyncPauseState $paths
@@ -48,7 +48,7 @@ try {
             $scheduledTaskState = if ($enabledNode -and $enabledNode.InnerText -eq 'false') { 'disabled' } else { 'enabled' }
         } else { $scheduledTaskState = 'not found or inaccessible' }
     } catch { $scheduledTaskState = 'not queryable' }
-    Write-Host 'Repository identity: passed (sethrimer3/DustWeaver)'
+    Write-Host 'Repository identity: passed (sethrimer3/StickBlade)'
     Write-Host "Auto-sync: $(if ($pauseState.Paused) { 'paused' } else { 'active' })"
     Write-Host "Emergency pause marker: $(if ($pauseState.EmergencyPause) { 'present' } else { 'absent' })"
     Write-Host "Agent pause leases: $($pauseState.Leases.Count)"
@@ -78,4 +78,4 @@ try {
     Write-Host "Scheduled arguments: $scheduledTaskArguments"
     Write-Host "Last auto-sync commit: $lastCommit"
     exit 0
-} catch { Write-Error "Could not inspect DustWeaver auto-sync: $($_.Exception.Message)"; exit 1 }
+} catch { Write-Error "Could not inspect StickBlade auto-sync: $($_.Exception.Message)"; exit 1 }

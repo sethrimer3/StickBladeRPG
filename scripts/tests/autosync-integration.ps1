@@ -3,7 +3,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) "DustWeaver-autosync-tests-$PID-$([Guid]::NewGuid().ToString('N'))"
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) "StickBlade-autosync-tests-$PID-$([Guid]::NewGuid().ToString('N'))"
 $passed = 0
 $failed = 0
 
@@ -40,19 +40,19 @@ function New-TestRepository([string]$Name, [string]$InitialBranch = 'main', [swi
     $bare = Join-Path $testRoot "$Name-origin.git"
     & git init --bare --initial-branch=main $bare | Out-Null
     & git init --initial-branch=$InitialBranch $repository | Out-Null
-    & git -C $repository config user.name 'DustWeaver Auto-sync Tests'
+    & git -C $repository config user.name 'StickBlade Auto-sync Tests'
     & git -C $repository config user.email 'autosync-tests@example.invalid'
     New-Item -ItemType Directory -Path (Join-Path $repository 'src'), (Join-Path $repository 'scripts') | Out-Null
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'scripts\autosync-common.ps1') -Destination (Join-Path $repository 'scripts\autosync-common.ps1')
     Copy-Item -LiteralPath (Join-Path $sourceRoot 'scripts\autosync.ps1') -Destination (Join-Path $repository 'scripts\autosync.ps1')
     Set-Content -LiteralPath (Join-Path $repository 'AGENTS.md') -Value '# test'
     Set-Content -LiteralPath (Join-Path $repository 'src\build-info.ts') -Value 'export const BUILD_NUMBER = 0;'
-    $packageJson = if ($WrongIdentity) { '{"name":"not-dustweaver"}' } else { '{"name":"dustweaver"}' }
+    $packageJson = if ($WrongIdentity) { '{"name":"not-stickblade"}' } else { '{"name":"stickblade"}' }
     Set-Content -LiteralPath (Join-Path $repository 'package.json') -Value $packageJson
     Set-Content -LiteralPath (Join-Path $repository 'seed.txt') -Value 'seed'
     & git -C $repository add -A
     & git -C $repository commit -m seed | Out-Null
-    $remote = if ($WrongIdentity) { 'https://github.com/example/not-dustweaver.git' } else { 'https://github.com/sethrimer3/DustWeaver.git' }
+    $remote = if ($WrongIdentity) { 'https://github.com/example/not-stickblade.git' } else { 'https://github.com/sethrimer3/StickBlade.git' }
     & git -C $repository remote add origin $remote
     if (-not $WrongIdentity -and $InitialBranch -eq 'main') {
         $fileUri = ([Uri]$bare).AbsoluteUri
@@ -354,7 +354,7 @@ try {
     if (Test-Path -LiteralPath $testRoot) {
         $resolved = [IO.Path]::GetFullPath($testRoot)
         $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-        if (-not $resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or -not (Split-Path $resolved -Leaf).StartsWith('DustWeaver-autosync-tests-')) {
+        if (-not $resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or -not (Split-Path $resolved -Leaf).StartsWith('StickBlade-autosync-tests-')) {
             throw "Refusing to remove unexpected test path '$resolved'."
         }
         Remove-Item -LiteralPath $resolved -Recurse -Force

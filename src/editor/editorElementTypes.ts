@@ -158,8 +158,8 @@ export interface EditorEnemy {
   isOrbitalDustCoreLargeFlag?: 0 | 1;
   isDustBlockMimicFlag?: 0 | 1;
   isDustBlockMimicLargeFlag?: 0 | 1;
-  isDustWeaverArchitectFlag?: 0 | 1;
-  isDustWeaverArchitectLargeFlag?: 0 | 1;
+  isStickBladeArchitectFlag?: 0 | 1;
+  isStickBladeArchitectLargeFlag?: 0 | 1;
   isVoidSingularityFlag?: 0 | 1;
   isVoidSingularityPairFlag?: 0 | 1;
   isDustLeechFlag?: 0 | 1;

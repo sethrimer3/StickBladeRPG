@@ -1,4 +1,4 @@
-# DustWeaver Agent Guide
+# StickBlade Agent Guide
 
 This file is the short entry point for coding agents. Keep it compact and update it when repo workflow or architecture changes.
 
@@ -37,7 +37,7 @@ npm run desktop
 
 `npm run electron` and `npm run desktop` include `--no-sandbox` for local Electron development.
 
-## DustWeaver-specific boundaries
+## StickBlade-specific boundaries
 
 - Simulation code under `src/sim/` should stay deterministic. Avoid wall-clock randomness or DOM/render dependencies in simulation logic.
 - Rendering should read snapshots and runtime room data, not mutate simulation state.

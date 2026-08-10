@@ -1,4 +1,4 @@
-# DustWeaver — Room Loading & Rendering Optimizations
+# StickBlade — Room Loading & Rendering Optimizations
 
 _Working log for the room-load / render optimization pass started BUILD 431._
 _Companion to [`docs/systems/PERFORMANCE_DIAGNOSIS.md`](docs/systems/PERFORMANCE_DIAGNOSIS.md) (freeze diagnosis) — this

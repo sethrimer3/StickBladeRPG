@@ -4,7 +4,7 @@ This document is AI-facing and intentionally compact. Use it to choose files, th
 
 ## Major layers
 
-DustWeaver is a TypeScript/Vite/Electron-capable browser game. The current codebase has several major ownership layers:
+StickBlade is a TypeScript/Vite/Electron-capable browser game. The current codebase has several major ownership layers:
 
 - `src/game.ts`: top-level app/navigation state machine. Owns transitions between menu, loadout, gameplay, custom campaign play, and custom campaign edit.
 - `src/screens/`: gameplay screen orchestration, room loading, transitions, resident rooms, camera, HUD/debug integration, and render orchestration. `src/screens/gameRunTimer.ts` is the Node-safe, instance-local speedrun timer state owner; `gameScreen.ts` retains eligible-frame gating. `src/screens/gameSkillTombActivation.ts` owns the synchronous save/checkpoint/healing mutation policy for skill-tomb activation through structural ports, while `gameOverlayController.ts` retains modal guards and DOM lifecycle. `src/screens/gameDeathRespawnCoordinator.ts` owns the deterministic Return to Last Save respawn transaction (saved-room/campaign fallback, `loadRoom`, transition-reveal reset, frame-clock reset, optional post-respawn callback) through structural ports, while `gameOverlayController.ts` retains the death-screen guard, UI construction/cleanup, and Return to Main Menu behavior.

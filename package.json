@@ -1,6 +1,6 @@
 {
   "main": "electron/main.cjs",
-  "name": "dustweaver",
+  "name": "stickblade",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,7 @@
     "lint": "eslint src/",
     "preview": "vite preview",
     "electron": "npm exec -- electron --no-sandbox .",
-    "electron:dev": "set DUSTWEAVER_DEVTOOLS=1&& npm exec -- electron --no-sandbox .",
+    "electron:dev": "set STICKBLADE_DEVTOOLS=1&& npm exec -- electron --no-sandbox .",
     "desktop": "npm run build && npm exec -- electron --no-sandbox .",
     "shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1",
     "test": "node --import tsx --test src/tests/**/*.test.ts"

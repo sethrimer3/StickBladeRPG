@@ -9,7 +9,7 @@
  * progress modal.  In browser / GitHub Pages mode, a download is triggered
  * instead so the user can save the file manually.
  *
- * Source-of-truth rule: the .dwcampaign.json file is canonical.  The
+ * Source-of-truth rule: the .sbcampaign.json file is canonical.  The
  * individual room files (ROOMS/*.json) and manifest.json are derived cache
  * artifacts, regenerated on every export.
  */
@@ -39,11 +39,11 @@ import type { ZipEntry } from '../utils/minimalZipWriter';
 import { assertCampaignIntegrity, CampaignIntegrityError } from './campaignIntegrity';
 
 // ── Main campaign constants ───────────────────────────────────────────────────
-const MAIN_CAMPAIGN_ID = 'DUSTWEAVER_CAMPAIGN';
-const MAIN_CAMPAIGN_TITLE = 'DustWeaver';
+const MAIN_CAMPAIGN_ID = 'STICKBLADE_CAMPAIGN';
+const MAIN_CAMPAIGN_TITLE = 'StickBlade';
 const MAIN_CAMPAIGN_CREATOR = 'GravyThyme';
 const MAIN_CAMPAIGN_DESCRIPTION =
-  'The main DustWeaver campaign. This is the core single-player game experience ' +
+  'The main StickBlade campaign. This is the core single-player game experience ' +
   'with the canonical world map, progression, and story path.';
 const MAIN_CAMPAIGN_INITIAL_ROOM_ID = 'lobby';
 
@@ -63,7 +63,7 @@ const MAIN_CAMPAIGN_INITIAL_ROOM_ID = 'lobby';
  * This is called with `void` so the main export functions stay synchronous.
  * The ZIP download happens asynchronously after the main JSON download.
  *
- * Source-of-truth rule: the .dwcampaign.json remains canonical; the ZIP
+ * Source-of-truth rule: the .sbcampaign.json remains canonical; the ZIP
  * contains only derived cache artifacts.
  */
 async function downloadRoomCacheZip(
@@ -278,7 +278,7 @@ async function runElectronProgressExport(
   progressRoot: HTMLElement,
   removeMissingRooms?: (roomIds: ReadonlySet<string>) => void,
 ): Promise<boolean> {
-  const electronApi = window.dustweaverElectron;
+  const electronApi = window.stickbladeElectron;
   if (!electronApi) return false;
 
   // Random per-export ID so the Cancel button can target this specific
@@ -349,7 +349,7 @@ async function runElectronProgressExport(
 }
 
 /**
- * Exports the entire custom campaign as a single `.dwcampaign.json` file.
+ * Exports the entire custom campaign as a single `.sbcampaign.json` file.
  *
  * Collects all rooms from ROOM_REGISTRY (the campaign rooms), merges pending
  * room edits, and includes world-map metadata and campaign metadata from the
@@ -418,7 +418,7 @@ export async function exportCampaignJson(
   };
 
   // In Electron, write directly to userData/CUSTOM_CAMPAIGNS/<id>/ with progress.
-  if (window.dustweaverElectron !== undefined && progressRoot != null) {
+  if (window.stickbladeElectron !== undefined && progressRoot != null) {
     return runElectronProgressExport(
       buildExport,
       session.source === 'main',
@@ -448,20 +448,20 @@ export async function exportCampaignJson(
   // readable suffix on a download filename, not simulation or game state.
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${exported.campaign.id}.dwcampaign.json`;
+  a.download = `${exported.campaign.id}.sbcampaign.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 0);
 
   // Also download the derived room-cache ZIP alongside the canonical JSON.
-  // The ZIP is a convenience artifact; the .dwcampaign.json remains canonical.
+  // The ZIP is a convenience artifact; the .sbcampaign.json remains canonical.
   void downloadRoomCacheZip(exported, `${exported.campaign.id}_ROOMS.zip`);
   return true;
 }
 
 /**
- * Exports the main DustWeaver campaign as a single `.dwcampaign.json` file.
+ * Exports the main StickBlade campaign as a single `.sbcampaign.json` file.
  *
  * Builds a synthetic EditableCampaignSession from the current ROOM_REGISTRY
  * (dehydrating every room) and merges any pending room edits on top before
@@ -471,7 +471,7 @@ export async function exportCampaignJson(
  * in packaged builds) with a live progress modal.
  * In browser / GitHub Pages: triggers a file download.
  *
- * Source-of-truth rule: the .dwcampaign.json file remains canonical.  The
+ * Source-of-truth rule: the .sbcampaign.json file remains canonical.  The
  * individual ROOMS/ files are derived cache artifacts written alongside it.
  *
  * @param pendingRoomEdits  Rooms with unsaved edits from the current session.
@@ -514,7 +514,7 @@ export async function exportMainCampaignJson(
       source: 'main',
       campaign: {
         v: 1,
-        kind: 'DustWeaverCampaign',
+        kind: 'StickBladeCampaign',
         ...(loadedRevMeta !== null ? { metadata: loadedRevMeta } : {}),
         campaign: {
           id: MAIN_CAMPAIGN_ID,
@@ -543,7 +543,7 @@ export async function exportMainCampaignJson(
   };
 
   // In Electron, write directly to the project files with a progress modal.
-  if (window.dustweaverElectron !== undefined && progressRoot != null) {
+  if (window.stickbladeElectron !== undefined && progressRoot != null) {
     return runElectronProgressExport(buildExport, true, progressRoot).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[editorExport] Electron main campaign export error:', msg);
@@ -555,11 +555,11 @@ export async function exportMainCampaignJson(
 
   // In Electron without a progressRoot (legacy callers) fall back to the old
   // synchronous IPC call so no regression occurs.
-  if (window.dustweaverElectron !== undefined) {
+  if (window.stickbladeElectron !== undefined) {
     try {
-      const result = await window.dustweaverElectron.saveOfficialCampaignToProject(exported);
+      const result = await window.stickbladeElectron.saveOfficialCampaignToProject(exported);
       if (result.ok) {
-        const dir = result.campaignDir ?? 'ASSETS/CAMPAIGNS/DUSTWEAVER_CAMPAIGN';
+        const dir = result.campaignDir ?? 'ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN';
         window.alert(`Campaign saved to project files:\n${dir}`);
         return true;
       }
@@ -584,14 +584,14 @@ export async function exportMainCampaignJson(
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'DustweaverCampaign.dwcampaign.json';
+  a.download = 'StickbladeCampaign.sbcampaign.json';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 0);
 
   // Also download the derived room-cache ZIP alongside the canonical JSON.
-  // The ZIP is a convenience artifact; the .dwcampaign.json remains canonical.
-  void downloadRoomCacheZip(exported, 'DustweaverCampaign_ROOMS.zip');
+  // The ZIP is a convenience artifact; the .sbcampaign.json remains canonical.
+  void downloadRoomCacheZip(exported, 'StickbladeCampaign_ROOMS.zip');
   return true;
 }
