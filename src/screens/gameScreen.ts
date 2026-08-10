@@ -28,6 +28,8 @@ import { spawnHeraldForTesting, spawnIceWizardForTesting } from './gameEnemySpaw
 import { ROOM_REGISTRY, STARTING_ROOM_ID } from '../levels/rooms';
 import { createCameraState, getCameraOffset } from '../render/camera';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
+import { WeaponRenderer } from '../render/effects/weaponRenderer';
+import { getEquippedWeaponDef, equipPlayerWeapon } from '../sim/weapons/playerWeaponState';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
 import { handleGateRoomExit, handleGateSaveCompleted, interactWithNearbyChallengeTotem, updateRoomChallengeElements } from './gameRoomChallenge';
 import { PlayerProgress } from '../progression/playerProgress';
@@ -469,6 +471,8 @@ export function startGameScreen(
     try { playerSfx.play('jump_impact_soft', opts.volumeLinear); } catch { /* guard */ }
   });
   const skillTombRenderer = new SkillTombRenderer();
+  // STICK-RPG weapon visuals (held blade, swing arc, projectiles).
+  const weaponRenderer = new WeaponRenderer();
   const skillTombEffectRenderer = new SkillTombEffectRenderer();
   const playerCloak = new PlayerCloak();
   const phantomCloak = new PhantomCloakExtension();
@@ -2034,7 +2038,7 @@ export function startGameScreen(
 
     const renderFrameArgs = {
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
+      webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
       playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, darkRoomOverlay, decorationWaveState,
       sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
       world, currentRoom, isChallengeModeActive: world.challengeMode.isActive,
@@ -2339,6 +2343,31 @@ export function startGameScreen(
         facingDirection: body.facingDirection,
       };
     };
+
+    // ── DEV-only inspection / equip hook for the STICK-RPG weapon ────────
+    // `window.__dwWeapon()` — reports the equipped weapon, swing, and live
+    // projectile count. `window.__dwEquip('greatsword')` swaps weapons at
+    // runtime, which is the only way to try one until an inventory exists
+    // (see Phase 3 in docs/Todo.md).
+    (w as DwWin & { __dwWeapon?: () => unknown }).__dwWeapon = (): unknown => {
+      const weapon = world.playerWeapon;
+      const def = getEquippedWeaponDef(weapon);
+      return {
+        equippedWeaponId: weapon.equippedWeaponId,
+        name: def?.name ?? null,
+        kind: def?.kind ?? null,
+        swingActive: weapon.swing.activeFlag === 1,
+        cooldownRemainingTicks: weapon.swing.cooldownRemainingTicks,
+        liveProjectiles: weapon.projectiles.liveCount,
+        attackStat: world.playerCharacterStats?.attackBase ?? null,
+      };
+    };
+    (w as DwWin & { __dwEquip?: (id: string | null) => boolean }).__dwEquip =
+      (id: string | null): boolean => {
+        const ok = equipPlayerWeapon(world.playerWeapon, id);
+        console.log(`[dev] equip ${String(id)} → ${ok ? 'ok' : 'refused'}`);
+        return ok;
+      };
 
     // ── DEV-only spawn hook for The Void Herald boss ─────────────────────
     // `window.__dwSpawnHerald(xBlock?, yBlock?)` — spawns The Void Herald directly

@@ -16,6 +16,7 @@ import type { ClusterSnapshot } from './clusterSnapshotTypes';
 import type { SecondaryWeaveGesturePhase } from '../input/secondaryWeaveGesture';
 import type { SurfaceRimStyle } from './walls/surfaceRimStyle';
 import type { StickRangerBody } from '../sim/clusters/stickRangerBody';
+import type { PlayerWeaponState } from '../sim/weapons/playerWeaponState';
 
 export interface ParticleSnapshot {
   readonly positionXWorld:    Float32Array;
@@ -214,6 +215,13 @@ export interface WorldSnapshot {
    * copied — the renderer only reads point positions from it.
    */
   readonly stickRangerBody: StickRangerBody | null;
+  /**
+   * The player's equipped weapon, swing runtime, and live projectiles.
+   * Held by reference for the same reason as `stickRangerBody` above: the
+   * renderer only reads from it, and copying the projectile pool every frame
+   * would be pure waste. Treat as read-only — the simulation owns it.
+   */
+  readonly playerWeapon: PlayerWeaponState | null;
   /** Number of active grasshoppers. */
   readonly grasshopperCount: number;
   /** X positions of grasshoppers (world units). */

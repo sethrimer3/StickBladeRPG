@@ -50,6 +50,7 @@ import type { CrackedBlockShatterRenderer } from '../render/crackedBlockShatterR
 import type { BreakEffectRenderer } from '../render/breakEffectRenderer';
 import type { WeakWallJumpDebrisRenderer } from '../render/weakWallJumpDebrisRenderer';
 import type { SkillTombRenderer } from '../render/skillTombRenderer';
+import type { WeaponRenderer } from '../render/effects/weaponRenderer';
 import type { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
 import type { PlayerCloak } from '../render/clusters/playerCloak';
 import type { PhantomCloakExtension } from '../render/clusters/phantomCloak';
@@ -163,6 +164,8 @@ export interface RenderFrameContext {
   /** Weak wall jump cascade debris — spawns on 3rd+ consecutive wall jump. */
   weakWallJumpDebris: WeakWallJumpDebrisRenderer;
   skillTombRenderer: SkillTombRenderer;
+  /** Held STICK-RPG weapon, its swing arc, and live projectiles. */
+  weaponRenderer: WeaponRenderer;
   skillTombEffectRenderer: SkillTombEffectRenderer;
   /** One-shot cosmetic golden-mote burst for Dust Container / Shard pickups. */
   dustContainerPickupEffect: DustContainerPickupEffect;
@@ -346,7 +349,7 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
+    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
     playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
     sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
     world, currentRoom, snapshot,
@@ -725,6 +728,10 @@ export function renderFrame(r: RenderFrameContext): void {
     renderTimeStopFieldDebug(ctx, world, ox, oy, zoom);
   }
   if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_DUST);
+
+  // Equipped weapon: held blade, swing arc, and live projectiles. Drawn after
+  // the dust pass so the blade reads on top of debris, and before the HUD.
+  weaponRenderer.render(ctx, snapshot, ox, oy, zoom);
 
   // Save tombs (sprite + swirling/falling dust particles)
   skillTombRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);

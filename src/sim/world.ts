@@ -22,6 +22,8 @@ import {
 } from './poisonField/poisonExposureState';
 import { createSecondaryWeaveGestureState, type SecondaryWeaveGestureState } from '../input/secondaryWeaveGesture';
 import { createVoidDashState, type VoidDashState } from './clusters/voidDash';
+import { createPlayerWeaponState, type PlayerWeaponState } from './weapons/playerWeaponState';
+import type { CharacterStats } from './stats/characterStats';
 
 /** Fixed capacity for this tick's Verdant flower-bloom spawn events (see verdantFlowerEventCount). */
 export const VERDANT_FLOWER_EVENTS_CAPACITY = 16;
@@ -445,6 +447,19 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
   canonicalMoteVelXWorld: Float32Array;
   canonicalMoteVelYWorld: Float32Array;
 
+  // ── STICK-RPG weapons (Phase 2b) ────────────────────────────────────
+  /**
+   * The player's equipped weapon, its swing runtime, and its live projectiles.
+   * Independent of the Weave system — the two share no state.
+   */
+  playerWeapon: PlayerWeaponState;
+  /**
+   * The player's character/combat stats, mirrored from `PlayerProgress` on room
+   * load so simulation never reaches into progression. Null before it is
+   * supplied, in which case weapon damage falls back to the base attack stat.
+   */
+  playerCharacterStats: CharacterStats | null;
+
   // ── Independent Sword Weave ─────────────────────────────────────────
   newSwordActiveFlag: number;
   newSwordGestureId: number;
@@ -711,6 +726,8 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     canonicalMoteYWorld:           new Float32Array(MAX_CANONICAL_MOTES),
     canonicalMoteVelXWorld:        new Float32Array(MAX_CANONICAL_MOTES),
     canonicalMoteVelYWorld:        new Float32Array(MAX_CANONICAL_MOTES),
+    playerWeapon:                  createPlayerWeaponState(),
+    playerCharacterStats:          null,
     newSwordActiveFlag:            0,
     newSwordGestureId:             0,
     newSwordTicksElapsed:          0,

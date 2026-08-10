@@ -2277,3 +2277,59 @@ Important context for the next agent:
 - The 12 `UNPORTED_BEHAVIOR_FIELDS` callbacks are still unported. The generic
   blast path approximates the pure-damage ones but reproduces none of the status
   effects (slowing pollen, steam, gusts). That is Phase 2d.
+
+## STICK-RPG port — Phase 2b weapon equipped in gameplay (BUILD 617)
+
+The weapon runtime from Phases 2/2a is now reachable in game. Press **Q**
+(rebindable) while aiming with the mouse and the equipped weapon attacks.
+
+Landed:
+
+- `src/sim/weapons/playerWeaponState.ts` — owns equipped weapon id, swing
+  runtime, projectile pool, and burst scheduling. `WorldState` grows by exactly
+  one field (`playerWeapon`) plus `playerCharacterStats`.
+- Tick integration at step 0.27 in `sim/tick.ts`, deliberately after movement
+  (so the arc uses the player's final position) and before enemy AI (so an enemy
+  killed by a swing does not also act).
+- New rebindable `weaponAttack` keyboard action, default **Q**. Held rather than
+  edge-triggered — the weapon's own cooldown paces repeat attacks.
+- Room-scoped reset in `gameLoadRoomPhases.ts`: swing, projectiles, burst, and
+  cooldown clear on room activation; the equipped weapon persists (it is player
+  state, not room state).
+- `src/render/effects/weaponRenderer.ts` — held blade, swing trail, projectiles
+  with velocity-aligned trails. Snapshot carries `playerWeapon` BY REFERENCE,
+  same tradeoff already accepted for `stickRangerBody`.
+- Dev hooks: `__dwWeapon()` reports state; `__dwEquip(id)` swaps weapons at
+  runtime — the only way to try a non-default weapon until an inventory exists.
+- 25 tests. Full suite 3383/3383; build and lint clean.
+
+**Open design question for the user — do not decide this unilaterally.** The
+mouse buttons are nominally owned by the Weave system, so the weapon attack was
+given its own key rather than displacing a weave. But while wiring this I found
+that `tickSecondaryWeaveCoordinator` / `applyPlayerWeaveCombat` have NO
+production caller — they are referenced only by their own module and by tests.
+The same is true of `NewSwordWeaveRenderer`. So the Sword/Bow/Shield weaves
+appear to be dormant code in the shipped game, and current player combat is
+momentum-based (`momentumCombat.ts`, wired at tick step 0.26). If weapons are
+meant to become the primary combat system, LMB is free in practice and the
+weapon attack should probably move there — but that is a game-design call.
+
+Other context for the next agent:
+
+- **The Sword default is temporary.** `DEFAULT_STARTER_WEAPON_ID` in
+  `playerWeaponState.ts` is equipped on room load when nothing is equipped,
+  purely so the system is reachable. Phase 3's per-member
+  `{mainHand, offHand, armor}` replaces it.
+- **Bow-type weapons arc.** `bow` declares `gravity: true`, so a flat shot drops
+  under a distant target — correct donor behavior, not a bug. A test pins it.
+  Aiming compensation belongs to whoever does the aiming UI.
+- The renderer draws blades only for `melee`/`shield`. Bows and guns would need
+  their own poses (the donor's `gunPose`/`spearPose` blocks are carried in the
+  weapon data, unported), and drawing a sword line for a rifle reads as a bug.
+- **Browser verification was partial.** The app boots clean and a live session
+  confirmed `__dwWeapon()` reports the Sword equipped with stats mirrored
+  (`attackStat: 1`). The keypress→swing→damage path could NOT be observed
+  in-browser: the Browser pane does not composite in this environment, so
+  `requestAnimationFrame` never fires and the game loop is frozen. That path is
+  covered by unit tests (including a held-key cadence test) but has not been
+  seen running by a human. Worth a manual playtest.

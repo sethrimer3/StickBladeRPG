@@ -19,6 +19,7 @@ import { fireGrapple } from '../sim/clusters/grapple';
 import { GrappleInputMode } from '../sim/worldGrappleState';
 import { getWallJumpCandidate } from '../sim/clusters/playerWallJump';
 import { screenToWorld } from './gameRoom';
+import { tryStartPlayerWeaponAttack } from '../sim/weapons/playerWeaponState';
 import { getDoubleJumpToGrappleEnabled } from '../ui/renderSettings';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
@@ -520,6 +521,24 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
           break; // Only interact with the nearest anchor (first match).
         }
       }
+    }
+  }
+
+  // ── STICK-RPG weapon attack ─────────────────────────────────────────────
+  // Independent of the Weave gestures above: this is its own rebindable key
+  // (default Q), aimed with the mouse, and it never consumes or suppresses a
+  // weave action. The attempt is made every frame the key is held; the
+  // weapon's own cooldown decides whether an attack actually starts.
+  if (inputState.isWeaponAttackHeldFlag) {
+    const weaponPlayer = world.clusters[0];
+    if (weaponPlayer !== undefined && weaponPlayer.isPlayerFlag === 1 && weaponPlayer.isAliveFlag === 1) {
+      const aim = screenToWorld(
+        inputState.mouseXPx, inputState.mouseYPx,
+        offsetXPx, offsetYPx, zoom,
+        canvas.width, canvas.height,
+        virtualWidthPx, virtualHeightPx,
+      );
+      tryStartPlayerWeaponAttack(world, weaponPlayer, aim.xWorld, aim.yWorld, world.rng);
     }
   }
 

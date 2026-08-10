@@ -78,6 +78,11 @@ export interface InputState {
    * Weave instead.
    */
   isGrappleZipRequestedFlag: 0 | 1;
+  /**
+   * True while the Weapon Attack key is held. Held rather than edge-triggered
+   * so the equipped weapon's own cooldown paces repeat attacks.
+   */
+  isWeaponAttackHeldFlag: boolean;
   /** Set to true for one collectCommands call to trigger an interact (F key). */
   isInteractTriggeredFlag: boolean;
   /**
@@ -157,6 +162,7 @@ export function createInputState(): InputState {
     grappleAimXPx: 0,
     grappleAimYPx: 0,
     isGrappleZipRequestedFlag: 0,
+    isWeaponAttackHeldFlag: false,
     isInteractTriggeredFlag: false,
     isInteractDownFlag: false,
     interactDownTimeMs: 0,
@@ -433,6 +439,11 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       state.interactDownTimeMs = performance.now();
       state.isInteractPressEdgeFlag = true;
     }
+    // Held rather than edge-triggered: the weapon's own cooldown paces repeat
+    // attacks, so holding the key auto-attacks at the weapon's natural rate.
+    if (keyMatches(e.key, b.weaponAttack)) {
+      state.isWeaponAttackHeldFlag = true;
+    }
     if (keyMatches(e.key, b.toggleFullscreen) && !e.repeat) {
       state.isFullscreenToggleTriggeredFlag = true;
     }
@@ -453,6 +464,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (e.key === 'Escape') state.isEscapePressed = false;
     if (keyMatches(e.key, b.jump) || e.key === ' ' || e.key === 'ArrowUp') {
       state.isJumpHeldFlag = false;
+    }
+    if (keyMatches(e.key, b.weaponAttack)) {
+      state.isWeaponAttackHeldFlag = false;
     }
     if (keyMatches(e.key, b.interact)) {
       if (state.isInteractDownFlag) {

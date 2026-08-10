@@ -136,6 +136,7 @@ import { resetShieldLiquidContactLatch } from '../sim/hazards';
 import { resetTimeStopFieldPlayerState } from '../sim/timeStopField/timeStopFieldPlayerState';
 import { resetPoisonExposureState } from '../sim/poisonField/poisonExposureState';
 import { resetVoidDashState } from '../sim/clusters/voidDash';
+import { resetPlayerWeaponRoomState, equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
 import type { CombatMode } from '../sim/combatMode';
 import { STICKMAN_CHARACTER_ID } from '../sim/clusters/stickRangerPlayer';
 
@@ -388,6 +389,10 @@ function resetRoomScopedSimState(world: WorldState): void {
   resetPoisonExposureState(world.poisonExposure);
   resetVoidDashState(world.voidDash);
 
+  // A swing in flight, live projectiles, and a partly-fired burst are all
+  // room-scoped. The equipped weapon itself is player state and survives.
+  resetPlayerWeaponRoomState(world.playerWeapon);
+
   world.isGrappleActiveFlag       = 0;
   world.isGrappleMissActiveFlag   = 0;
   world.isGrappleRetractingFlag   = 0;
@@ -429,6 +434,17 @@ function applyPlayerWeaveWorldFields(
   // too; restore the `ctx.progress?.characterId` read here to bring character
   // selection back.
   world.characterId                    = STICKMAN_CHARACTER_ID;
+  // Mirror character stats into the world so simulation never reaches into
+  // progression. Null when the save predates the stat port; weapon damage then
+  // falls back to the base attack stat.
+  world.playerCharacterStats           = ctx.progress?.characterStats ?? null;
+  // Starter weapon. There is no inventory or equipment slot yet — Phase 3 adds
+  // per-party-member {mainHand, offHand, armor} and this default goes away then.
+  // Until then the player is armed with the donor's basic Sword so the weapon
+  // system is actually reachable in game.
+  if (world.playerWeapon.equippedWeaponId === null) {
+    equipPlayerWeapon(world.playerWeapon, DEFAULT_STARTER_WEAPON_ID);
+  }
   // A fresh room means a fresh body: drop the old one so it is rebuilt at the
   // new spawn point instead of interpolating across the transition.
   world.stickRangerBody                = null;

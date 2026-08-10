@@ -22,6 +22,7 @@ import { WorldState } from './world';
 import { applyClusterMovement } from './clusters/movement';
 import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleRopeAnchor } from './clusters/grapple';
 import { applyEnemyAI } from './clusters/enemyAi';
+import { tickPlayerWeapon } from './weapons/playerWeaponState';
 import { applyRockElementalAI } from './clusters/rockElementalAi';
 import { applyRadiantTetherAI } from './clusters/radiantTetherAi';
 import { applyRadiantWebAI } from './clusters/radiantWebAi';
@@ -214,6 +215,19 @@ export function tick(world: WorldState): void {
   applyMomentumTurretAI(world);
   applyNeedleUrchinAI(world);
   tickNeedleUrchinProjectiles(world);
+
+  // 0.27. STICK-RPG weapon — cooldown, active swing, burst shots, projectiles.
+  //        Runs after movement so the swing arc and projectile spawns use the
+  //        player's final position this tick, and before enemy AI so an enemy
+  //        killed by a swing does not also act.
+  {
+    const player = world.clusters.length > 0 ? world.clusters[0] : undefined;
+    const livingPlayer =
+      player !== undefined && player.isPlayerFlag === 1 && player.isAliveFlag === 1
+        ? player
+        : null;
+    tickPlayerWeapon(world, livingPlayer, world.rng);
+  }
 
   // 0.5. Enemy AI — decide attack / block / dodge for each enemy cluster
   applyEnemyAI(world);
