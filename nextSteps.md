@@ -2135,3 +2135,43 @@ Not done / follow-ups for a future pass:
   adjacent/overlapping fields don't create a visibly doubled-opacity seam;
   and the editor preview (purple tint + skull glyph) is comfortably more
   visible than the runtime clouds.
+
+## STICK-RPG port — Phase 1 stats foundation (BUILD 613)
+
+Phase 1 of the STICK-RPG port is complete. Design and donor-file map:
+`docs/decisions/STICK_RPG_PORT_PLAN.md`; phase queue: the "STICK-RPG port"
+section of `docs/Todo.md`.
+
+Landed:
+
+- `src/sim/stats/characterStats.ts` — pure, Node-safe. Ports the donor's
+  `Stick` base stats, `addXp` curve (nextXp x1.45, maxHp +12, +1 skill point
+  per level), `computeLocalSkillMultipliers` (1 + N per point), and
+  `computeDamage` (`max(0, base x attack - roll x defense)`), with the roll
+  driven by `RngState` instead of `Math.random()`.
+- `PlayerProgress.characterStats` (optional on the wire) plus
+  `sanitizePlayerCharacterStats`, called from `loadSaveSlot` so pre-port saves
+  backfill a level-1 record and hand-edited values are clamped.
+- `PlayerDamageTarget.statsDefense` and `PlayerDamageOptions.statsRng` /
+  `attackerAttack` in `src/sim/playerDamage.ts`.
+- `src/tests/characterStats.test.ts` (38 tests). Full suite 3242/3242; build
+  and lint clean.
+
+Important context for the next agent:
+
+- **Stat scaling is deliberately inert today.** Mitigation applies only when a
+  caller supplies BOTH `statsDefense` on the target and `statsRng` in the
+  options. No current caller does either, so every existing damage path is
+  bit-identical to its pre-port behavior. Phase 2/3 wires it up once equipment
+  and party members actually carry stats.
+- **Two different "levels" now exist.** `PlayerProgress.level` is the dust-slot
+  level; `PlayerProgress.characterStats.level` is the character/combat level.
+  They are independent. Do not merge them.
+- Nothing calls `grantExperience` yet — XP drops arrive with Phase 4 enemies.
+- Donor quirks intentionally NOT reproduced, documented inline in
+  `characterStats.ts`: the donor's `SKILL_POINTS_PER_LEVEL` fallback of 3 (real
+  value is 1), its `nextXp: Infinity` initializer (40 is the value that governs
+  play), and its divide-by-aura-multiplier base recovery, which drifts when a
+  multiplier hits zero. This port stores bases explicitly and derives forward.
+- Not verified in a live browser/Electron session: Phase 1 adds no observable
+  runtime behavior, so there was nothing to see. That changes at Phase 2.

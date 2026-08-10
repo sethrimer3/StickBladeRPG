@@ -5,7 +5,7 @@
  * Three save slots are available (indices 0–2).
  */
 
-import { PlayerProgress, createDefaultProgress, createOfficialNewProfileProgress, sanitizePlayerDustProgress, migrateStarterFireDustUnlock } from './playerProgress';
+import { PlayerProgress, createDefaultProgress, createOfficialNewProfileProgress, sanitizePlayerDustProgress, sanitizePlayerCharacterStats, migrateStarterFireDustUnlock } from './playerProgress';
 import { migrateLegacyWeaveUnlocks } from './weaveMigration';
 // Presentation-only: used by the two display formatters at the bottom of this
 // file. Save serialisation and the slot schema stay locale-independent.
@@ -95,6 +95,10 @@ export function loadSaveSlot(slotIndex: number): SaveSlotData | null {
       parsed.progress.characterId = 'outcast';
     }
     sanitizePlayerDustProgress(parsed.progress);
+    // Backfill/repair character stats. Saves written before the STICK-RPG stat
+    // port omit `characterStats` entirely; the shallow spread above supplies a
+    // level-1 default, and this clamps any hand-edited or out-of-range values.
+    sanitizePlayerCharacterStats(parsed.progress);
     // Migrate legacy shield_sword secondary-weave saves to grant the new
     // independent Sword + Shield unlocks (idempotent; never removes an
     // ability the save already has — see weaveMigration.ts).

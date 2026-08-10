@@ -14,6 +14,11 @@ import { PlayerWeaveLoadout, createDefaultWeaveLoadout } from '../sim/weaves/pla
 import { PassiveTechniqueId } from './passiveTechniques';
 import { WeaveId } from '../sim/weaves/weaveDefinition';
 import { getUnlockedDustKindsInCanonicalOrder } from '../sim/weaves/dustWheelOptions';
+import {
+  CharacterStats,
+  createDefaultCharacterStats,
+  sanitizeCharacterStats,
+} from '../sim/stats/characterStats';
 
 export { getSlotCost, totalSlotCost };
 
@@ -37,7 +42,13 @@ export function getDustSlots(level: number): number {
 // ---- State type ----------------------------------------------------------
 
 export interface PlayerProgress {
-  /** Current player level (1–MAX_LEVEL). */
+  /**
+   * Current dust-slot level (1–MAX_LEVEL).
+   *
+   * Distinct from `characterStats.level`, which is the character/combat level
+   * from the STICK-RPG port. The two advance on different axes: this one gates
+   * dust slot capacity, that one gates attack/defense/health and skill points.
+   */
   level: number;
   /** Total dust slots available at this level. */
   dustSlots: number;
@@ -130,6 +141,15 @@ export interface PlayerProgress {
    * Note: The wire field name `startingHealth` is preserved for save compatibility.
    */
   startingHealth?: number;
+
+  /**
+   * Character/combat stats ported from STICK-RPG (level, XP, attack, defense,
+   * max health, skill points). Optional on the wire so saves written before
+   * this field existed still load; `loadSaveSlot` backfills and sanitizes it.
+   * See `src/sim/stats/characterStats.ts` and
+   * `docs/decisions/STICK_RPG_PORT_PLAN.md`.
+   */
+  characterStats?: CharacterStats;
 }
 
 // ---- Factory / helpers ---------------------------------------------------
@@ -190,7 +210,19 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     collectedDustContainerKeys: [],
     collectedSkillTombKeys: [],
     permanentlyOpenGateKeys: [],
+    characterStats: createDefaultCharacterStats(),
   };
+}
+
+/**
+ * Ensures `progress.characterStats` is present and internally consistent.
+ *
+ * Saves written before the STICK-RPG stat port omit the field entirely, and
+ * hand-edited saves can carry out-of-range values, so this both backfills and
+ * repairs. Idempotent.
+ */
+export function sanitizePlayerCharacterStats(progress: PlayerProgress): void {
+  progress.characterStats = sanitizeCharacterStats(progress.characterStats);
 }
 
 /**

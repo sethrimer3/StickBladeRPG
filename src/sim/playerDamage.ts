@@ -14,6 +14,8 @@ const HORIZONTAL_POSITION_EPSILON_WORLD = 0.01;
 import type { ChallengeModeState } from './challengeMode';
 import { consumeChallengeReturn } from './challengeMode';
 import { getPlayerMoteCount, normalizeMoteCount } from './playerMoteLife';
+import { computeStatDamage } from './stats/characterStats';
+import type { RngState } from './rng';
 
 
 const INVULNERABILITY_DURATION_TICKS = 90;
@@ -43,6 +45,16 @@ export interface PlayerDamageTarget {
   halfHeightWorld?: number;
   challengeMode?: ChallengeModeState | null;
   challengeReturnGuard?: 0 | 1;
+  /**
+   * Resolved defense stat from the STICK-RPG character-stat port
+   * (`sim/stats/characterStats.ts`), or undefined when the target has no stat
+   * record. When undefined — which is every caller today — mitigation is
+   * skipped entirely and damage behaves exactly as it did before the port.
+   *
+   * Populated by a later port phase once equipment and party members carry
+   * stats. See `docs/decisions/STICK_RPG_PORT_PLAN.md`.
+   */
+  statsDefense?: number;
 }
 
 export interface PlayerDamageOptions {
@@ -62,6 +74,41 @@ export interface PlayerDamageOptions {
    * bypasses the check on the way IN for poison's own scheduled ticks.
    */
   bypassContactInvulnerability?: boolean;
+  /**
+   * Deterministic RNG used for the character-stat defense mitigation roll.
+   *
+   * Stat scaling is applied only when this is supplied AND the target carries a
+   * positive `statsDefense`; otherwise the raw damage is used unchanged. Both
+   * conditions are unmet for every current caller, so existing damage paths are
+   * bit-identical to their pre-port behavior.
+   */
+  statsRng?: RngState;
+  /**
+   * Attacker's resolved attack stat, used with `statsRng`. Defaults to 1, which
+   * makes stat scaling pure mitigation when the attacker has no stat record.
+   */
+  attackerAttack?: number;
+}
+
+/**
+ * Applies character-stat scaling to an incoming damage amount.
+ *
+ * Returns `damagePoints` unchanged unless the target has a positive
+ * `statsDefense` and the caller supplied a `statsRng`, which keeps every
+ * pre-port damage path untouched. See `sim/stats/characterStats.ts`.
+ */
+function applyStatScaling(
+  player: PlayerDamageTarget,
+  damagePoints: number,
+  options?: PlayerDamageOptions,
+): number {
+  const rng = options?.statsRng;
+  const defense = player.statsDefense;
+  if (rng === undefined) return damagePoints;
+  if (typeof defense !== 'number' || !Number.isFinite(defense) || defense <= 0) return damagePoints;
+
+  const attack = options?.attackerAttack ?? 1;
+  return computeStatDamage(damagePoints, attack, defense, rng);
 }
 
 export function applyPlayerDamageWithKnockback(
@@ -76,7 +123,10 @@ export function applyPlayerDamageWithKnockback(
   if (player.isHighVelocityAttacking === 1 && options?.bypassMomentumInvulnerability !== true) return false; // momentum combat invulnerability
   if (player.challengeReturnGuard === 1) return false;
 
-  const damageToApply = normalizeMoteCount(Math.ceil(damagePoints));
+  const scaledDamage = applyStatScaling(player, damagePoints, options);
+  const damageToApply = normalizeMoteCount(Math.ceil(scaledDamage));
+  // A hit fully absorbed by defense deals nothing and is not treated as a hit,
+  // so it grants no invulnerability window and triggers no hurt feedback.
   if (damageToApply <= 0) return false;
 
   const challenge = options?.challengeState ?? player.challengeMode ?? undefined;
