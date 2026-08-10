@@ -397,3 +397,28 @@ test('lateral steering force does not accelerate foot beyond 100 px/s cap', () =
     'STICKMAN_MAX_STEER_SPEED_PX_PER_SEC should be 100',
   );
 });
+
+test('joints never clip upward through a solid ceiling block when jumping', () => {
+  // A solid ceiling from y <= 100 and a floor at y >= 140
+  const ceilingY = 100;
+  const floorY = 140;
+  const corridor = {
+    isSolid: (_x: number, y: number): boolean => y <= ceilingY || y >= floorY,
+  } as unknown as SolidMask;
+
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, corridor, 0, 30); // settle on floor
+
+  // Jump up into the ceiling
+  requestStickRangerJump(body);
+  for (let f = 0; f < 60; f++) {
+    stepStickRangerBody(body, corridor, 0, SR_FRAME_MS);
+    // Every single joint must strictly remain >= ceilingY (never penetrating into y <= ceilingY)
+    for (let i = 0; i < SR_POINT_COUNT; i++) {
+      assert.ok(
+        body.y[i] >= ceilingY,
+        `joint ${i} clipped upward through ceiling: y=${body.y[i]} < ceilingY=${ceilingY}`,
+      );
+    }
+  }
+});

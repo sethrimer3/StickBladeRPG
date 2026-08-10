@@ -137,8 +137,6 @@ const LAUNCH_GRAVITY = [
 ];
 /** Tangential velocity retained when a point strikes solid geometry. */
 const SURFACE_TANGENT_RETENTION = 0.5;
-/** Distance covered per collision substep, in world units. */
-const COLLISION_SUBSTEP_DISTANCE = 4;
 
 // ── Steering (this project's addition) ──────────────────────────────────────
 //
@@ -209,11 +207,11 @@ export const STICKMAN_MAX_STEER_SPEED_PX_PER_SEC = 100;
 export const STICKMAN_WALK_STEP_FRAMES = 5;
 
 /** Horizontal impulse applied to the hip while a direction is held. */
-const STEER_HIP_PUSH = 0.12;
+const STEER_HIP_PUSH = 0.11;
 /** Horizontal impulse applied to the chest — smallest, so the torso only leans. */
-const STEER_CHEST_PUSH = 0.05;
+const STEER_CHEST_PUSH = 0.04;
 /** Horizontal impulse applied to each alternating foot. The legs do the walking. */
-const STEER_FOOT_PUSH = 0.55;
+const STEER_FOOT_PUSH = 0.52;
 
 /** Rest lengths and solver weights, from Stick Ranger's `Eg.prototype.qa`. */
 const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, number]> = [
@@ -373,34 +371,35 @@ function constrain(
 }
 
 /**
- * Swept, axis-separated, *elastic* collision for one point — Stick Ranger's
- * `Eg.prototype.kb`.
+ * Swept, axis-separated, elastic collision for one point using Maddy Thorson's
+ * 1-pixel integer-resolution obstruction sweep.
  *
- * `integratePoint` has already advanced the position; this recomputes that
- * displacement, rewinds the point, and re-walks it in substeps so it cannot
- * tunnel. On contact the normal component is reflected and the tangential
- * component keeps `SURFACE_TANGENT_RETENTION` of its magnitude. Because
- * `prev` stays at the pre-move position, the reflection is picked up as real
- * velocity on the next frame — that is what makes the character bounce along
- * rather than stick.
+ * Traverses delta displacement 1 pixel at a time along Y, then X. If solid
+ * geometry is encountered, movement halts immediately at the solid boundary,
+ * preventing any overlap or tunneling into blocks upward, downward, or laterally.
  *
- * Returns true if the point struck geometry.
+ * Normal velocity is reflected with SURFACE_TANGENT_RETENTION so the character
+ * bounces elastically rather than sticking or clipping.
  */
 function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null): boolean {
+  if (solid === null) return false;
+
   let dx = body.x[i] - body.prevX[i];
   let dy = body.y[i] - body.prevY[i];
+
   // Rewind: prev holds the pre-integration position, and this pass owns the move.
   body.x[i] = body.prevX[i];
   body.y[i] = body.prevY[i];
 
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const substeps = Math.floor(distance / COLLISION_SUBSTEP_DISTANCE) + 1;
+  // 1-pixel integer-resolution substeps (Maddy Thorson precision)
+  const substeps = Math.max(1, Math.ceil(distance));
   dx /= substeps;
   dy /= substeps;
 
   let hit = false;
   for (let s = 0; s < substeps; s++) {
-    // Y axis first, then X, each resolved against the other's current value.
+    // Y axis first (1-pixel sweep), then X
     const nextY = body.y[i] + dy;
     if (isSolidAt(solid, body.x[i], nextY)) {
       dx *= SURFACE_TANGENT_RETENTION;
@@ -419,6 +418,21 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null)
       body.x[i] = nextX;
     }
   }
+
+  // Final overlap safeguard: if currently inside solid geometry, push out immediately
+  if (isSolidAt(solid, body.x[i], body.y[i])) {
+    hit = true;
+    if (!isSolidAt(solid, body.x[i], body.y[i] + 1)) {
+      body.y[i] += 1;
+    } else if (!isSolidAt(solid, body.x[i], body.y[i] - 1)) {
+      body.y[i] -= 1;
+    } else if (!isSolidAt(solid, body.x[i] + 1, body.y[i])) {
+      body.x[i] += 1;
+    } else if (!isSolidAt(solid, body.x[i] - 1, body.y[i])) {
+      body.x[i] -= 1;
+    }
+  }
+
   return hit;
 }
 
