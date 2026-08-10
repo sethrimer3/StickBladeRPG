@@ -2175,3 +2175,61 @@ Important context for the next agent:
   multiplier hits zero. This port stores bases explicitly and derives forward.
 - Not verified in a live browser/Electron session: Phase 1 adds no observable
   runtime behavior, so there was nothing to see. That changes at Phase 2.
+
+## STICK-RPG port — Phase 2 weapons and glyphs (BUILD 614)
+
+Phase 2 is PARTIALLY complete. Data layer, glyphs, melee runtime, and grip
+anchors landed; ranged runtime and gameplay wiring did not. See the Phase 2a /
+2b sub-items in `docs/Todo.md`.
+
+Landed:
+
+- `src/sim/weapons/weaponData.ts` — all 75 donor weapons, generated mechanically
+  from the donor `WEAPON_DEFS` (not hand-transcribed) and then committed as
+  ordinary source. Values keep the donor's field names and MILLISECOND units so
+  the file stays diffable against `js/weapons.js`.
+- `src/sim/weapons/weaponDefs.ts` — typed schema over that data (162 donor
+  fields), plus `millisecondsToTicks` and the `get*Ticks` accessors. This is the
+  ONLY place donor ms becomes sim ticks; sim code must not read the raw values.
+- `src/sim/weapons/glyphDefs.ts` — all 8 glyphs and `applyGlyphToWeapon`,
+  including the donor quirks preserved on purpose: `chrono` is an alias for
+  `chronometric`, and `ammoColor` is overridden for `kind: 'gun'` only.
+- `src/sim/weapons/weaponSwing.ts` — pure, Node-safe melee/shield swing:
+  tick-based cooldown, windup then swept arc, per-swing hit registry, and
+  swept-angular-interval hit tests so a fast swing cannot tunnel past a target.
+  Damage runs through Phase 1's `computeStatDamage` with an injected `RngState`.
+- `src/sim/weapons/weaponSwingClusters.ts` — the only module that knows about
+  `WorldState`; routes damage through `applyRoutedWeaveDamage` so the Orbital
+  Dust Core's bespoke per-segment hits keep working.
+- `src/sim/weapons/weaponGrip.ts` — grip anchors off `SR_HAND_L`/`SR_HAND_R`
+  (which already existed on the rig — no new rig points were needed) and
+  `computeSwingOrigin` at the hip. Read-only consumer; `stickRangerBody.ts` was
+  deliberately NOT modified, since it owns the gait solver.
+- Tests: `weaponDefs.test.ts` (35), `weaponSwing.test.ts` (43). Full suite
+  3320/3320; build and lint clean.
+
+Important context for the next agent:
+
+- **Nothing calls any of this yet.** There is no equipped-weapon slot and no
+  input binding, so no weapon can be swung in game. That is Phase 2b and it
+  pairs naturally with Phase 3's per-member equipment slots. Do not assume
+  melee combat is playable because the runtime exists.
+- **Runtime coverage is partial and self-reporting.** Ask
+  `isWeaponRuntimeImplemented(def)`; it is true only for `melee` and `shield`
+  (25 of 75 weapons). Firing any other kind currently does nothing.
+- **12 donor callbacks could not be ported as data** (`projectileOnExpire`,
+  `slashWaveOnExpire`). They are enumerated in `UNPORTED_BEHAVIOR_FIELDS` in
+  `weaponData.ts` and a test asserts each one names a real weapon, so they
+  cannot be forgotten silently.
+- **Known accepted limitation** in `weaponSwingClusters.ts`: the scratch target
+  list is rebuilt each tick, so if a cluster dies mid-swing the indices of later
+  clusters shift and a shifted target could take one extra hit from the same
+  swing. Documented at the call site. Revisit if multi-target melee becomes
+  central.
+- The `weaponVisualConfig` opaque blocks (`staff`, `shield`, `gunPose`,
+  `boxingGlove`, `auric`, `photostigma`, …) are carried through as
+  `Readonly<Record<string, unknown>>` so no donor data was lost, but their
+  renderers are not ported. Give a block a precise type when its renderer lands.
+- Not verified in a live browser/Electron session: nothing in this phase is
+  reachable from gameplay yet, so there was nothing to observe. That changes at
+  Phase 2b.
