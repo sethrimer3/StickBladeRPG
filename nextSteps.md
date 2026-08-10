@@ -2436,3 +2436,42 @@ Known gaps, both now tracked as Todo items:
   previous phases: the preview pane does not composite, so rAF never fires and
   the game loop is frozen. `__dwEquip('apiaryLexicon')` then Q in a real
   session.
+
+## STICK-RPG port — Phase 2h weapon renderers (BUILD 620)
+
+The staff, spirit, and summon runtimes from Phases 2c/2f are no longer
+invisible. Extended `src/render/effects/weaponRenderer.ts` with four passes:
+
+- **Staff beam** — a wide translucent glow (`staff.beamGlow`) under a bright
+  narrow core (`staff.beamColor`), drawn from the wielder's hip to
+  `StaffChannelState.beamEndXWorld/YWorld`. The endpoint is the SIMULATION's,
+  never recomputed here, so the drawn beam and the damaging beam cannot
+  disagree — wall clip, body clip, and all. A test asserts the drawn endpoint
+  matches the simulated one.
+- **Charge meter** — hidden at full charge while idle, so it appears only when
+  it carries information rather than sitting on screen permanently full.
+- **Spirit orbs** — present orbs only. A spent orb leaves a visible gap in the
+  ring, and that gap IS the weapon's ammunition readout, which is why the ring
+  deliberately does not re-space itself around the survivors.
+- **Summoned familiars** — silhouette by locomotion rather than by sprite:
+  wings for fliers, legs for hoppers. Fades over the last half-second of life
+  so expiry reads as deliberate rather than as a pop-out.
+
+19 tests using a recording canvas context (Node has no canvas), including a
+save/restore balance check so a future pass cannot leak context state into the
+rest of the frame. Full suite 3477/3477; build and lint clean.
+
+Remaining gap, tracked as Phase 2i: `_renderHeldWeapon` still draws a blade for
+`melee`/`shield` only, so bows, guns, staves, and summoner tomes are held
+invisibly. This is deliberate — no ranged pose is ported, and drawing a sword
+line on a rifle would read as a bug rather than as a placeholder. The donor
+carries the pose config needed (`gunPose`, `spearPose`,
+`staff.shaftLength`/`shaftWidth`/`gemColor`, and the book colors), and
+`weaponGrip.computeWeaponGripAnchor` already resolves hand position, forearm
+angle, and two-handed grips.
+
+Still not verified in a live browser session — the preview pane does not
+composite in this environment, so rAF never fires and the game loop is frozen.
+Everything in this phase is purely visual, so it is the phase that most needs a
+human to actually look at it. `__dwEquip('emberStaff')` / `'tempestHalo'` /
+`'apiaryLexicon'` then hold Q.

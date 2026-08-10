@@ -1,17 +1,23 @@
 /**
- * Renders the player's equipped STICK-RPG weapon: the held blade, its swing
- * arc, and any live projectiles.
+ * Renders the player's equipped STICK-RPG weapon: the held blade and its swing
+ * arc, live projectiles, channelled staff beams and their charge meter,
+ * orbiting spirit orbs, and summoned familiars.
  *
- * Phase 2b of the STICK-RPG port. Deliberately plain — flat colored lines and
- * squares drawn from the weapon's own palette fields (`color`,
- * `projectileColor`, `projectileTrailColor`), matching the donor's look rather
- * than inventing new art. The donor's bespoke per-weapon renderers (staff
- * heads, gun poses, shield faces) are not ported; their config blocks travel in
- * the weapon data ready for whoever does port them.
+ * Phases 2b and 2h of the STICK-RPG port. Deliberately plain — flat colored
+ * lines, arcs, and squares drawn from each weapon's own palette fields
+ * (`color`, `beamColor`, `orbColor`, `summonColor`, …), matching the donor's
+ * look rather than inventing new art. The donor's bespoke per-weapon renderers
+ * (staff heads, gun poses, shield faces, per-form creature art) are not ported;
+ * their config blocks travel in the weapon data ready for whoever does port them.
+ *
+ * Every drawn position comes from simulation state rather than being
+ * recomputed here, so the visuals cannot disagree with what actually damages
+ * enemies — the beam endpoint in particular is whatever `staffChannel.ts`
+ * resolved, wall clip and all.
  *
  * Reads only. No simulation state is mutated, and there are no per-frame
- * allocations: the grip anchor is a reused instance field and every draw call
- * is a direct canvas primitive.
+ * allocations: the grip anchor, swing origin, and orb scratch positions are
+ * reused instance fields and every draw call is a direct canvas primitive.
  */
 
 import type { WorldSnapshot } from '../snapshot';
@@ -22,6 +28,13 @@ import {
 import { getWeaponSwingProgress } from '../../sim/weapons/weaponSwing';
 import { MAX_WEAPON_PROJECTILES } from '../../sim/weapons/weaponProjectiles';
 import {
+  MAX_ACTIVE_SUMMONS,
+  SUMMON_LOCOMOTION_FLIER,
+} from '../../sim/weapons/weaponSummons';
+import { getStaffChargeFraction } from '../../sim/weapons/staffChannel';
+import { getSpiritOrbPosition } from '../../sim/weapons/spiritOrbs';
+import {
+  computeSwingOrigin,
   computeWeaponGripAnchor,
   createWeaponGripAnchor,
   type WeaponGripAnchor,
@@ -38,10 +51,42 @@ const SWING_TRAIL_SAMPLES = 6;
 const SWING_TRAIL_ARC_RAD = 0.5;
 /** Fallback blade color when a weapon declares none. */
 const DEFAULT_BLADE_COLOR = '#d8d8e8';
+/** Staff charge meter geometry, in world units (scaled by zoom at draw time). */
+const CHARGE_METER_WIDTH_PX = 24;
+const CHARGE_METER_HEIGHT_PX = 3;
+const CHARGE_METER_OFFSET_Y_PX = 28;
+
+/**
+ * Reads a string field from an opaque donor config block.
+ *
+ * The `staff` block travels as `Readonly<Record<string, unknown>>` (see
+ * `WeaponVisualConfig`), so its fields are checked rather than trusted — a
+ * partial block must degrade to the fallback, not throw mid-frame.
+ */
+function readString(
+  config: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+): string | undefined {
+  const value = config?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Reads a finite number from an opaque donor config block. */
+function readNumber(
+  config: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+): number | undefined {
+  const value = config?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
 
 export class WeaponRenderer {
   /** Reused so per-frame anchor resolution allocates nothing. */
   private readonly _anchor: WeaponGripAnchor = createWeaponGripAnchor();
+  /** Wielder pivot (the hip), resolved once per frame. */
+  private readonly _origin = { xWorld: 0, yWorld: 0 };
+  /** Scratch for spirit orb positions. */
+  private readonly _orbPosition = { xWorld: 0, yWorld: 0 };
 
   render(
     ctx: CanvasRenderingContext2D,
@@ -55,12 +100,223 @@ export class WeaponRenderer {
 
     const def = getEquippedWeaponDef(weapon);
 
-    // Projectiles outlive the weapon that fired them, so they draw regardless
-    // of what is currently equipped.
+    // Projectiles and summoned familiars both outlive the weapon that produced
+    // them, so they draw regardless of what is currently equipped.
     this._renderProjectiles(ctx, weapon, ox, oy, zoom);
+    this._renderSummons(ctx, weapon, ox, oy, zoom);
 
     if (def === null) return;
+
+    const body = snapshot.stickRangerBody;
+    if (body !== null) {
+      computeSwingOrigin(body, 1, this._origin);
+    } else {
+      this._origin.xWorld = 0;
+      this._origin.yWorld = 0;
+    }
+
+    this._renderStaffBeam(ctx, weapon, def, ox, oy, zoom);
+    this._renderSpiritOrbs(ctx, weapon, def, ox, oy, zoom);
     this._renderHeldWeapon(ctx, snapshot, weapon, def, ox, oy, zoom);
+    // Drawn last so the meter is never occluded by the beam it describes.
+    if (body !== null) this._renderStaffChargeMeter(ctx, weapon, def, ox, oy, zoom);
+  }
+
+  /**
+   * Draws the channelled staff beam from the wielder to wherever the simulation
+   * actually terminated it — a wall, a body, or maximum range.
+   *
+   * The endpoint comes from `StaffChannelState`, never recomputed here, so the
+   * drawn beam and the damaging beam can never disagree.
+   */
+  private _renderStaffBeam(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    const staff = weapon.staff;
+    if (staff.beamActiveFlag === 0) return;
+
+    const config = def.staff as Readonly<Record<string, unknown>> | undefined;
+    const coreColor = readString(config, 'beamColor') ?? def.color ?? DEFAULT_BLADE_COLOR;
+    const glowColor = readString(config, 'beamGlow') ?? coreColor;
+    const width = readNumber(config, 'beamWidth') ?? 8;
+
+    const startXPx = (this._origin.xWorld - ox) * zoom;
+    const startYPx = (this._origin.yWorld - oy) * zoom;
+    const endXPx = (staff.beamEndXWorld - ox) * zoom;
+    const endYPx = (staff.beamEndYWorld - oy) * zoom;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // Wide translucent glow first, then a bright narrow core on top.
+    ctx.strokeStyle = glowColor;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = Math.max(2, width * zoom * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(startXPx, startYPx);
+    ctx.lineTo(endXPx, endYPx);
+    ctx.stroke();
+
+    ctx.strokeStyle = coreColor;
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = Math.max(1, width * zoom * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(startXPx, startYPx);
+    ctx.lineTo(endXPx, endYPx);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Draws the staff charge meter above the wielder.
+   *
+   * Hidden at full charge so it only appears when it carries information —
+   * a permanently-full bar is visual noise.
+   */
+  private _renderStaffChargeMeter(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    if (def.kind !== 'staff') return;
+
+    const fraction = getStaffChargeFraction(weapon.staff, def);
+    if (fraction >= 1 && weapon.staff.isChannellingFlag === 0) return;
+
+    const config = def.staff as Readonly<Record<string, unknown>> | undefined;
+    const barColor = readString(config, 'barColor') ?? def.color ?? DEFAULT_BLADE_COLOR;
+
+    const widthPx = CHARGE_METER_WIDTH_PX * zoom;
+    const heightPx = CHARGE_METER_HEIGHT_PX * zoom;
+    const xPx = (this._origin.xWorld - ox) * zoom - widthPx * 0.5;
+    const yPx = (this._origin.yWorld - oy) * zoom - CHARGE_METER_OFFSET_Y_PX * zoom;
+
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(xPx, yPx, widthPx, heightPx);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = barColor;
+    ctx.fillRect(xPx, yPx, widthPx * fraction, heightPx);
+    ctx.restore();
+  }
+
+  /**
+   * Draws the ring of spirit orbs around the wielder.
+   *
+   * Only orbs that are actually present are drawn, so a spent orb leaves a
+   * visible gap — that gap is the weapon's ammunition readout.
+   */
+  private _renderSpiritOrbs(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    if (def.kind !== 'spirit') return;
+    const orbs = weapon.spiritOrbs;
+    if (orbs.orbCount <= 0) return;
+
+    const bodyColor = def.orbColor ?? def.color ?? DEFAULT_BLADE_COLOR;
+    const haloColor = def.orbTrailColor ?? bodyColor;
+    const radiusPx = Math.max(1, (def.orbRadius ?? 8) * zoom);
+
+    ctx.save();
+    for (let i = 0; i < orbs.orbCount; i++) {
+      if (orbs.isPresent[i] === 0) continue;
+
+      getSpiritOrbPosition(orbs, def, i, this._origin.xWorld, this._origin.yWorld, this._orbPosition);
+      const xPx = (this._orbPosition.xWorld - ox) * zoom;
+      const yPx = (this._orbPosition.yWorld - oy) * zoom;
+
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = haloColor;
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Draws summoned familiars.
+   *
+   * Forms are distinguished by silhouette rather than by sprite: fliers get
+   * beating wings, hoppers get legs. The donor's per-form art is not ported, so
+   * this is deliberately schematic — enough to read what is on screen and who
+   * it belongs to.
+   */
+  private _renderSummons(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    const pool = weapon.summons;
+    if (pool.liveCount <= 0) return;
+
+    const def = getEquippedWeaponDef(weapon);
+    const bodyColor = def?.summonColor ?? def?.color ?? DEFAULT_BLADE_COLOR;
+    const accentColor = def?.summonAccentColor
+      ?? def?.spiderLegColor
+      ?? def?.birdLineColor
+      ?? bodyColor;
+
+    ctx.save();
+    for (let i = 0; i < MAX_ACTIVE_SUMMONS; i++) {
+      if (pool.isLive[i] === 0) continue;
+
+      const xPx = (pool.xWorld[i] - ox) * zoom;
+      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const radiusPx = Math.max(1, pool.radiusWorld[i] * zoom * 0.5);
+
+      // Fade the last half-second of life so a familiar's expiry reads as
+      // deliberate rather than as a pop-out.
+      const fadeTicks = 30;
+      ctx.globalAlpha = pool.lifetimeTicks[i] < fadeTicks
+        ? Math.max(0.15, pool.lifetimeTicks[i] / fadeTicks)
+        : 1;
+
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = Math.max(1, radiusPx * 0.3);
+      ctx.beginPath();
+      if (pool.locomotion[i] === SUMMON_LOCOMOTION_FLIER) {
+        // Wings: a pair of strokes swept back from the body.
+        ctx.moveTo(xPx - radiusPx * 1.8, yPx - radiusPx);
+        ctx.lineTo(xPx, yPx);
+        ctx.lineTo(xPx + radiusPx * 1.8, yPx - radiusPx);
+      } else {
+        // Legs: a pair of strokes planted below the body.
+        ctx.moveTo(xPx - radiusPx * 1.4, yPx + radiusPx * 1.6);
+        ctx.lineTo(xPx, yPx);
+        ctx.lineTo(xPx + radiusPx * 1.4, yPx + radiusPx * 1.6);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** Draws the blade at the grip anchor, swept to the swing's current angle. */
