@@ -366,12 +366,25 @@ export function isPlayerEquippableWeapon(def: WeaponDef): boolean {
 /**
  * Weapon kinds whose combat behavior actually runs.
  *
- * Phase 2 implements contact weapons only. Projectile, staff, summoner, and
- * spirit weapons are present as data so loadout/editor/UI work can proceed, but
- * firing one does nothing yet — see the Phase 2 follow-up item in
- * `docs/Todo.md`.
+ * Phase 2 implemented contact weapons (`weaponSwing.ts`); Phase 2a added the
+ * projectile kinds (`weaponProjectiles.ts`). `staff`, `summoner`, and `spirit`
+ * remain data-only: they drive persistent summons, orbiting familiars, and
+ * channelled beams rather than simple projectiles, and each needs its own
+ * system. See the follow-up item in `docs/Todo.md`.
+ *
+ * Note this reports the KIND's coverage, not every donor flourish. Twelve
+ * weapons additionally declare on-expiry callbacks that spawn bespoke secondary
+ * effects (pollen clouds, steam vents, gust shockwaves); those specific effects
+ * are still unported and are listed in `UNPORTED_BEHAVIOR_FIELDS`.
  */
-const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>(['melee', 'shield']);
+const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
+  'melee',
+  'shield',
+  'bow',
+  'gun',
+  'throw',
+  'magic',
+]);
 
 /** True when this weapon's kind has working combat behavior in the current build. */
 export function isWeaponRuntimeImplemented(def: WeaponDef): boolean {

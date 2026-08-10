@@ -2233,3 +2233,47 @@ Important context for the next agent:
 - Not verified in a live browser/Electron session: nothing in this phase is
   reachable from gameplay yet, so there was nothing to observe. That changes at
   Phase 2b.
+
+## STICK-RPG port — Phase 2a ranged weapon runtime (BUILD 616)
+
+All 33 `bow`/`gun`/`throw`/`magic` weapons now fire. `staff`/`summoner`/`spirit`
+(17 weapons) remain data-only — see Phase 2c/2d in `docs/Todo.md`.
+
+Landed: `src/sim/weapons/weaponProjectiles.ts` — fixed-capacity (128)
+structure-of-arrays projectile pool. Gravity, per-tick drag (donor per-second
+retention converted at spawn), terrain bounce with reflection about the surface
+normal, homing with a per-tick turn-rate cap, piercing with a per-projectile hit
+registry, blast-on-death, and swept enemy collision so a fast shot cannot tunnel.
+Firing expands `bulletCount` pellets across `spread`. Reuses `raycastWalls`
+(grappleShared) and `applyRoutedWeaveDamage`; damage runs through Phase 1
+`computeStatDamage`. 38 tests. Full suite 3358/3358; build and lint clean.
+
+Important context for the next agent:
+
+- **Deliberate deviation from the original Phase 2a brief.** That brief said to
+  build on `bowArrow.ts`. I did not. `bowArrow.ts` is a single-instance,
+  mote-backed, dust-typed implementation of one ability whose entire state lives
+  as scalar fields on `WorldState`; generalizing it to 33 arbitrary weapons
+  meant rewriting a working feature. The brief's actual intent — "do not port
+  js/projectiles.js wholesale" — is satisfied: behavior is derived from the
+  already-ported weapon data. Rationale is in the module header.
+- **Still not wired to gameplay.** Phase 2b is unchanged and still open: no
+  equipped-weapon slot, no input binding. `fireRangedWeapon` and
+  `tickWeaponProjectiles` have no callers in the game loop. Whoever does 2b must
+  call `tickWeaponProjectiles` from `sim/tick.ts` and own a pool on `WorldState`
+  (or on the party, once Phase 3 lands), plus `resetWeaponProjectilePool` on
+  room teardown/respawn.
+- **No renderer.** Projectiles simulate but draw nothing. The data carries the
+  donor's presentation fields (`projectileColor`, `projectileTrailColor`,
+  `projectileLength`, `projectileTipColor`, …) ready for a renderer.
+- `mirageEdge` declares `speed: 0` in the donor — a stationary beam, not a
+  travelling projectile — so it correctly launches nothing. A test pins this so
+  a future data change surfaces the exception instead of hiding it.
+- **Accepted approximations**, all documented at their call sites: pierce
+  bookkeeping tracks the first 64 clusters (same documented degrade as the weave
+  hit registries); blast damage deliberately ignores the pierce registry, since
+  an explosion is a separate event from the contact hit; and spawning at
+  capacity evicts the oldest live projectile rather than dropping the new shot.
+- The 12 `UNPORTED_BEHAVIOR_FIELDS` callbacks are still unported. The generic
+  blast path approximates the pure-damage ones but reproduces none of the status
+  effects (slowing pollen, steam, gusts). That is Phase 2d.

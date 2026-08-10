@@ -140,11 +140,15 @@ describe('weapon lookup', () => {
   });
 
   test('runtime coverage is reported honestly', () => {
+    // Contact kinds (Phase 2) and projectile kinds (Phase 2a).
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['sword']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['templarianWallShield']), true);
-    // Projectile kinds are data-only in this phase.
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['bow']), false);
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['wand']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['bow']), true);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['wand']), true);
+    // Summon, spirit, and staff kinds remain data-only.
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['emberStaff']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['spiritBand']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['soulbinderPrimer']), false);
   });
 
   test('base element defaults to physical', () => {
