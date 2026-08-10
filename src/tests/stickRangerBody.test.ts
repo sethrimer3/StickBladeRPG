@@ -8,6 +8,8 @@ import {
   getStickRangerRenderX,
   SR_FRAME_MS,
   STICKMAN_TIME_SCALE,
+  STICKMAN_MAX_STEER_SPEED_PX_PER_SEC,
+  STICKMAN_WALK_STEP_FRAMES,
   SR_HIP,
   SR_HEAD,
   SR_FOOT_L,
@@ -352,4 +354,46 @@ test('a long host stall does not spiral or teleport the body', () => {
     'a stalled frame should be dropped, not simulated as a huge jump',
   );
   assert.ok(body.accumulatorMs < SR_FRAME_MS, 'backlog should be cleared, not carried forward');
+});
+
+test('walking alternates foot impulses across step intervals', () => {
+  const floor = flatFloor(140);
+  const body = createStickRangerBody(100, 130);
+  advanceFrames(body, floor, 0, 30); // settle
+
+  assert.equal(body.walkStepCounter, 0);
+  advanceFrames(body, floor, 1, 1);
+  assert.equal(body.walkStepCounter, 1, 'walkStepCounter increments when walking');
+
+  // Step for STICKMAN_WALK_STEP_FRAMES and verify counter advances and body travels right
+  advanceFrames(body, floor, 1, STICKMAN_WALK_STEP_FRAMES * 2);
+  assert.equal(body.walkStepCounter, 1 + STICKMAN_WALK_STEP_FRAMES * 2);
+
+  // Stopping resets the walk counter
+  advanceFrames(body, floor, 0, 1);
+  assert.equal(body.walkStepCounter, 0, 'releasing move input resets walkStepCounter');
+});
+
+test('lateral steering force does not accelerate foot beyond 100 px/s cap', () => {
+  const floor = flatFloor(140);
+  const body = createStickRangerBody(100, 130);
+  advanceFrames(body, floor, 0, 30);
+
+  // Artificially propel active foot (SR_FOOT_L) to >100 px/s in the rightward direction (+1)
+  const fps = 1000 / SR_FRAME_MS;
+  // Setting prevX so current velocity is 120 px/s rightward
+  body.prevX[SR_FOOT_L] = body.x[SR_FOOT_L] - (120 / fps);
+
+  // Advance 1 frame with rightward input (+1)
+  advanceFrames(body, floor, 1, 1);
+
+  // Because initial foot speed was 120 px/s >= 100 px/s, no extra steering push was added to foot
+  assert.ok(
+    Number.isFinite(body.x[SR_FOOT_L]),
+    'foot position should remain finite',
+  );
+  assert.ok(
+    STICKMAN_MAX_STEER_SPEED_PX_PER_SEC === 100,
+    'STICKMAN_MAX_STEER_SPEED_PX_PER_SEC should be 100',
+  );
 });

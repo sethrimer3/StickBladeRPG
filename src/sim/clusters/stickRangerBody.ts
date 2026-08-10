@@ -203,12 +203,17 @@ const JUMP_COYOTE_FRAMES = 4;
  */
 const JUMP_BUFFER_FRAMES = 6;
 
+/** Maximum lateral speed in pixels per second above which lateral steering force is suppressed until speed dips below 100 px/s. */
+export const STICKMAN_MAX_STEER_SPEED_PX_PER_SEC = 100;
+/** Body frames per alternating foot stride step. */
+export const STICKMAN_WALK_STEP_FRAMES = 5;
+
 /** Horizontal impulse applied to the hip while a direction is held. */
-const STEER_HIP_PUSH = 0.10;
+const STEER_HIP_PUSH = 0.12;
 /** Horizontal impulse applied to the chest — smallest, so the torso only leans. */
-const STEER_CHEST_PUSH = 0.04;
-/** Horizontal impulse applied to each foot. The legs do the walking. */
-const STEER_FOOT_PUSH = 0.50;
+const STEER_CHEST_PUSH = 0.05;
+/** Horizontal impulse applied to each alternating foot. The legs do the walking. */
+const STEER_FOOT_PUSH = 0.55;
 
 /** Rest lengths and solver weights, from Stick Ranger's `Eg.prototype.qa`. */
 const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, number]> = [
@@ -266,6 +271,8 @@ export interface StickRangerBody {
   jumpFiredFlag: 0 | 1;
   /** Facing, for renderers that need it: -1 left, 1 right. */
   facingDirection: -1 | 1;
+  /** Counter tracking walking frames for alternating foot pushes. */
+  walkStepCounter: number;
 }
 
 /** Allocates a body with its hip at (hipX, hipY), in its rest pose. */
@@ -283,6 +290,7 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     jumpBufferFrames: 0,
     jumpFiredFlag: 0,
     facingDirection: 1,
+    walkStepCounter: 0,
   };
   resetStickRangerBody(body, hipX, hipY);
   return body;
@@ -308,6 +316,7 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.accumulatorMs = 0;
   body.jumpBufferFrames = 0;
   body.jumpFiredFlag = 0;
+  body.walkStepCounter = 0;
 }
 
 /**
@@ -462,12 +471,39 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   // Bare position offsets: `prev` is deliberately left alone so Verlet reads
   // these as velocity on the next frame. Applied only during the launch
   // window, so the character can push off the ground but cannot free-fly.
+  //
+  // Gait mechanism:
+  // 1. Applies lateral movement force to ONE foot at a time, alternating between
+  //    left and right feet every STICKMAN_WALK_STEP_FRAMES body frames to produce
+  //    a natural walking gait.
+  // 2. Checks lateral speed in pixels per second before applying force; forces
+  //    are not applied once speed reaches or exceeds STICKMAN_MAX_STEER_SPEED_PX_PER_SEC
+  //    (100 px/s) until speed dips back below 100 px/s.
   if (moveDirection !== 0 && inLaunchWindow) {
-    body.x[SR_HIP] += moveDirection * STEER_HIP_PUSH;
-    body.x[SR_CHEST] += moveDirection * STEER_CHEST_PUSH;
-    body.x[SR_FOOT_L] += moveDirection * STEER_FOOT_PUSH;
-    body.x[SR_FOOT_R] += moveDirection * STEER_FOOT_PUSH;
     body.facingDirection = moveDirection < 0 ? -1 : 1;
+    body.walkStepCounter += 1;
+
+    const framesPerSecond = 1000 / SR_FRAME_MS;
+
+    // Torso/hip lean applied when hip lateral speed in movement direction is below 100 px/s
+    const hipSpeedPxSec = (body.x[SR_HIP] - body.prevX[SR_HIP]) * moveDirection * framesPerSecond;
+    if (hipSpeedPxSec < STICKMAN_MAX_STEER_SPEED_PX_PER_SEC) {
+      body.x[SR_HIP] += moveDirection * STEER_HIP_PUSH;
+      body.x[SR_CHEST] += moveDirection * STEER_CHEST_PUSH;
+    }
+
+    // Alternate lateral push between left foot and right foot for a natural stride (trailing foot steps first)
+    const stepIdx = Math.floor((body.walkStepCounter - 1) / STICKMAN_WALK_STEP_FRAMES);
+    const isLeftFootStep = (stepIdx + (moveDirection < 0 ? 1 : 0)) % 2 === 0;
+    const activeFoot = isLeftFootStep ? SR_FOOT_L : SR_FOOT_R;
+
+    // Foot lateral movement force applied ONLY when foot speed in movement direction dips below 100 px/s
+    const footSpeedPxSec = (body.x[activeFoot] - body.prevX[activeFoot]) * moveDirection * framesPerSecond;
+    if (footSpeedPxSec < STICKMAN_MAX_STEER_SPEED_PX_PER_SEC) {
+      body.x[activeFoot] += moveDirection * STEER_FOOT_PUSH;
+    }
+  } else {
+    body.walkStepCounter = 0;
   }
 
   // ── 3. Constraints — TWO passes, soft weights ───────────────────────────
