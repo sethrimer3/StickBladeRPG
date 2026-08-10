@@ -31,6 +31,24 @@ import {
 } from './weaponSwing';
 import { applyWeaponSwingToClusters } from './weaponSwingClusters';
 import {
+  createStaffChannelState,
+  getStaffAuraModifiers,
+  getStaffChannelKind,
+  releaseStaffChannel,
+  requestStaffChannel,
+  resetStaffChannelState,
+  tickStaffChannel,
+  STAFF_CHANNEL_NONE,
+  type StaffChannelState,
+} from './staffChannel';
+import {
+  createSpiritOrbState,
+  fireSpiritOrb,
+  resetSpiritOrbs,
+  tickSpiritOrbs,
+  type SpiritOrbState,
+} from './spiritOrbs';
+import {
   createWeaponProjectilePool,
   fireRangedWeapon,
   getWeaponBurstCount,
@@ -69,6 +87,10 @@ export interface PlayerWeaponState {
   burstAimYWorld: number;
   /** Set for one tick when an attack actually started — for SFX and animation. */
   attackStartedFlag: 0 | 1;
+  /** Charge meter and beam/aura state for `kind: 'staff'` weapons. */
+  staff: StaffChannelState;
+  /** Orbiting familiars for `kind: 'spirit'` weapons. */
+  spiritOrbs: SpiritOrbState;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -82,6 +104,8 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     burstAimXWorld: 0,
     burstAimYWorld: 0,
     attackStartedFlag: 0,
+    staff: createStaffChannelState(),
+    spiritOrbs: createSpiritOrbState(),
   };
 }
 
@@ -95,6 +119,8 @@ export function createPlayerWeaponState(): PlayerWeaponState {
 export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetWeaponSwingState(state.swing);
   resetWeaponProjectilePool(state.projectiles);
+  resetStaffChannelState(state.staff);
+  resetSpiritOrbs(state.spiritOrbs, getWeaponDef(state.equippedWeaponId));
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -112,14 +138,21 @@ export function equipPlayerWeapon(state: PlayerWeaponState, weaponId: string | n
   if (weaponId === null) {
     state.equippedWeaponId = null;
     resetWeaponSwingState(state.swing);
+    resetStaffChannelState(state.staff);
+    resetSpiritOrbs(state.spiritOrbs, null);
     return true;
   }
 
   const def = getWeaponDef(weaponId);
   if (def === null || !isWeaponRuntimeImplemented(def)) return false;
+  // A staff whose only effect is one of the unported bespoke auras has nothing
+  // to do when channelled, so refuse it rather than equip a dead weapon.
+  if (def.kind === 'staff' && getStaffChannelKind(def) === STAFF_CHANNEL_NONE) return false;
 
   state.equippedWeaponId = weaponId;
   resetWeaponSwingState(state.swing);
+  resetStaffChannelState(state.staff);
+  resetSpiritOrbs(state.spiritOrbs, def);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   return true;
@@ -131,14 +164,21 @@ export function getEquippedWeaponDef(state: PlayerWeaponState): WeaponDef | null
 }
 
 /**
- * Resolves the player's attack stat.
+ * Resolves the player's attack stat, including any active staff aura.
  *
  * Falls back to 1 (the Phase 1 base) when the world carries no character stats,
- * so weapons work in tests, in the editor, and before a save has stats.
+ * so weapons work in tests, in the editor, and before a save has stats. The
+ * aura is read live rather than cached so it cannot drift out of sync with the
+ * staff's charge state.
  */
-function resolveAttackStat(stats: CharacterStats | null | undefined): number {
-  if (!stats) return 1;
-  return computeDerivedStats(stats).attack;
+function resolveAttackStat(
+  stats: CharacterStats | null | undefined,
+  weapon?: PlayerWeaponState,
+): number {
+  const auraDef = weapon ? getEquippedWeaponDef(weapon) : null;
+  const modifiers = weapon ? getStaffAuraModifiers(weapon.staff, auraDef) : undefined;
+  if (!stats) return modifiers?.attackMultiplier ?? 1;
+  return computeDerivedStats(stats, modifiers).attack;
 }
 
 /**
@@ -161,7 +201,26 @@ export function tryStartPlayerWeaponAttack(
   const def = getEquippedWeaponDef(state);
   if (def === null) return false;
 
-  const attack = resolveAttackStat(world.playerCharacterStats);
+  const attack = resolveAttackStat(world.playerCharacterStats, state);
+
+  // Staves channel for as long as the input is held rather than firing shots,
+  // so this is a request, not a one-shot trigger.
+  if (def.kind === 'staff') {
+    return requestStaffChannel(state.staff, def, aimXWorld, aimYWorld);
+  }
+
+  // Spirit weapons are paced by their orb ring, not by a cooldown — every
+  // ported one declares `cooldown: 0`.
+  if (def.kind === 'spirit') {
+    const fired = fireSpiritOrb(
+      state.spiritOrbs, state.projectiles, def,
+      player.positionXWorld, player.positionYWorld,
+      aimXWorld, aimYWorld,
+      attack, rng,
+    );
+    if (fired.didFire) state.attackStartedFlag = 1;
+    return fired.didFire;
+  }
 
   if (isRangedWeaponKind(def)) {
     if (!canStartWeaponSwing(state.swing)) return false;
@@ -199,6 +258,17 @@ export function tryStartPlayerWeaponAttack(
   return started;
 }
 
+/**
+ * Signals that the attack input was released.
+ *
+ * Only staves care: they channel for as long as the input is held, so without
+ * this a staff would keep draining after the key came up. Harmless to call
+ * every frame the input is not held.
+ */
+export function releasePlayerWeaponAttack(world: WorldState): void {
+  releaseStaffChannel(world.playerWeapon.staff);
+}
+
 /** Cooldown in ticks for a ranged weapon, floored at 1 so it cannot fire every tick. */
 function getRangedCooldownTicks(def: WeaponDef): number {
   const ms = def.cooldown ?? 0;
@@ -227,9 +297,19 @@ export function tickPlayerWeapon(
   const def = getEquippedWeaponDef(state);
 
   if (def !== null && player !== null && state.swing.activeFlag === 1) {
-    const attack = resolveAttackStat(world.playerCharacterStats);
+    const attack = resolveAttackStat(world.playerCharacterStats, state);
     applyWeaponSwingToClusters(world, state.swing, def, player, attack, rng);
   }
+
+  // Staves drain/regenerate every tick regardless of what is equipped, so a
+  // swapped-away staff refills instead of freezing at its last charge.
+  if (def !== null && def.kind === 'staff') {
+    tickStaffChannel(world, state.staff, def, player, resolveAttackStat(world.playerCharacterStats, state), rng);
+  } else if (state.staff.isChannellingFlag === 1) {
+    releaseStaffChannel(state.staff);
+  }
+
+  tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
 
   if (state.burstShotsRemaining > 0 && def !== null && player !== null) {
     state.burstCooldownTicks--;

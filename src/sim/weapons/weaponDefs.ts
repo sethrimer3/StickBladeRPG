@@ -367,15 +367,19 @@ export function isPlayerEquippableWeapon(def: WeaponDef): boolean {
  * Weapon kinds whose combat behavior actually runs.
  *
  * Phase 2 implemented contact weapons (`weaponSwing.ts`); Phase 2a added the
- * projectile kinds (`weaponProjectiles.ts`). `staff`, `summoner`, and `spirit`
- * remain data-only: they drive persistent summons, orbiting familiars, and
- * channelled beams rather than simple projectiles, and each needs its own
- * system. See the follow-up item in `docs/Todo.md`.
+ * projectile kinds (`weaponProjectiles.ts`); Phase 2c added channelled staves
+ * (`staffChannel.ts`) and orbiting spirit familiars (`spiritOrbs.ts`).
+ * `summoner` remains data-only — persistent allied entities with their own AI
+ * are their own system. See the follow-up item in `docs/Todo.md`.
  *
- * Note this reports the KIND's coverage, not every donor flourish. Twelve
- * weapons additionally declare on-expiry callbacks that spawn bespoke secondary
- * effects (pollen clouds, steam vents, gust shockwaves); those specific effects
- * are still unported and are listed in `UNPORTED_BEHAVIOR_FIELDS`.
+ * Note this reports the KIND's coverage, not every donor flourish:
+ *   • Twelve weapons declare on-expiry callbacks that spawn bespoke secondary
+ *     effects (pollen clouds, steam vents, gust shockwaves), still unported and
+ *     listed in `UNPORTED_BEHAVIOR_FIELDS`.
+ *   • Two staff auras are unported — `aegisStaff`'s projectile shield and
+ *     `gravebindStaff`'s raise-on-death. `getStaffChannelKind` reports
+ *     `STAFF_CHANNEL_NONE` for those, and `equipPlayerWeapon` refuses them, so
+ *     neither can be equipped as a dead weapon.
  */
 const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
   'melee',
@@ -384,6 +388,8 @@ const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
   'gun',
   'throw',
   'magic',
+  'staff',
+  'spirit',
 ]);
 
 /** True when this weapon's kind has working combat behavior in the current build. */

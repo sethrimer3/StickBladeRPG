@@ -66,8 +66,8 @@ describe('equipping', () => {
 
   test('a weapon kind with no runtime is refused', () => {
     const state = createPlayerWeaponState();
-    // Staff/summoner/spirit are Phase 2c.
-    assert.equal(equipPlayerWeapon(state, 'emberStaff'), false);
+    // Summoner weapons need persistent allied entities — still unported.
+    assert.equal(equipPlayerWeapon(state, 'apiaryLexicon'), false);
     assert.equal(state.equippedWeaponId, null);
   });
 

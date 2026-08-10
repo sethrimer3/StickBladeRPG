@@ -435,8 +435,9 @@ describe('runtime coverage reporting', () => {
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['sniperRifle']), true);
   });
 
-  test('summon and spirit kinds still report as unimplemented', () => {
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['emberStaff']), false);
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['spiritBand']), false);
+  test('summoner weapons still report as unimplemented', () => {
+    // Staff and spirit gained runtimes in Phase 2c; summoner did not.
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['quillAviary']), false);
   });
 });

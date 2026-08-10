@@ -19,7 +19,7 @@ import { fireGrapple } from '../sim/clusters/grapple';
 import { GrappleInputMode } from '../sim/worldGrappleState';
 import { getWallJumpCandidate } from '../sim/clusters/playerWallJump';
 import { screenToWorld } from './gameRoom';
-import { tryStartPlayerWeaponAttack } from '../sim/weapons/playerWeaponState';
+import { tryStartPlayerWeaponAttack, releasePlayerWeaponAttack } from '../sim/weapons/playerWeaponState';
 import { getDoubleJumpToGrappleEnabled } from '../ui/renderSettings';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
@@ -540,6 +540,9 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
       );
       tryStartPlayerWeaponAttack(world, weaponPlayer, aim.xWorld, aim.yWorld, world.rng);
     }
+  } else {
+    // Staves channel while the key is held; releasing must stop the drain.
+    releasePlayerWeaponAttack(world);
   }
 
   return { moveDx, jumpTriggered, openPause, interactTriggered, interactInputPulseTrigger, grappleFireTriggered };

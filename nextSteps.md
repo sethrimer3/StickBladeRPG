@@ -2333,3 +2333,57 @@ Other context for the next agent:
   `requestAnimationFrame` never fires and the game loop is frozen. That path is
   covered by unit tests (including a held-key cadence test) but has not been
   seen running by a human. Worth a manual playtest.
+
+## STICK-RPG port — Phase 2c staff and spirit runtime (BUILD 618)
+
+12 of the 17 remaining data-only weapons now function. Summoners (4) and two
+bespoke staff auras are still unported — see Phase 2e/2f in `docs/Todo.md`.
+
+Landed:
+
+- `src/sim/weapons/staffChannel.ts` — charge reservoir integrated from `dtMs`
+  (`maxCharge`, `regenPerSecond`, `drainPerSecond`, `minChargeToFire`) driving
+  one of two effects:
+  - **Beam** (`emberStaff`, `prismStaff`, `glyphConduit`): hitscan ray clipped
+    to `range`, terrain-clipped via `raycastWalls` when `stopOnObjects` is set,
+    damaging only the NEAREST enemy on the ray (donor beams stop at the first
+    body). Damage is `damagePerSecond` scaled by tick length, so the rate is
+    timestep-independent.
+  - **Aura** (`warChantStaff`, `bulwarkStaff`, `verdantStaff`): maps
+    `attackMultiplier`/`defenseMultiplier`/`healthMultiplier` straight onto the
+    Phase 1 `StatModifiers` contract. Read live via `getStaffAuraModifiers`
+    rather than cached, so it cannot drift out of sync with the charge state.
+- `src/sim/weapons/spiritOrbs.ts` — a ring of orbs circling the wielder.
+  Attacking consumes the leading orb and launches it from its own orbit
+  position through the existing projectile pool (so bounce/blast/trails all
+  apply unchanged); the spent orb regenerates after `orbRegenMs`. An empty ring
+  is the weapon's entire pacing mechanism — all four spirit weapons declare
+  `cooldown: 0`.
+- `releasePlayerWeaponAttack(world)`, called from the command processor's
+  not-held branch. Without it a staff keeps draining after the key comes up.
+- 47 tests. Full suite 3430/3430; build and lint clean.
+
+Important context for the next agent:
+
+- **Refusal is deliberate, not a bug.** `equipPlayerWeapon` now rejects
+  `aegisStaff` and `gravebindStaff` because their only effect is an unported
+  aura — equipping them would give a weapon that visibly does nothing. That
+  guard (`getStaffChannelKind(def) === STAFF_CHANNEL_NONE`) is what to remove
+  when 2e lands.
+- **Auras only affect the wielder.** Every ported aura declares
+  `target: 'allies'` with `includeSelf: true`. With no party there is nobody
+  else to buff. Phase 3 is where ally targeting becomes meaningful.
+- **Enemies have no defense stat yet.** `staffChannel.getTargetDefense` reads
+  `statsDefense` structurally off `ClusterState` and treats absence as zero
+  mitigation, matching how `weaponSwing.ts` types its targets. When enemies gain
+  stats, both read sites start working with no change.
+- **No renderer for either system.** `weaponRenderer.ts` draws blades only for
+  melee/shield. Beams (`staff.beamColor`/`beamWidth`/`beamGlow`), the charge
+  meter (`barColor`), and orbiting orbs (`orbColor`/`orbTrailColor`/`orbRadius`)
+  all have their donor presentation fields carried in the weapon data and
+  nothing drawing them. `StaffChannelState.beamEndXWorld/YWorld/beamActiveFlag`
+  and `getSpiritOrbPosition` exist specifically to feed that renderer.
+- Not verified in a live browser session: the preview pane does not composite in
+  this environment, so `requestAnimationFrame` never fires and the game loop is
+  frozen. Equip one with `__dwEquip('emberStaff')` / `__dwEquip('tempestHalo')`
+  and hold Q to try them in a real session.

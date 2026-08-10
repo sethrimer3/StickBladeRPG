@@ -145,10 +145,12 @@ describe('weapon lookup', () => {
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['templarianWallShield']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['bow']), true);
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['wand']), true);
-    // Summon, spirit, and staff kinds remain data-only.
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['emberStaff']), false);
-    assert.equal(isWeaponRuntimeImplemented(WEAPONS['spiritBand']), false);
+    // Staff and spirit kinds (Phase 2c).
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['emberStaff']), true);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['spiritBand']), true);
+    // Summoner remains data-only: persistent allied entities are their own system.
     assert.equal(isWeaponRuntimeImplemented(WEAPONS['soulbinderPrimer']), false);
+    assert.equal(isWeaponRuntimeImplemented(WEAPONS['apiaryLexicon']), false);
   });
 
   test('base element defaults to physical', () => {
