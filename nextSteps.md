@@ -2475,3 +2475,49 @@ composite in this environment, so rAF never fires and the game loop is frozen.
 Everything in this phase is purely visual, so it is the phase that most needs a
 human to actually look at it. `__dwEquip('emberStaff')` / `'tempestHalo'` /
 `'apiaryLexicon'` then hold Q.
+
+## STICK-RPG port — Phase 3a party foundation (BUILD 621)
+
+Phase 3 is split. 3a (this) is the pure data model and follow AI; 3b is the
+simulation rewiring that makes multiple members physically exist. The split is
+deliberate: 3b touches `world.clusters[0]` assumptions, `playerTransfer.ts`, and
+room transitions — the areas `AGENTS.md` flags as regression-prone — and this
+environment cannot playtest. Building and pinning the model first means the
+risky change arrives as a small, reviewable diff on top of tested foundations.
+
+Landed:
+
+- `src/sim/party/partyState.ts` — up to 3 members (donor `TEAM_SIZE`),
+  `activeIndex`, per-member `{mainHand, offHand, armor}`. Ports the donor's
+  `canEquipItemInSubslot` / `applyMainHandConstraints` rules: only weapons in
+  the main hand, and a two-hander clears and blocks the off hand. Also
+  `computeEquipmentModifiers` (multiplicative, so gear composes) and
+  `findDamageRedirectMemberIndex` for the Templarian Wall Shield's
+  `partyDamageRedirect`.
+- `src/sim/party/partyFollowAi.ts` — `computeFollowIntent` returns an INTENT
+  (`moveDx`, `wantsJump`, `shouldTeleport`), never touching physics. 3b should
+  feed that intent into the same movement code the player uses; a parallel
+  follower movement implementation would drift out of agreement with the real
+  one. Followers trail on the side they are already on so they do not cross
+  through each other, and fan out by follow order rather than stacking.
+- 52 tests. Full suite 3529/3529; build and lint clean.
+
+Notes for whoever does 3b:
+
+- **Unrecruited slots are present but inactive**, matching the donor: the array
+  is always `MAX_PARTY_SIZE` long, so party UI and save shape stay stable as
+  members join. `getActiveMember` never returns an unrecruited member even if
+  `activeIndex` is stale.
+- **`sanitizePartyState` rebuilds rather than trusts.** It normalizes member
+  count, de-duplicates ids, forces slot 0 recruited (so a corrupt save can never
+  leave nobody to control), re-validates equipment against the current weapon
+  table (a weapon deleted from the game does not resurrect as a broken
+  reference), and repairs an illegal two-hander + off-hand pair on load.
+- **`shouldTeleport` is not a shortcut, it is a safety valve.** A follower stuck
+  behind geometry is otherwise lost for the rest of the room. The donor has the
+  same escape hatch.
+- **Reconcile `world.playerCharacterStats` with the party.** Phase 2b added that
+  single mirrored stat record for the lone player; once members exist, the
+  active member's stats should supersede it rather than both being maintained.
+- Nothing in 3a is reachable from gameplay yet — no `WorldState` field, no UI,
+  no persistence. It is a tested foundation, not a feature.
