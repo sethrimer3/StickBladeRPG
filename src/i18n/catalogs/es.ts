@@ -239,6 +239,8 @@ export const ES_CATALOG: Partial<Record<TranslationKey, CatalogEntry>> = {
   'worldMap.zone2LockedHint': '(Completa la zona 1 para desbloquearla)',
   'worldMap.bossSuffix': '{name} — ¡Combate de jefe!',
   'worldMap.hint': 'Completa niveles para desbloquear otros nuevos',
+  'worldMap.deploy': 'Desplegar',
+  'worldMap.replay': 'Repetir',
 
   // Editor
   'editor.customCampaignTitle': '🛠 Editor de campañas personalizadas',

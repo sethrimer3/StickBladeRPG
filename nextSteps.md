@@ -8,6 +8,25 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 624 — STICK-RPG Port Phase 5: World Map Node Graph Topology & Interactive Visualizer
+
+**Accomplished in Phase 5:**
+1. **LevelDef & Scaling Multiplier:**
+   - Extended `LevelDef` in `src/levels/levelDef.ts` with `LevelMapNodeDef`, `LevelBossDef`, `stageCount`, `boss`, `difficultyMultiplier`, and `unlockRequires`.
+   - Ported canonical `computeLevelDifficultyMultiplier` adhering to donor scaling formulas and special trial weights (Canopy Sentinel Trial = 10, Chronoglass = 50).
+2. **8-World Topology & Node Graph Model:**
+   - Created `src/levels/worldMapTopology.ts` mapping the 8-world radial topology (40 mainline stages + central World Tree hub), interconnecting links, boss details, and progression unlock queries (`isWorldMapNodeUnlocked`, `computeWorldMapLinks`, `findWorldMapNode`).
+3. **Interactive World Map Screen:**
+   - Redesigned `src/ui/worldMap.ts` into a canvas + HTML interactive radial visualizer with starfield particle background, energy link paths, boss crowns, interactive stage inspector card, world selector tabs (All / W1–W8), and deploy routing.
+   - Added `createLevelFromWorldMapNode` to convert any map node to a playable `LevelDef` scaled by difficulty.
+4. **Progression State:**
+   - Added `completedStageIds` to `PlayerProgress` in `src/progression/playerProgress.ts` with backwards-compatible defaults and initialization.
+5. **Validation:**
+   - Created `src/tests/worldMapTopology.test.ts` (7 tests).
+   - Validated: `npm test` (3,555 tests passing), `npm run build` (clean), `npm run lint` (clean).
+
+---
+
 ## BUILD 623 — STICK-RPG Port Phase 4: Enemy Traits, Spawning, Drops, and Editor Palette
 
 **Accomplished in Phase 4:**

@@ -247,6 +247,8 @@ export const EN_CATALOG = {
   'worldMap.zone2LockedHint': '(Complete Zone 1 to unlock)',
   'worldMap.bossSuffix': '{name} — Boss Battle!',
   'worldMap.hint': 'Complete levels to unlock new ones',
+  'worldMap.deploy': 'Deploy',
+  'worldMap.replay': 'Replay',
 
   // ── Campaign editor ───────────────────────────────────────────────────────
   // Leading glyphs are part of the button design and are kept in translations.

@@ -163,6 +163,12 @@ export interface PlayerProgress {
    * See `src/sim/party/partyState.ts`.
    */
   party?: PartyState;
+
+  /**
+   * Completed world map stage IDs (e.g. 'world1Stage1', 'world1Stage2') ported
+   * from STICK-RPG. Optional for backwards compatibility with legacy saves.
+   */
+  completedStageIds?: string[];
 }
 
 // ---- Factory / helpers ---------------------------------------------------
@@ -225,6 +231,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     permanentlyOpenGateKeys: [],
     characterStats: createDefaultCharacterStats(),
     party: createDefaultParty(),
+    completedStageIds: [],
   };
 }
 
