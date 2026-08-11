@@ -26,6 +26,7 @@
 import type { WorldState } from '../sim/world';
 import { MAX_PARTICLES } from '../sim/world';
 import type { ParticleKind } from '../sim/particles/kinds';
+import { getLeaderCluster } from '../sim/party/partyWorld';
 
 // ── Capture types ─────────────────────────────────────────────────────────────
 
@@ -96,10 +97,10 @@ export interface PlayerTransferSnapshot {
  * Returns `null` if no player cluster is found at `world.clusters[0]`.
  */
 export function capturePlayerTransferState(world: WorldState): PlayerTransferSnapshot | null {
-  const player = world.clusters[0];
+  const player = getLeaderCluster(world) ?? world.clusters[0];
   if (player === undefined || player.isPlayerFlag !== 1) {
     if (import.meta.env.DEV) {
-      console.warn('[playerTransfer] capturePlayerTransferState: no player at clusters[0]');
+      console.warn('[playerTransfer] capturePlayerTransferState: no player cluster found');
     }
     return null;
   }
@@ -151,31 +152,23 @@ export function capturePlayerTransferState(world: WorldState): PlayerTransferSna
  *   • All grapple flags are cleared (new room starts without an active grapple).
  */
 export function detachPlayerFromResidentWorld(world: WorldState): void {
-  if (import.meta.env.DEV) {
-    const first = world.clusters[0];
-    if (first === undefined || first.isPlayerFlag !== 1) {
-      console.error(
-        '[playerTransfer] detachPlayerFromResidentWorld: player not at clusters[0] — ' +
-        'call capturePlayerTransferState() before detaching.',
-      );
+  // Collect all player entity IDs (leader + followers) and remove their clusters.
+  const playerEntityIds = new Set<number>();
+  for (let ci = world.clusters.length - 1; ci >= 0; ci--) {
+    const c = world.clusters[ci];
+    if (c.isPlayerFlag === 1) {
+      playerEntityIds.add(c.entityId);
+      world.clusters.splice(ci, 1);
     }
   }
 
-  const playerEntityId = world.clusters[0]?.entityId ?? 1;
-
-  // Kill every particle owned by the departing player.
-  // Transient and non-transient alike are killed — neither should persist in
-  // the frozen world once the player is gone.
-  // respawnDelayTicks is cleared so the frozen world won't try to respawn them.
+  // Kill every particle owned by any departing player entity.
   for (let pi = 0; pi < world.particleCount; pi++) {
-    if (world.ownerEntityId[pi] === playerEntityId) {
+    if (playerEntityIds.has(world.ownerEntityId[pi])) {
       world.isAliveFlag[pi]       = 0;
       world.respawnDelayTicks[pi] = 0;
     }
   }
-
-  // Remove the player cluster (always at index 0).
-  world.clusters.splice(0, 1);
 
   // Clear world-level grapple state — the new room starts with a fresh grapple.
   world.isGrappleActiveFlag     = 0;

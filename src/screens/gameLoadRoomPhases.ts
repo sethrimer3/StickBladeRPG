@@ -137,6 +137,8 @@ import { resetTimeStopFieldPlayerState } from '../sim/timeStopField/timeStopFiel
 import { resetPoisonExposureState } from '../sim/poisonField/poisonExposureState';
 import { resetVoidDashState } from '../sim/clusters/voidDash';
 import { resetPlayerWeaponRoomState, equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
+import { spawnFollowerClusters } from '../sim/party/partyWorld';
+import { sanitizePartyState, getActiveMember } from '../sim/party/partyState';
 import type { CombatMode } from '../sim/combatMode';
 import { STICKMAN_CHARACTER_ID } from '../sim/clusters/stickRangerPlayer';
 
@@ -434,16 +436,14 @@ function applyPlayerWeaveWorldFields(
   // too; restore the `ctx.progress?.characterId` read here to bring character
   // selection back.
   world.characterId                    = STICKMAN_CHARACTER_ID;
-  // Mirror character stats into the world so simulation never reaches into
-  // progression. Null when the save predates the stat port; weapon damage then
-  // falls back to the base attack stat.
-  world.playerCharacterStats           = ctx.progress?.characterStats ?? null;
-  // Starter weapon. There is no inventory or equipment slot yet — Phase 3 adds
-  // per-party-member {mainHand, offHand, armor} and this default goes away then.
-  // Until then the player is armed with the donor's basic Sword so the weapon
-  // system is actually reachable in game.
-  if (world.playerWeapon.equippedWeaponId === null) {
-    equipPlayerWeapon(world.playerWeapon, DEFAULT_STARTER_WEAPON_ID);
+  // Mirror party state and active member's combat stats into the world.
+  world.party                          = ctx.progress?.party ? sanitizePartyState(ctx.progress.party) : null;
+  const activeMember                   = world.party ? getActiveMember(world.party) : null;
+  world.playerCharacterStats           = activeMember ? activeMember.stats : (ctx.progress?.characterStats ?? null);
+  // Equip active member's mainHand weapon if specified, otherwise default starter weapon.
+  const desiredWeaponId = activeMember?.equipment.mainHand ?? DEFAULT_STARTER_WEAPON_ID;
+  if (world.playerWeapon.equippedWeaponId !== desiredWeaponId) {
+    equipPlayerWeapon(world.playerWeapon, desiredWeaponId);
   }
   // A fresh room means a fresh body: drop the old one so it is rebuilt at the
   // new spawn point instead of interpolating across the transition.
@@ -719,6 +719,9 @@ export function* makeLoadRoomPhases(
   // transitions — do not clamp the carried value down to capacity here.
   playerCluster.healthPoints = carryHealthPoints;
   world.clusters.push(playerCluster);
+  if (world.party) {
+    spawnFollowerClusters(world, world.party, spawnXWorld, spawnYWorld, 2);
+  }
 
   {
     const _t0 = import.meta.env.DEV ? performance.now() : 0;
@@ -1054,6 +1057,9 @@ export function applyResidentRoomActivation(
   }
   // Enemies are already in the world from the pre-build; insert player at index 0.
   world.clusters.unshift(playerCluster);
+  if (world.party) {
+    spawnFollowerClusters(world, world.party, spawnXWorld, spawnYWorld, 2);
+  }
 
   let particlesRestored = 0;
   let particlesSkipped  = 0;

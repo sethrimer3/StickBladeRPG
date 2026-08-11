@@ -24,6 +24,7 @@ import { createSecondaryWeaveGestureState, type SecondaryWeaveGestureState } fro
 import { createVoidDashState, type VoidDashState } from './clusters/voidDash';
 import { createPlayerWeaponState, type PlayerWeaponState } from './weapons/playerWeaponState';
 import type { CharacterStats } from './stats/characterStats';
+import type { PartyState } from './party/partyState';
 
 /** Fixed capacity for this tick's Verdant flower-bloom spawn events (see verdantFlowerEventCount). */
 export const VERDANT_FLOWER_EVENTS_CAPACITY = 16;
@@ -459,6 +460,11 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * supplied, in which case weapon damage falls back to the base attack stat.
    */
   playerCharacterStats: CharacterStats | null;
+  /**
+   * The active party state, mirrored from `PlayerProgress` on room load.
+   * Null when not initialized.
+   */
+  party: PartyState | null;
 
   // ── Independent Sword Weave ─────────────────────────────────────────
   newSwordActiveFlag: number;
@@ -728,6 +734,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     canonicalMoteVelYWorld:        new Float32Array(MAX_CANONICAL_MOTES),
     playerWeapon:                  createPlayerWeaponState(),
     playerCharacterStats:          null,
+    party:                         null,
     newSwordActiveFlag:            0,
     newSwordGestureId:             0,
     newSwordTicksElapsed:          0,

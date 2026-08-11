@@ -19,6 +19,11 @@ import {
   createDefaultCharacterStats,
   sanitizeCharacterStats,
 } from '../sim/stats/characterStats';
+import {
+  type PartyState,
+  createDefaultParty,
+  sanitizePartyState,
+} from '../sim/party/partyState';
 
 export { getSlotCost, totalSlotCost };
 
@@ -150,6 +155,14 @@ export interface PlayerProgress {
    * `docs/decisions/STICK_RPG_PORT_PLAN.md`.
    */
   characterStats?: CharacterStats;
+
+  /**
+   * Party roster, equipment, and active member index ported from STICK-RPG.
+   * Optional on the wire so saves written before this field existed still load;
+   * `loadSaveSlot` backfills and sanitizes it via `sanitizePartyState`.
+   * See `src/sim/party/partyState.ts`.
+   */
+  party?: PartyState;
 }
 
 // ---- Factory / helpers ---------------------------------------------------
@@ -211,6 +224,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     collectedSkillTombKeys: [],
     permanentlyOpenGateKeys: [],
     characterStats: createDefaultCharacterStats(),
+    party: createDefaultParty(),
   };
 }
 
@@ -223,6 +237,20 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
  */
 export function sanitizePlayerCharacterStats(progress: PlayerProgress): void {
   progress.characterStats = sanitizeCharacterStats(progress.characterStats);
+}
+
+/**
+ * Ensures `progress.party` is present and internally consistent.
+ *
+ * Saves written before the STICK-RPG party port omit the field entirely, so this
+ * backfills a default party and reconciles member stats. Idempotent.
+ */
+export function sanitizePlayerPartyState(progress: PlayerProgress): void {
+  progress.party = sanitizePartyState(progress.party);
+  // If characterStats exists, ensure party leader's stats stay synchronized.
+  if (progress.characterStats && progress.party.members[0]) {
+    progress.party.members[0].stats = progress.characterStats;
+  }
 }
 
 /**

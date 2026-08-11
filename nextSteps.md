@@ -8,6 +8,29 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 622 — STICK-RPG Port Phase 3b: Multi-Cluster Party Simulation, Persistence, and UI
+
+**Accomplished in Phase 3b:**
+1. **Multi-Cluster Simulation & Follower Input Routing:**
+   - Created `src/sim/party/partyWorld.ts` providing pure cluster lookup and query helpers (`getLeaderCluster`, `getFollowerClusters`, `getAllPartyMemberClusters`, `computeFollowerIntent`, `computeAllFollowerIntents`, `spawnFollowerClusters`, `resolvePartyDamageTarget`).
+   - Extended `ClusterState` (`src/sim/clusters/state.ts`) with party membership markers (`isPartyFollowerFlag`, `partyMemberIndex`) and follower intent buffers (`followerMoveDx`, `followerJumpTriggered`, `followerShouldTeleport`).
+   - Updated `src/sim/clusters/movement.ts` to compute all follower intents prior to cluster iteration and route follower-specific intent fields through the player movement physics pipeline while preserving the leader's direct keyboard/mouse inputs.
+   - Refactored `src/sim/tick.ts` to replace hardcoded `clusters[0]` assumptions with `getLeaderCluster(world)`.
+2. **Room Loading and Resident Transition Detachment:**
+   - Wired party spawning and character stat/equipment synchronization into `src/screens/gameLoadRoomPhases.ts` (Phase B and `activateResidentRoom`). The leader cluster is assigned index 0, followed by all recruited followers. Active member weapon is equipped automatically.
+   - Generalized `src/screens/playerTransfer.ts` (`capturePlayerTransferState` & `detachPlayerFromResidentWorld`) to snapshot the party leader and cleanly detach all party clusters and their owned particles across room transitions without altering transition trigger geometry.
+3. **Combat & Damage Redirection:**
+   - Implemented `resolvePartyDamageTarget` in `partyWorld.ts` which inspects party equipment for `partyDamageRedirect` (e.g. `templarianWallShield`) and redirects damage to the active defender cluster if recruited and alive.
+4. **Persistence & Save Sanitization:**
+   - Extended `PlayerProgress` (`src/progression/playerProgress.ts`) with `party?: PartyState`, and added `sanitizePlayerPartyState` which is invoked during `loadSaveSlot` (`src/progression/saveSlots.ts`). Ensures backwards-compatible backfilling for older saves and stat synchronization between top-level `characterStats` and member 0.
+5. **Party & Skill UI Panels:**
+   - Created `src/ui/partyPanel.ts` and `src/ui/skillPanel.ts` modeled on `weaveLoadout.ts` / `skillTombShared.ts`, supporting active member selection, equipment assignment, live derived-stat preview, and skill point allocation.
+6. **Tests & Validation:**
+   - Added `src/tests/partySimulation.test.ts` (11 new tests, 65 party tests total).
+   - Validated: `npm test` (3,542 passing tests), `npm run build` (clean), `npm run lint` (clean).
+
+---
+
 ## BUILD 607 — Grapple quiet-release lost swing momentum (release ran outside the deterministic fixed tick)
 
 **Regression, and why it was only just exposed.** Commit `cbe9f835` fixed `applyGamepadInputSnapshot`'s gamepad-disconnect branch so it stops stomping `isMouseDownFlag` / `isRightMouseDownFlag` / `isGrappleHeldFlag` every frame when no gamepad is connected. That stomping had been *accidentally* making Hold-mode mouse-up release work: it forced `isGrappleReleaseTriggeredFlag = 1` on unrelated frames as a side effect, which happened to paper over a real ordering bug in the release path. Once the stomping stopped, mouse-up release started working "for real" via the normal `GrappleRelease` command path — and immediately exposed that the normal path had never actually been correct: releasing mid-swing (especially while moving upward) now visibly lost momentum and fell instead of continuing to rise.

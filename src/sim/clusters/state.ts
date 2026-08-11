@@ -14,6 +14,25 @@ export interface ClusterState {
   velocityYWorld: number;
   isAliveFlag: 0 | 1;
   isPlayerFlag: 0 | 1;
+  /**
+   * 1 if this cluster is a party follower (not the directly-controlled leader).
+   * Only meaningful when `isPlayerFlag === 1`.
+   */
+  isPartyFollowerFlag: 0 | 1;
+  /**
+   * Index into the `PartyState.members` array. -1 for non-party clusters
+   * (enemies). 0 for the leader, 1+ for followers.
+   */
+  partyMemberIndex: number;
+
+  // ---- Per-follower movement intent (set by partyWorld each tick) ----------
+  /** Horizontal movement intent for followers (-1, 0, or 1). */
+  followerMoveDx: number;
+  /** 1 for one tick when the follower AI wants to jump. */
+  followerJumpTriggered: 0 | 1;
+  /** 1 when the follower was teleported to the leader this tick. */
+  followerShouldTeleport: 0 | 1;
+
   countsTowardRoomCompletionFlag: 0 | 1;
   healthPoints: number;
   maxHealthPoints: number;
@@ -1088,6 +1107,11 @@ export function createClusterState(
     velocityYWorld: 0,
     isAliveFlag: 1,
     isPlayerFlag,
+    isPartyFollowerFlag: 0,
+    partyMemberIndex: isPlayerFlag === 1 ? 0 : -1,
+    followerMoveDx: 0,
+    followerJumpTriggered: 0,
+    followerShouldTeleport: 0,
     countsTowardRoomCompletionFlag: isPlayerFlag === 1 ? 0 : 1,
     healthPoints: maxHealthPoints,
     maxHealthPoints,

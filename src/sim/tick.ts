@@ -81,6 +81,7 @@ import { applyMovementWindToPixelMaterials } from './pixelMaterials/pixelMateria
 import { applyCustomBlockWindVents } from './pixelMaterials/customBlockWindVents';
 import { updateShieldWeaveState } from './stormweave/shieldWeave';
 import { getStormweaveMoteCount } from './stormweave/lifeMotes';
+import { getLeaderCluster } from './party/partyWorld';
 
 export function tick(world: WorldState): void {
   // Sync world.combatMode from the module singleton (which is updated by the pause menu toggle).
@@ -102,7 +103,7 @@ export function tick(world: WorldState): void {
   // Capture the player's downward velocity BEFORE movement/collision zeroes it
   // on landing.  The tough falling block trigger reads this to detect hard landings.
   {
-    const player = world.clusters.length > 0 ? world.clusters[0] : undefined;
+    const player = getLeaderCluster(world);
     world.playerPrevVelocityYWorld =
       (player !== undefined && player.isPlayerFlag === 1 && player.isAliveFlag === 1)
         ? player.velocityYWorld
@@ -163,7 +164,7 @@ export function tick(world: WorldState): void {
   // this tick uses the current shield arc. Also serves hostile projectile blocking
   // later in this same tick (AI / combat steps).
   {
-    const player = world.clusters[0];
+    const player = getLeaderCluster(world);
     if (player !== undefined && player.isAliveFlag === 1) {
       updateShieldWeaveState(
         world.shieldWeave,
@@ -221,7 +222,7 @@ export function tick(world: WorldState): void {
   //        player's final position this tick, and before enemy AI so an enemy
   //        killed by a swing does not also act.
   {
-    const player = world.clusters.length > 0 ? world.clusters[0] : undefined;
+    const player = getLeaderCluster(world);
     const livingPlayer =
       player !== undefined && player.isPlayerFlag === 1 && player.isAliveFlag === 1
         ? player

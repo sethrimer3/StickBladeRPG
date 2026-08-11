@@ -45,6 +45,7 @@ import { rechargeGrappleCharge } from './grappleShared';
 import { isVerdantDustEquipped, VERDANT_JUMP_LAUNCH_MULTIPLIER } from './verdantMobility';
 import { updateVerdantFlowerSpawn, type VerdantFlowerSpawnEvent } from './verdantFlowerSpawn';
 import { tickStickRangerPlayer, isStickRangerActive } from './stickRangerPlayer';
+import { computeAllFollowerIntents } from '../party/partyWorld';
 
 /** Reused (never reallocated) scratch buffer for this tick's flower-bloom events. */
 const _verdantFlowerEventsScratch: VerdantFlowerSpawnEvent[] = [];
@@ -120,6 +121,9 @@ export function applyClusterMovement(world: WorldState): void {
   const minX = CLUSTER_EDGE_MARGIN_WORLD;
   const maxX = world.worldWidthWorld - CLUSTER_EDGE_MARGIN_WORLD;
 
+  // ── Compute follow-AI intents for all follower clusters ─────────────────
+  computeAllFollowerIntents(world);
+
   for (let ci = 0; ci < world.clusters.length; ci++) {
     const cluster = world.clusters[ci];
     if (cluster.isAliveFlag === 0) continue;
@@ -134,7 +138,28 @@ export function applyClusterMovement(world: WorldState): void {
     }
 
     if (cluster.isPlayerFlag === 1) {
-      tickPlayerMovement(cluster, world, dtSec);
+      if (cluster.isPartyFollowerFlag === 1) {
+        // ── Swap world input fields to this follower's AI intent ──────────
+        const savedDx         = world.playerMoveInputDxWorld;
+        const savedJumpTrig   = world.playerJumpTriggeredFlag;
+        const savedJumpHeld   = world.playerJumpHeldFlag;
+        const savedCrouch     = world.playerCrouchHeldFlag;
+
+        world.playerMoveInputDxWorld   = cluster.followerMoveDx;
+        world.playerJumpTriggeredFlag  = cluster.followerJumpTriggered;
+        world.playerJumpHeldFlag       = cluster.followerJumpTriggered; // hold while jumping
+        world.playerCrouchHeldFlag     = 0; // followers never crouch
+
+        tickPlayerMovement(cluster, world, dtSec);
+
+        // ── Restore leader's input ─────────────────────────────────────────
+        world.playerMoveInputDxWorld   = savedDx;
+        world.playerJumpTriggeredFlag  = savedJumpTrig;
+        world.playerJumpHeldFlag       = savedJumpHeld;
+        world.playerCrouchHeldFlag     = savedCrouch;
+      } else {
+        tickPlayerMovement(cluster, world, dtSec);
+      }
     } else {
       tickEnemyMovement(cluster, world, dtSec, playerX, playerY, playerFound);
     }
