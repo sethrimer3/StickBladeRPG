@@ -1017,6 +1017,63 @@ export function placeEnemyAtCursor(
       isBeeSwarmFlag: 0,
       isWebSpiderFlag: 0,
     });
+  } else if (item.id === 'enemy_bald_roller' ||
+             item.id === 'enemy_slime_cube' ||
+             item.id === 'enemy_tripod_spinner' ||
+             item.id === 'enemy_psi_sky_ranger' ||
+             item.id === 'enemy_glyph_gyre' ||
+             item.id === 'enemy_time_wraith' ||
+             item.id === 'enemy_realm_guardian' ||
+             item.id === 'enemy_tricyclic_slasher' ||
+             item.id === 'enemy_sand_block' ||
+             item.id === 'enemy_sand_wanderer' ||
+             item.id === 'enemy_aleph_glyph' ||
+             item.id === 'enemy_shin_glyph' ||
+             item.id === 'enemy_zeta_glyph' ||
+             item.id === 'enemy_xi_glyph' ||
+             item.id === 'enemy_theta_harmonic') {
+    const STICK_RPG_MAP: Record<string, string> = {
+      enemy_bald_roller: 'baldRoller',
+      enemy_slime_cube: 'slimeCube',
+      enemy_tripod_spinner: 'tripodSpinner',
+      enemy_psi_sky_ranger: 'psiSkyRanger',
+      enemy_glyph_gyre: 'glyphGyre',
+      enemy_time_wraith: 'timeWraith',
+      enemy_realm_guardian: 'realmGuardian',
+      enemy_tricyclic_slasher: 'tricylicSlasher',
+      enemy_sand_block: 'sandBlock',
+      enemy_sand_wanderer: 'sandWanderer',
+      enemy_aleph_glyph: 'alephGlyph',
+      enemy_shin_glyph: 'shinGlyph',
+      enemy_zeta_glyph: 'zetaGlyph',
+      enemy_xi_glyph: 'xiGlyph',
+      enemy_theta_harmonic: 'thetaHarmonic',
+    };
+    const kind = STICK_RPG_MAP[item.id];
+    const isBoss: 0 | 1 = kind === 'realmGuardian' ? 1 : 0;
+    room.enemies.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      kinds: ['Golden'],
+      particleCount: isBoss === 1 ? 60 : 20,
+      isBossFlag: isBoss,
+      stickRpgEnemyKind: kind,
+      isFlyingEyeFlag: 0,
+      isRollingEnemyFlag: 0,
+      rollingEnemySpriteIndex: 0,
+      isRockElementalFlag: 0,
+      isRadiantTetherFlag: 0,
+      isRadiantWebFlag: 0,
+      isGrappleHunterFlag: 0,
+      isSlimeFlag: 0,
+      isLargeSlimeFlag: 0,
+      isWheelEnemyFlag: 0,
+      isBeetleFlag: 0,
+      isBubbleEnemyFlag: 0,
+      isIceBubbleFlag: 0,
+      isSquareStampedeFlag: 0,
+    });
   } else if (item.id === 'grasshopper_area') {
     room.grasshopperAreas.push({
       uid: allocateUid(state),

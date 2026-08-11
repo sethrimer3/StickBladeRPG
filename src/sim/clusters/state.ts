@@ -36,6 +36,12 @@ export interface ClusterState {
   countsTowardRoomCompletionFlag: 0 | 1;
   healthPoints: number;
   maxHealthPoints: number;
+  /** Ported STICK-RPG enemy kind or null. */
+  stickRpgEnemyKind: string | null;
+  /** XP granted on defeat. */
+  xpValue: number;
+  /** Coins granted on defeat. */
+  coinValue: number;
 
   // ---- Platformer physics -------------------------------------------------
   /** 1 when the cluster is resting on a surface (floor or platform top). */
@@ -1115,6 +1121,9 @@ export function createClusterState(
     countsTowardRoomCompletionFlag: isPlayerFlag === 1 ? 0 : 1,
     healthPoints: maxHealthPoints,
     maxHealthPoints,
+    stickRpgEnemyKind: null,
+    xpValue: 0,
+    coinValue: 0,
     isGroundedFlag: 0,
     isGroundedOnIceFlag: 0,
     isGroundedOnUltraIceFlag: 0,

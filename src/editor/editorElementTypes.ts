@@ -119,6 +119,7 @@ export interface EditorWall {
 
 export interface EditorEnemy {
   countsTowardRoomCompletionFlag?: 0 | 1;
+  stickRpgEnemyKind?: string;
   uid: number;
   xBlock: number;
   yBlock: number;

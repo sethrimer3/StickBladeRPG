@@ -59,6 +59,7 @@ export function stringToParticleKind(name: string): ParticleKind | null {
 
 export interface RoomJsonEnemy {
   countsTowardRoomCompletion?: boolean;
+  stickRpgEnemyKind?: string;
   xBlock: number;
   yBlock: number;
   kinds: string[];

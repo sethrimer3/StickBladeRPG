@@ -1,0 +1,443 @@
+/**
+ * stickRpgEnemyTraits.ts — Ported enemy movement traits and stat profiles from STICK-RPG.
+ *
+ * Source donor: `STICK-RPG/js/enemies.js` (ENEMY_TRAITS) and `STICK-RPG/js/levels.js`.
+ * Provides pure immutable trait definitions, lookup helpers, and scaling calculators.
+ */
+
+export type StickRpgLocomotion =
+  | 'roller'
+  | 'hopper'
+  | 'tripod'
+  | 'acrobatic'
+  | 'hover'
+  | 'sentinel'
+  | 'block'
+  | 'sandShade';
+
+export type StickRpgHitboxShape = 'rect' | 'ellipse';
+
+export type StickRpgPhysicsType = 'stick' | 'nonStick';
+
+export interface StickRpgEnemyTrait {
+  readonly id: StickRpgEnemyKind;
+  readonly name: string;
+  readonly locomotion: StickRpgLocomotion;
+  readonly physicsType: StickRpgPhysicsType;
+  readonly moveSpeed: number;
+  readonly moveForce: number;
+  readonly airMoveForce: number;
+  readonly moveDecel: number;
+  readonly jumpSpeed: number;
+  readonly maxFallSpeed: number;
+  readonly hitboxWidth: number;
+  readonly hitboxHeight: number;
+  readonly hitboxOffsetY: number;
+  readonly hitboxShape: StickRpgHitboxShape;
+  readonly floats: boolean;
+  readonly flies: boolean;
+  readonly passThroughTerrain?: boolean;
+  readonly ghost?: boolean;
+  readonly isBoss?: boolean;
+  readonly baseHp: number;
+  readonly baseAttack: number;
+  readonly baseDefense: number;
+  readonly baseXp: number;
+  readonly baseCoins: number;
+}
+
+export const STICK_RPG_ENEMY_KINDS = [
+  'baldRoller',
+  'slimeCube',
+  'tripodSpinner',
+  'psiSkyRanger',
+  'glyphGyre',
+  'timeWraith',
+  'realmGuardian',
+  'tricylicSlasher',
+  'sandBlock',
+  'sandWanderer',
+  'alephGlyph',
+  'shinGlyph',
+  'zetaGlyph',
+  'xiGlyph',
+  'thetaHarmonic',
+] as const;
+
+export type StickRpgEnemyKind = typeof STICK_RPG_ENEMY_KINDS[number];
+
+export const STICK_RPG_ENEMY_TRAITS: Readonly<Record<StickRpgEnemyKind, StickRpgEnemyTrait>> = {
+  baldRoller: {
+    id: 'baldRoller',
+    name: 'Bald Roller',
+    locomotion: 'roller',
+    physicsType: 'nonStick',
+    moveSpeed: 184,
+    moveForce: 5200,
+    airMoveForce: 3800,
+    moveDecel: 3400,
+    jumpSpeed: 300,
+    maxFallSpeed: 720,
+    hitboxWidth: 68,
+    hitboxHeight: 64,
+    hitboxOffsetY: -6,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 30,
+    baseAttack: 8,
+    baseDefense: 2,
+    baseXp: 15,
+    baseCoins: 3,
+  },
+  slimeCube: {
+    id: 'slimeCube',
+    name: 'Slime Cube',
+    locomotion: 'hopper',
+    physicsType: 'nonStick',
+    moveSpeed: 136,
+    moveForce: 4000,
+    airMoveForce: 2600,
+    moveDecel: 4200,
+    jumpSpeed: 360,
+    maxFallSpeed: 680,
+    hitboxWidth: 72,
+    hitboxHeight: 52,
+    hitboxOffsetY: -10,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 25,
+    baseAttack: 6,
+    baseDefense: 1,
+    baseXp: 12,
+    baseCoins: 2,
+  },
+  tripodSpinner: {
+    id: 'tripodSpinner',
+    name: 'Tripod Spinner',
+    locomotion: 'tripod',
+    physicsType: 'nonStick',
+    moveSpeed: 166,
+    moveForce: 5000,
+    airMoveForce: 3600,
+    moveDecel: 3600,
+    jumpSpeed: 310,
+    maxFallSpeed: 680,
+    hitboxWidth: 66,
+    hitboxHeight: 84,
+    hitboxOffsetY: -6,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 40,
+    baseAttack: 10,
+    baseDefense: 4,
+    baseXp: 22,
+    baseCoins: 5,
+  },
+  psiSkyRanger: {
+    id: 'psiSkyRanger',
+    name: 'Psi Sky Ranger',
+    locomotion: 'acrobatic',
+    physicsType: 'stick',
+    moveSpeed: 176,
+    moveForce: 5000,
+    airMoveForce: 3600,
+    moveDecel: 3400,
+    jumpSpeed: 320,
+    maxFallSpeed: 720,
+    hitboxWidth: 60,
+    hitboxHeight: 112,
+    hitboxOffsetY: -6,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 50,
+    baseAttack: 14,
+    baseDefense: 5,
+    baseXp: 30,
+    baseCoins: 8,
+  },
+  glyphGyre: {
+    id: 'glyphGyre',
+    name: 'Glyph Gyre',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 120,
+    moveForce: 2800,
+    airMoveForce: 2800,
+    moveDecel: 2000,
+    jumpSpeed: 280,
+    maxFallSpeed: 600,
+    hitboxWidth: 96,
+    hitboxHeight: 96,
+    hitboxOffsetY: 0,
+    hitboxShape: 'ellipse',
+    floats: true,
+    flies: true,
+    baseHp: 65,
+    baseAttack: 18,
+    baseDefense: 8,
+    baseXp: 45,
+    baseCoins: 12,
+  },
+  timeWraith: {
+    id: 'timeWraith',
+    name: 'Time Wraith',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 80,
+    moveForce: 2600,
+    airMoveForce: 2600,
+    moveDecel: 2600,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 68,
+    hitboxHeight: 68,
+    hitboxOffsetY: 0,
+    hitboxShape: 'ellipse',
+    passThroughTerrain: true,
+    ghost: true,
+    floats: true,
+    flies: true,
+    baseHp: 80,
+    baseAttack: 22,
+    baseDefense: 10,
+    baseXp: 55,
+    baseCoins: 15,
+  },
+  realmGuardian: {
+    id: 'realmGuardian',
+    name: 'Realm Guardian',
+    locomotion: 'sentinel',
+    physicsType: 'nonStick',
+    moveSpeed: 70,
+    moveForce: 0,
+    airMoveForce: 0,
+    moveDecel: 4800,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 263.5,
+    hitboxHeight: 340.5,
+    hitboxOffsetY: 15,
+    hitboxShape: 'rect',
+    passThroughTerrain: true,
+    ghost: true,
+    floats: true,
+    flies: true,
+    isBoss: true,
+    baseHp: 500,
+    baseAttack: 35,
+    baseDefense: 25,
+    baseXp: 300,
+    baseCoins: 100,
+  },
+  tricylicSlasher: {
+    id: 'tricylicSlasher',
+    name: 'Tricyclic Slasher',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 0,
+    moveForce: 0,
+    airMoveForce: 0,
+    moveDecel: 0,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 92,
+    hitboxHeight: 92,
+    hitboxOffsetY: 0,
+    hitboxShape: 'rect',
+    floats: true,
+    flies: true,
+    baseHp: 90,
+    baseAttack: 24,
+    baseDefense: 12,
+    baseXp: 60,
+    baseCoins: 16,
+  },
+  sandBlock: {
+    id: 'sandBlock',
+    name: 'Sand Block',
+    locomotion: 'block',
+    physicsType: 'nonStick',
+    moveSpeed: 118,
+    moveForce: 3600,
+    airMoveForce: 1600,
+    moveDecel: 4000,
+    jumpSpeed: 320,
+    maxFallSpeed: 660,
+    hitboxWidth: 112,
+    hitboxHeight: 96,
+    hitboxOffsetY: 0,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 75,
+    baseAttack: 16,
+    baseDefense: 15,
+    baseXp: 40,
+    baseCoins: 10,
+  },
+  sandWanderer: {
+    id: 'sandWanderer',
+    name: 'Sand Wanderer',
+    locomotion: 'sandShade',
+    physicsType: 'nonStick',
+    moveSpeed: 146,
+    moveForce: 4200,
+    airMoveForce: 3200,
+    moveDecel: 3600,
+    jumpSpeed: 340,
+    maxFallSpeed: 700,
+    hitboxWidth: 88,
+    hitboxHeight: 120,
+    hitboxOffsetY: -4,
+    hitboxShape: 'rect',
+    floats: false,
+    flies: false,
+    baseHp: 85,
+    baseAttack: 20,
+    baseDefense: 10,
+    baseXp: 50,
+    baseCoins: 14,
+  },
+  alephGlyph: {
+    id: 'alephGlyph',
+    name: 'Aleph Glyph',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 110,
+    moveForce: 2600,
+    airMoveForce: 2600,
+    moveDecel: 2400,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 88,
+    hitboxHeight: 120,
+    hitboxOffsetY: -12,
+    hitboxShape: 'ellipse',
+    floats: true,
+    flies: true,
+    baseHp: 70,
+    baseAttack: 18,
+    baseDefense: 8,
+    baseXp: 42,
+    baseCoins: 11,
+  },
+  shinGlyph: {
+    id: 'shinGlyph',
+    name: 'Shin Glyph',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 140,
+    moveForce: 3200,
+    airMoveForce: 3200,
+    moveDecel: 2200,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 48,
+    hitboxHeight: 62,
+    hitboxOffsetY: -8,
+    hitboxShape: 'ellipse',
+    floats: true,
+    flies: true,
+    baseHp: 55,
+    baseAttack: 16,
+    baseDefense: 6,
+    baseXp: 35,
+    baseCoins: 9,
+  },
+  zetaGlyph: {
+    id: 'zetaGlyph',
+    name: 'Zeta Glyph',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 126,
+    moveForce: 3200,
+    airMoveForce: 3200,
+    moveDecel: 2400,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 108,
+    hitboxHeight: 112,
+    hitboxOffsetY: -10,
+    hitboxShape: 'ellipse',
+    floats: true,
+    flies: true,
+    baseHp: 95,
+    baseAttack: 22,
+    baseDefense: 14,
+    baseXp: 65,
+    baseCoins: 18,
+  },
+  xiGlyph: {
+    id: 'xiGlyph',
+    name: 'Xi Glyph',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 132,
+    moveForce: 3400,
+    airMoveForce: 3400,
+    moveDecel: 2500,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 108,
+    hitboxHeight: 112,
+    hitboxOffsetY: -10,
+    hitboxShape: 'ellipse',
+    floats: true,
+    flies: true,
+    baseHp: 100,
+    baseAttack: 24,
+    baseDefense: 14,
+    baseXp: 70,
+    baseCoins: 20,
+  },
+  thetaHarmonic: {
+    id: 'thetaHarmonic',
+    name: 'Theta Harmonic',
+    locomotion: 'hover',
+    physicsType: 'nonStick',
+    moveSpeed: 0,
+    moveForce: 0,
+    airMoveForce: 0,
+    moveDecel: 0,
+    jumpSpeed: 0,
+    maxFallSpeed: 0,
+    hitboxWidth: 148,
+    hitboxHeight: 148,
+    hitboxOffsetY: 0,
+    hitboxShape: 'ellipse',
+    floats: false,
+    flies: false,
+    baseHp: 150,
+    baseAttack: 28,
+    baseDefense: 20,
+    baseXp: 100,
+    baseCoins: 30,
+  },
+};
+
+/** Get trait definition by enemy kind, or null if unknown. */
+export function getStickRpgEnemyTrait(kind: string | null | undefined): StickRpgEnemyTrait | null {
+  if (!kind) return null;
+  return (STICK_RPG_ENEMY_TRAITS as Record<string, StickRpgEnemyTrait>)[kind] ?? null;
+}
+
+/** Check if an identifier is a valid StickRpgEnemyKind. */
+export function isStickRpgEnemyKind(kind: string): kind is StickRpgEnemyKind {
+  return kind in STICK_RPG_ENEMY_TRAITS;
+}
+
+/** Calculate scaled enemy XP drop based on trait base XP and difficulty level. */
+export function computeEnemyXpDrop(trait: StickRpgEnemyTrait, level: number = 1): number {
+  const scale = 1 + Math.max(0, level - 1) * 0.15;
+  return Math.round(trait.baseXp * scale);
+}
+
+/** Calculate scaled enemy coin drop based on trait base coins and difficulty level. */
+export function computeEnemyCoinDrop(trait: StickRpgEnemyTrait, level: number = 1): number {
+  const scale = 1 + Math.max(0, level - 1) * 0.1;
+  return Math.round(trait.baseCoins * scale);
+}

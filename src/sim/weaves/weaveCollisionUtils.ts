@@ -10,6 +10,7 @@
 import { WorldState } from '../world';
 import { ClusterState } from '../clusters/state';
 import { applyODCHit } from '../clusters/orbitalDustCoreAi';
+import { grantExperience } from '../stats/characterStats';
 
 /**
  * Squared distance from point `(px,py)` to the closest point on the segment
@@ -60,7 +61,17 @@ export function applyRoutedWeaveDamage(
   }
   c.healthPoints -= damage;
   if (c.healthPoints <= 0) {
+    const wasAlive = c.isAliveFlag === 1;
     c.healthPoints = 0;
     c.isAliveFlag = 0;
+    if (wasAlive && c.xpValue > 0) {
+      if (world.party) {
+        const activeIdx = world.party.activeIndex;
+        const leader = world.party.members[activeIdx] ?? world.party.members[0];
+        if (leader) grantExperience(leader.stats, c.xpValue);
+      } else if (world.playerCharacterStats) {
+        grantExperience(world.playerCharacterStats, c.xpValue);
+      }
+    }
   }
 }

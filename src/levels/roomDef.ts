@@ -28,6 +28,8 @@ import type { RoomPixelMaterialDef } from '../sim/pixelMaterials/pixelMaterialTy
 export type { RoomPixelMaterialDef } from '../sim/pixelMaterials/pixelMaterialTypes';
 import type { RoomSongId } from '../audio/musicManager';
 import type { BlockTheme, BlockSoundHardness } from './blockTheme';
+import type { StickRpgEnemyKind } from '../sim/clusters/stickRpgEnemyTraits';
+export type { StickRpgEnemyKind } from '../sim/clusters/stickRpgEnemyTraits';
 import type { SurfaceRimStyle } from '../render/walls/surfaceRimStyle';
 import type {
   RoomSpikeDef,
@@ -251,6 +253,8 @@ export interface RoomEnemyDef {
   /** 1 if boss, 0 otherwise. */
   isBossFlag: 0 | 1;
   countsTowardRoomCompletionFlag?: 0 | 1;
+  /** Ported STICK-RPG enemy kind (applies ENEMY_TRAITS physics, hitbox, and stats). */
+  stickRpgEnemyKind?: StickRpgEnemyKind;
   /**
    * 1 if this enemy is a flying eye — floats in the air, moves in 2D,
    * and is rendered as 4 concentric diamond outlines.

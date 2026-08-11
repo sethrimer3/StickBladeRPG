@@ -8,6 +8,27 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 623 — STICK-RPG Port Phase 4: Enemy Traits, Spawning, Drops, and Editor Palette
+
+**Accomplished in Phase 4:**
+1. **Enemy Traits Catalog:**
+   - Created `src/sim/clusters/stickRpgEnemyTraits.ts` with all 15 ported donor traits (`baldRoller`, `slimeCube`, `tripodSpinner`, `psiSkyRanger`, `glyphGyre`, `timeWraith`, `realmGuardian`, `tricylicSlasher`, `sandBlock`, `sandWanderer`, `alephGlyph`, `shinGlyph`, `zetaGlyph`, `xiGlyph`, `thetaHarmonic`).
+   - Added `getStickRpgEnemyTrait`, `isStickRpgEnemyKind`, `computeEnemyXpDrop`, and `computeEnemyCoinDrop`.
+2. **RoomEnemyDef & ClusterState Integration:**
+   - Extended `RoomEnemyDef` (`src/levels/roomDef.ts`) and `RoomJsonEnemy` (`src/editor/roomJsonSchema.ts`, `roomJsonToRoomDef.ts`) with `stickRpgEnemyKind`.
+   - Added `stickRpgEnemyKind`, `xpValue`, and `coinValue` to `ClusterState` (`src/sim/clusters/state.ts`).
+3. **Enemy Spawning & Locomotion Routing:**
+   - Updated `src/screens/gameEnemySpawn.ts` to instantiate clusters according to trait hitbox dimensions, base health, XP/coin value, and map locomotion to AI modules (`roller` → rolling enemy, `hopper` → slime, `block` → wheel enemy, `hover`/`sentinel` → flying eye, `acrobatic`/`tripod`/`sandShade` → grapple hunter).
+4. **Combat XP Grants:**
+   - Updated `applyRoutedWeaveDamage` (`src/sim/weaves/weaveCollisionUtils.ts`) to award XP to the active party leader on enemy defeat.
+5. **Editor Palette:**
+   - Added all 15 enemy items to `src/editor/editorPaletteItems.ts` under the `enemies` category and wired placement in `src/editor/editorEnemyPlacer.ts`.
+6. **Validation:**
+   - Added `src/tests/stickRpgEnemies.test.ts` (6 tests).
+   - Validated: `npm test` (3,548 tests passing), `npm run build` (clean), `npm run lint` (clean).
+
+---
+
 ## BUILD 622 — STICK-RPG Port Phase 3b: Multi-Cluster Party Simulation, Persistence, and UI
 
 **Accomplished in Phase 3b:**

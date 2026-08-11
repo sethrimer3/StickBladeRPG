@@ -28,6 +28,7 @@ import {
   parseRoomJsonSongId,
 } from '../editor/roomJson';
 import type { RoomJsonDef } from '../editor/roomJson';
+import { isStickRpgEnemyKind } from '../sim/clusters/stickRpgEnemyTraits';
 import { savedToLightDef } from './lightingSchema';
 import { extractLegacySkillBookWeaves } from './legacySkillBookMigration';
 import { legacyChallengeGateToRoomGate, normalizeRoomGateDef } from './gateDefs';
@@ -79,6 +80,9 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
       kinds,
       particleCount: e.particleCount,
       countsTowardRoomCompletionFlag: e.countsTowardRoomCompletion === false ? 0 : 1,
+      stickRpgEnemyKind: typeof e.stickRpgEnemyKind === 'string' && isStickRpgEnemyKind(e.stickRpgEnemyKind)
+        ? e.stickRpgEnemyKind
+        : undefined,
       isBossFlag: e.isBoss ? 1 as const : 0 as const,
       isFlyingEyeFlag: e.isFlyingEye ? 1 as const : 0 as const,
       isRollingEnemyFlag: e.isRollingEnemy ? 1 as const : 0 as const,

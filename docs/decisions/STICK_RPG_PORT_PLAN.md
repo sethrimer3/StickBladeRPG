@@ -1,6 +1,6 @@
 # STICK-RPG Port Plan
 
-Status: living plan. Phase 1 implemented in BUILD 613; Phase 2 mostly complete (BUILD 614–620); Phase 3 complete in BUILD 621–622. Phases 4–5 not started.
+Status: living plan. Phase 1 implemented in BUILD 613; Phase 2 mostly complete (BUILD 614–620); Phase 3 complete in BUILD 621–622; Phase 4 complete in BUILD 623. Phase 5 not started.
 
 Purpose: define how StickBlade absorbs the weapons, party system, enemies, world map, and
 stats from the STICK-RPG prototype without importing that prototype's engine.

@@ -20,6 +20,7 @@ import { RngState } from '../sim/rng';
 import type { RoomEnemyDef } from '../levels/roomDef';
 import { BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
 import { createClusterState } from '../sim/clusters/state';
+import { getStickRpgEnemyTrait, computeEnemyXpDrop, computeEnemyCoinDrop } from '../sim/clusters/stickRpgEnemyTraits';
 import { MT_HALF_HEIGHT_WORLD, MT_HALF_WIDTH_WORLD, MT_HP, MT_MAX_RING_RADIUS_WORLD } from '../sim/clusters/momentumTurretConfig';
 import { SLIME_HALF_SIZE_WORLD, LARGE_SLIME_HALF_SIZE_WORLD } from '../sim/clusters/slimeAi';
 import { WHEEL_ENEMY_HALF_SIZE_WORLD } from '../sim/clusters/wheelEnemyAi';
@@ -217,18 +218,48 @@ export function spawnEnemyClusters(
     }
     const ex = enemyDef.xBlock * BLOCK_SIZE_MEDIUM;
     const ey = enemyDef.yBlock * BLOCK_SIZE_MEDIUM;
-    const hp = enemyDef.isBossFlag === 1 ? enemyDef.particleCount * BOSS_HP_MULTIPLIER : enemyDef.particleCount;
+    const trait = enemyDef.stickRpgEnemyKind ? getStickRpgEnemyTrait(enemyDef.stickRpgEnemyKind) : null;
+    const hp = trait !== null
+      ? (enemyDef.isBossFlag === 1 ? trait.baseHp * BOSS_HP_MULTIPLIER : trait.baseHp)
+      : (enemyDef.isBossFlag === 1 ? enemyDef.particleCount * BOSS_HP_MULTIPLIER : enemyDef.particleCount);
     const enemyCluster = createClusterState(nextEntityId++, ex, ey, 0, hp);
     enemyCluster.countsTowardRoomCompletionFlag = enemyDef.countsTowardRoomCompletionFlag ?? 1;
 
-    if (enemyDef.isFlyingEyeFlag === 1) {
+    if (trait !== null) {
+      enemyCluster.stickRpgEnemyKind = trait.id;
+      enemyCluster.halfWidthWorld = trait.hitboxWidth / 16;
+      enemyCluster.halfHeightWorld = trait.hitboxHeight / 16;
+      enemyCluster.xpValue = computeEnemyXpDrop(trait);
+      enemyCluster.coinValue = computeEnemyCoinDrop(trait);
+      if (trait.locomotion === 'roller') {
+        enemyCluster.isRollingEnemyFlag = 1;
+        enemyCluster.rollingEnemySpriteIndex = 1;
+        enemyCluster.rollingEnemyRollAngleRad = 0;
+      } else if (trait.locomotion === 'hopper') {
+        enemyCluster.isSlimeFlag = 1;
+        enemyCluster.slimeHopTimerTicks = 0;
+      } else if (trait.locomotion === 'block') {
+        enemyCluster.isWheelEnemyFlag = 1;
+      } else if (trait.locomotion === 'hover' || trait.locomotion === 'sentinel') {
+        enemyCluster.isFlyingEyeFlag = 1;
+        enemyCluster.flyingEyeElementKind = enemyDef.kinds.length > 0 ? enemyDef.kinds[0] : ParticleKind.Wind;
+      } else {
+        enemyCluster.isGrappleHunterFlag = 1;
+        enemyCluster.grappleHunterState = 0;
+      }
+    } else {
+      enemyCluster.xpValue = enemyDef.isBossFlag === 1 ? 50 : 10;
+      enemyCluster.coinValue = enemyDef.isBossFlag === 1 ? 20 : 2;
+    }
+
+    if (trait === null && enemyDef.isFlyingEyeFlag === 1) {
       enemyCluster.isFlyingEyeFlag     = 1;
       enemyCluster.flyingEyeElementKind = enemyDef.kinds.length > 0
         ? enemyDef.kinds[0]
         : ParticleKind.Wind;
       enemyCluster.halfWidthWorld  = FLYING_EYE_HALF_SIZE_WORLD;
       enemyCluster.halfHeightWorld = FLYING_EYE_HALF_SIZE_WORLD;
-    } else if (enemyDef.isRollingEnemyFlag === 1) {
+    } else if (trait === null && enemyDef.isRollingEnemyFlag === 1) {
       enemyCluster.isRollingEnemyFlag      = 1;
       enemyCluster.rollingEnemySpriteIndex = enemyDef.rollingEnemySpriteIndex ?? 1;
       enemyCluster.rollingEnemyRollAngleRad = 0;
