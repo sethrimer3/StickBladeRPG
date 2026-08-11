@@ -31,6 +31,7 @@ import {
   MAX_ACTIVE_SUMMONS,
   SUMMON_LOCOMOTION_FLIER,
 } from '../../sim/weapons/weaponSummons';
+import { MAX_SOUL_ORBS } from '../../sim/weapons/soulOrbs';
 import { getStaffChargeFraction } from '../../sim/weapons/staffChannel';
 import { getSpiritOrbPosition } from '../../sim/weapons/spiritOrbs';
 import {
@@ -98,13 +99,13 @@ export class WeaponRenderer {
     const weapon = snapshot.playerWeapon;
     if (weapon === null) return;
 
-    const def = getEquippedWeaponDef(weapon);
-
-    // Projectiles and summoned familiars both outlive the weapon that produced
-    // them, so they draw regardless of what is currently equipped.
+    // Projectiles, summoned familiars, and soul drops outlive the weapon
+    // that produced them, so they draw regardless of what is currently equipped.
     this._renderProjectiles(ctx, weapon, ox, oy, zoom);
     this._renderSummons(ctx, weapon, ox, oy, zoom);
+    this._renderSoulOrbs(ctx, weapon, ox, oy, zoom);
 
+    const def = getEquippedWeaponDef(weapon);
     if (def === null) return;
 
     const body = snapshot.stickRangerBody;
@@ -284,6 +285,7 @@ export class WeaponRenderer {
     for (let i = 0; i < MAX_ACTIVE_SUMMONS; i++) {
       if (pool.isLive[i] === 0) continue;
 
+      const isGuardian = pool.isGuardian[i] === 1;
       const xPx = (pool.xWorld[i] - ox) * zoom;
       const yPx = (pool.yWorld[i] - oy) * zoom;
       const radiusPx = Math.max(1, pool.radiusWorld[i] * zoom * 0.5);
@@ -295,12 +297,23 @@ export class WeaponRenderer {
         ? Math.max(0.15, pool.lifetimeTicks[i] / fadeTicks)
         : 1;
 
-      ctx.fillStyle = bodyColor;
+      const familiarColor = isGuardian ? (def?.guardianColor ?? '#f6baff') : bodyColor;
+
+      // Guardian aura ring
+      if (isGuardian) {
+        ctx.strokeStyle = familiarColor;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(xPx, yPx, radiusPx * 1.35, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = familiarColor;
       ctx.beginPath();
       ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = accentColor;
+      ctx.strokeStyle = isGuardian ? '#ffffff' : accentColor;
       ctx.lineWidth = Math.max(1, radiusPx * 0.3);
       ctx.beginPath();
       if (pool.locomotion[i] === SUMMON_LOCOMOTION_FLIER) {
@@ -315,6 +328,42 @@ export class WeaponRenderer {
         ctx.lineTo(xPx + radiusPx * 1.4, yPx + radiusPx * 1.6);
       }
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Draws floating soul orbs dropped by defeated enemies. */
+  private _renderSoulOrbs(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    const pool = weapon.soulOrbs;
+    if (pool.liveCount <= 0) return;
+
+    ctx.save();
+    for (let i = 0; i < MAX_SOUL_ORBS; i++) {
+      if (pool.isLive[i] === 0) continue;
+
+      const xPx = (pool.xWorld[i] - ox) * zoom;
+      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const radiusPx = Math.max(2, 4.5 * zoom);
+      const color = pool.color[i];
+
+      // Subtle outer glow
+      ctx.globalAlpha = 0.4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bright inner soul core
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }

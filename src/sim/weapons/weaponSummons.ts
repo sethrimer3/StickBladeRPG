@@ -107,6 +107,10 @@ export interface SummonPool {
   knockScale: Float32Array;
   /** Monotonic spawn sequence, used to evict the oldest at capacity. */
   spawnSequence: Int32Array;
+  /** 1 when this familiar is an empowered Guardian, 0 for regular. */
+  isGuardian: Uint8Array;
+  /** Hit charges remaining before familiar dissipates. */
+  multiHitCount: Uint8Array;
   liveCount: number;
   nextSequence: number;
 }
@@ -132,6 +136,8 @@ export function createSummonPool(): SummonPool {
     climbLift: new Float32Array(n),
     knockScale: new Float32Array(n),
     spawnSequence: new Int32Array(n),
+    isGuardian: new Uint8Array(n),
+    multiHitCount: new Uint8Array(n),
     liveCount: 0,
     nextSequence: 1,
   };
@@ -140,6 +146,8 @@ export function createSummonPool(): SummonPool {
 /** Dismisses every summon. Call on room teardown and respawn. */
 export function resetSummonPool(pool: SummonPool): void {
   pool.isLive.fill(0);
+  pool.isGuardian.fill(0);
+  pool.multiHitCount.fill(0);
   pool.liveCount = 0;
   pool.nextSequence = 1;
 }
@@ -212,19 +220,32 @@ export function castWeaponSummons(
   originYWorld: number,
   attackerAttack: number,
   rng: RngState,
+  soulsSpent: number = 0,
 ): SummonCastResult {
   _castResult.summonedCount = 0;
   _castResult.activeCount = pool.liveCount;
   if (!isSummonerWeapon(def)) return _castResult;
 
-  const charges = Math.max(1, Math.floor(def.summonCharges ?? 1));
+  const isGuardian = soulsSpent > 0;
+  const charges = isGuardian ? 1 : Math.max(1, Math.floor(def.summonCharges ?? 1));
   const cap = getMaxActiveSummons(def);
   const locomotion = getSummonLocomotion(def);
-  const radius = def.summonRadius ?? DEFAULT_SUMMON_RADIUS_WORLD;
-  const speed = def.summonSpeed ?? DEFAULT_SUMMON_SPEED;
+
+  const baseRadius = isGuardian
+    ? (def.guardianRadius ?? ((def.summonRadius ?? DEFAULT_SUMMON_RADIUS_WORLD) * 1.6))
+    : (def.summonRadius ?? DEFAULT_SUMMON_RADIUS_WORLD);
+  const radius = isGuardian ? baseRadius * (1 + soulsSpent * 0.08) : baseRadius;
+
+  const baseDamage = isGuardian
+    ? (def.guardianBaseDamage ?? def.summonDamage ?? 2)
+    : (def.summonDamage ?? 0);
+  const scaledBaseDmg = isGuardian ? baseDamage * (1 + soulsSpent * 0.4) : baseDamage;
+
+  const speed = (def.summonSpeed ?? DEFAULT_SUMMON_SPEED) * (isGuardian ? (1 + soulsSpent * 0.06) : 1);
 
   const lifetime = millisecondsToTicks(def.summonLifetime);
-  const lifetimeTicks = lifetime > 0 ? lifetime : DEFAULT_SUMMON_LIFETIME_TICKS;
+  const lifetimeTicks = (lifetime > 0 ? lifetime : DEFAULT_SUMMON_LIFETIME_TICKS) * (isGuardian ? 1.5 : 1);
+  const multiHits = isGuardian ? Math.max(2, Math.round(2 + soulsSpent * 0.5)) : 1;
 
   for (let c = 0; c < charges; c++) {
     // Enforce the weapon's own cap before taking a slot, so a 4-charge cast
@@ -241,13 +262,15 @@ export function castWeaponSummons(
     // Spread the cast around the caster rather than stacking on one point.
     const angle = (Math.PI * 2 * c) / charges;
     pool.isLive[i] = 1;
+    pool.isGuardian[i] = isGuardian ? 1 : 0;
+    pool.multiHitCount[i] = multiHits;
     pool.xWorld[i] = originXWorld + Math.cos(angle) * radius;
     pool.yWorld[i] = originYWorld + Math.sin(angle) * radius;
     pool.velocityXWorld[i] = 0;
     pool.velocityYWorld[i] = 0;
-    pool.damage[i] = computeStatDamage(def.summonDamage ?? 0, attackerAttack, 0, rng);
+    pool.damage[i] = computeStatDamage(scaledBaseDmg, attackerAttack, 0, rng);
     pool.radiusWorld[i] = radius;
-    pool.lifetimeTicks[i] = lifetimeTicks;
+    pool.lifetimeTicks[i] = Math.round(lifetimeTicks);
     pool.hitCooldownTicks[i] = 0;
     pool.locomotion[i] = locomotion;
     pool.seekForce[i] = def.summonSeekForce ?? speed * 4;
@@ -258,7 +281,7 @@ export function castWeaponSummons(
       : 1;
     pool.bounciness[i] = def.summonBounce ?? 0.4;
     pool.climbLift[i] = def.summonClimbLift ?? def.summonJumpStrength ?? 0;
-    pool.knockScale[i] = def.summonKnockScale ?? 1;
+    pool.knockScale[i] = (def.summonKnockScale ?? 1) * (isGuardian ? 1.5 : 1);
     pool.spawnSequence[i] = pool.nextSequence++;
 
     if (!wasLive) pool.liveCount++;
@@ -480,5 +503,9 @@ function tryDamageTarget(
     const knock = 120 * pool.knockScale[i];
     pool.velocityXWorld[i] = -(dx / dist) * knock;
     pool.velocityYWorld[i] = -(dy / dist) * knock;
+  }
+
+  if (pool.multiHitCount[i] > 1) {
+    pool.multiHitCount[i]--;
   }
 }

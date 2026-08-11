@@ -11,6 +11,8 @@ import { WorldState } from '../world';
 import { ClusterState } from '../clusters/state';
 import { applyODCHit } from '../clusters/orbitalDustCoreAi';
 import { grantExperience } from '../stats/characterStats';
+import { getEquippedWeaponDef } from '../weapons/playerWeaponState';
+import { spawnSoulOrb } from '../weapons/soulOrbs';
 
 /**
  * Squared distance from point `(px,py)` to the closest point on the segment
@@ -64,13 +66,28 @@ export function applyRoutedWeaveDamage(
     const wasAlive = c.isAliveFlag === 1;
     c.healthPoints = 0;
     c.isAliveFlag = 0;
-    if (wasAlive && c.xpValue > 0) {
-      if (world.party) {
-        const activeIdx = world.party.activeIndex;
-        const leader = world.party.members[activeIdx] ?? world.party.members[0];
-        if (leader) grantExperience(leader.stats, c.xpValue);
-      } else if (world.playerCharacterStats) {
-        grantExperience(world.playerCharacterStats, c.xpValue);
+    if (wasAlive) {
+      if (c.xpValue > 0) {
+        if (world.party) {
+          const activeIdx = world.party.activeIndex;
+          const leader = world.party.members[activeIdx] ?? world.party.members[0];
+          if (leader) grantExperience(leader.stats, c.xpValue);
+        } else if (world.playerCharacterStats) {
+          grantExperience(world.playerCharacterStats, c.xpValue);
+        }
+      }
+
+      if (world.playerWeapon) {
+        const def = getEquippedWeaponDef(world.playerWeapon);
+        if (def && (def.kind === 'summoner' || def.soulColor || def.maxSouls)) {
+          spawnSoulOrb(
+            world.playerWeapon.soulOrbs,
+            c.positionXWorld,
+            c.positionYWorld,
+            def.soulColor ?? '#dfc9ff',
+            1,
+          );
+        }
       }
     }
   }

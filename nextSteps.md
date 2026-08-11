@@ -8,6 +8,23 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 626 — STICK-RPG Port Phase 2g: Souls and Empowered Guardian Familiars
+
+**Accomplished in Phase 2g:**
+1. **Soul Drop Pool & Collection Runtime:**
+   - Created `src/sim/weapons/soulOrbs.ts` implementing `SoulOrbPool`, `spawnSoulOrb`, `tickSoulOrbs`, and `resetSoulOrbPool`.
+   - Wired enemy defeat soul drops in `src/sim/weaves/weaveCollisionUtils.ts` when a summoner weapon is equipped.
+   - Banked souls are collected within `soulRange` up to `maxSouls` and stored on `PlayerWeaponState.soulsCollected`.
+2. **Empowered Guardian Familiar:**
+   - Updated `src/sim/weapons/weaponSummons.ts` to spend banked souls on summon attacks, spawning an empowered Guardian familiar with `isGuardian === 1`, multi-hit charges, scaled damage, radius, speed, and knockback.
+3. **Rendering:**
+   - Extended `src/render/effects/weaponRenderer.ts` to draw floating soul drops with outer glow in `soulColor` and Guardian familiars with distinct radiant halos and coloration.
+4. **Validation:**
+   - Added unit tests in `src/tests/soulOrbs.test.ts` (7 tests).
+   - Validated: `npm test` (3,568 full suite tests passing), `npm run build` (clean), `npm run lint` (clean).
+
+---
+
 ## BUILD 625 — STICK-RPG Port Phase 2i: Held Poses for Ranged, Staves, Guns, and Book Weapons
 
 **Accomplished in Phase 2i:**

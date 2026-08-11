@@ -66,6 +66,13 @@ import {
   type WeaponProjectilePool,
 } from './weaponProjectiles';
 
+import {
+  createSoulOrbPool,
+  resetSoulOrbPool,
+  tickSoulOrbs,
+  type SoulOrbPool,
+} from './soulOrbs';
+
 /** Ticks between the shots of a burst-fire weapon. */
 const BURST_SHOT_INTERVAL_TICKS = 4;
 
@@ -101,6 +108,10 @@ export interface PlayerWeaponState {
   spiritOrbs: SpiritOrbState;
   /** Summoned familiars for `kind: 'summoner'` weapons. */
   summons: SummonPool;
+  /** Floating soul drops collected from defeated enemies. */
+  soulOrbs: SoulOrbPool;
+  /** Souls currently banked for empowered Guardian summons. */
+  soulsCollected: number;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -117,6 +128,8 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     staff: createStaffChannelState(),
     spiritOrbs: createSpiritOrbState(),
     summons: createSummonPool(),
+    soulOrbs: createSoulOrbPool(),
+    soulsCollected: 0,
   };
 }
 
@@ -132,9 +145,9 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetWeaponProjectilePool(state.projectiles);
   resetStaffChannelState(state.staff);
   resetSpiritOrbs(state.spiritOrbs, getWeaponDef(state.equippedWeaponId));
-  // Familiars are bound to the room they were called into; a room change
-  // dismisses them rather than teleporting them along with the player.
+  // Familiars and floating soul drops are bound to the room they were called into.
   resetSummonPool(state.summons);
+  resetSoulOrbPool(state.soulOrbs);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -228,12 +241,18 @@ export function tryStartPlayerWeaponAttack(
   if (isSummonerWeapon(def)) {
     if (!canStartWeaponSwing(state.swing)) return false;
 
+    const soulsSpent = state.soulsCollected;
     const cast = castWeaponSummons(
       state.summons, def,
       player.positionXWorld, player.positionYWorld,
       attack, rng,
+      soulsSpent,
     );
     if (cast.summonedCount === 0) return false;
+
+    if (soulsSpent > 0) {
+      state.soulsCollected = 0;
+    }
 
     state.swing.cooldownRemainingTicks = Math.max(1, getRangedCooldownTicks(def));
     state.attackStartedFlag = 1;
@@ -341,6 +360,18 @@ export function tickPlayerWeapon(
   }
 
   tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
+
+  // Floating soul drops drift toward the wielder and get collected.
+  if (state.soulOrbs.liveCount > 0 && player !== null) {
+    const gained = tickSoulOrbs(
+      state.soulOrbs,
+      player.positionXWorld,
+      player.positionYWorld,
+      def,
+      state.soulsCollected,
+    );
+    state.soulsCollected += gained;
+  }
 
   // Familiars outlive the weapon that called them, so this runs regardless of
   // what is currently equipped — a swap does not dismiss an active swarm.
