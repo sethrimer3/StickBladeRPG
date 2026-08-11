@@ -8,6 +8,23 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 625 — STICK-RPG Port Phase 2i: Held Poses for Ranged, Staves, Guns, and Book Weapons
+
+**Accomplished in Phase 2i:**
+1. **Held Weapon Renderers:**
+   - Extended `src/render/effects/weaponRenderer.ts` with dedicated held model drawing for non-contact weapons anchored at `computeWeaponGripAnchor`:
+     - **Bows:** Curved bow limb (quadratic curve) with taut bowstring and wood/elemental coloration.
+     - **Guns:** Main barrel line with length scaled by donor `barrelLength`, receiver/handle grip, and scope indicator dot.
+     - **Staves:** Wooden/elemental staff shaft with length/width from donor `staff` block, topped with an illuminated jewel head (`gemColor`) and translucent glow halo.
+     - **Summoner Spellbooks:** Tome cover with leather/metal trim (`bookTrimColor`), parchment pages (`bookPageColor`), and illuminated central rune glyph (`bookRuneColor`).
+     - **Spears:** Elongated spear shaft with diamond-pointed spearhead and highlight trim.
+   - Respects `def.showWeapon === false` (e.g. unarmed/fist).
+2. **Validation:**
+   - Added unit tests in `src/tests/weaponRenderer.test.ts` covering all weapon archetype held poses and `showWeapon: false` suppression (25 weapon renderer tests total).
+   - Validated: `npm test` (3,561 full suite tests passing), `npm run build` (clean), `npm run lint` (clean).
+
+---
+
 ## BUILD 624 — STICK-RPG Port Phase 5: World Map Node Graph Topology & Interactive Visualizer
 
 **Accomplished in Phase 5:**

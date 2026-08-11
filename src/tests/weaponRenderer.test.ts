@@ -36,8 +36,10 @@ function createRecordingContext(): { ctx: CanvasRenderingContext2D; calls: DrawC
     save: record('save'),
     restore: record('restore'),
     beginPath: record('beginPath'),
+    closePath: record('closePath'),
     moveTo: record('moveTo'),
     lineTo: record('lineTo'),
+    quadraticCurveTo: record('quadraticCurveTo'),
     arc: record('arc'),
     stroke: record('stroke'),
     fill: record('fill'),
@@ -131,14 +133,12 @@ describe('melee rendering', () => {
     );
   });
 
-  test('a bow is not drawn as a blade', () => {
+  test('a bow is drawn with a curved limb rather than a straight blade line', () => {
     const weapon = createPlayerWeaponState();
     equipPlayerWeapon(weapon, 'bow');
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
-    // No pose is ported for ranged weapons; drawing a sword line would read
-    // as a bug, so nothing is drawn until one exists.
-    assert.equal(countOps(calls, 'stroke'), 0);
+    assert.ok(countOps(calls, 'quadraticCurveTo') > 0, 'bow limb should be curved');
   });
 });
 
@@ -186,9 +186,11 @@ describe('staff rendering', () => {
   test('an idle staff draws no beam', () => {
     const weapon = createPlayerWeaponState();
     equipPlayerWeapon(weapon, 'emberStaff');
+    assert.equal(weapon.staff.beamActiveFlag, 0);
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
-    assert.equal(countOps(calls, 'stroke'), 0);
+    // Idle staff draws only the held shaft/gem (1 stroke), never the 2-pass beam (3 strokes).
+    assert.equal(countOps(calls, 'stroke'), 2); // 1 shaft stroke + 1 gem halo stroke
   });
 
   test('a full, idle charge meter is hidden as pure noise', () => {
@@ -266,9 +268,64 @@ describe('summon rendering', () => {
 
   test('no familiars means no familiar drawing', () => {
     const weapon = createPlayerWeaponState();
-    equipPlayerWeapon(weapon, 'apiaryLexicon');
+    equipPlayerWeapon(weapon, 'sword');
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
     assert.equal(countOps(calls, 'arc'), 0);
   });
 });
+
+describe('held weapon poses', () => {
+  test('a held bow draws curved limbs and bowstring', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'bow');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.ok(countOps(calls, 'quadraticCurveTo') > 0, 'bow limb should be curved');
+    assert.ok(countOps(calls, 'stroke') >= 2, 'bow limb and string should both stroke');
+  });
+
+  test('a held gun draws barrel and grip', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'sniperRifle');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.ok(countOps(calls, 'stroke') >= 2, 'gun barrel and grip should stroke');
+  });
+
+  test('a held staff draws shaft and glowing gem head', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'emberStaff');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.ok(countOps(calls, 'stroke') > 0, 'staff shaft should stroke');
+    assert.ok(countOps(calls, 'arc') > 0, 'staff gem should draw circle');
+  });
+
+  test('a held summoner book draws cover, pages, and illuminated rune', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'apiaryLexicon');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.ok(countOps(calls, 'fill') >= 3, 'book cover, pages, and rune should fill');
+    assert.ok(countOps(calls, 'arc') > 0, 'rune glyph should draw');
+  });
+
+  test('a spear draws shaft and diamond spearhead', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'spear');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.ok(countOps(calls, 'stroke') > 0, 'spear shaft should stroke');
+    assert.ok(countOps(calls, 'fill') > 0, 'spearhead diamond should fill');
+  });
+
+  test('weapons with showWeapon: false do not render held models', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'fist');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    assert.equal(countOps(calls, 'stroke'), 0);
+  });
+});
+

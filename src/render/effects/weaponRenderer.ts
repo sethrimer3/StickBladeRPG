@@ -319,7 +319,7 @@ export class WeaponRenderer {
     ctx.restore();
   }
 
-  /** Draws the blade at the grip anchor, swept to the swing's current angle. */
+  /** Draws the held weapon at the grip anchor according to its kind and pose. */
   private _renderHeldWeapon(
     ctx: CanvasRenderingContext2D,
     snapshot: WorldSnapshot,
@@ -329,9 +329,7 @@ export class WeaponRenderer {
     oy: number,
     zoom: number,
   ): void {
-    // Contact weapons only: a bow or gun would need its own pose, which is not
-    // ported. Drawing a sword line for a rifle would read as a bug.
-    if (def.kind !== 'melee' && def.kind !== 'shield') return;
+    if (def.showWeapon === false) return;
 
     const body = snapshot.stickRangerBody;
     if (body === null) return;
@@ -340,37 +338,265 @@ export class WeaponRenderer {
 
     const swing = weapon.swing;
     const isSwinging = swing.activeFlag === 1;
-    // At rest the blade follows the arm; mid-swing it follows the sweep, so the
-    // drawn blade and the damage arc are the same geometry.
     const angleRad = isSwinging ? swing.currentAngleRad : this._anchor.angleRad;
 
-    const reach = isSwinging && swing.reachWorld > 0
-      ? swing.reachWorld
-      : (def.range ?? 0);
-    if (reach <= 0) return;
-
-    const color = def.color ?? DEFAULT_BLADE_COLOR;
     const originXPx = (this._anchor.xWorld - ox) * zoom;
     const originYPx = (this._anchor.yWorld - oy) * zoom;
 
     ctx.save();
 
+    if (def.kind === 'melee' || def.kind === 'shield') {
+      this._renderHeldMelee(ctx, weapon, def, originXPx, originYPx, angleRad, isSwinging, zoom);
+    } else if (def.kind === 'bow') {
+      this._renderHeldBow(ctx, def, originXPx, originYPx, angleRad, zoom);
+    } else if (def.kind === 'gun') {
+      this._renderHeldGun(ctx, def, originXPx, originYPx, angleRad, zoom);
+    } else if (def.kind === 'staff' || def.kind === 'magic') {
+      this._renderHeldStaff(ctx, def, originXPx, originYPx, angleRad, zoom);
+    } else if (def.kind === 'summoner') {
+      this._renderHeldBook(ctx, def, originXPx, originYPx, angleRad, zoom);
+    }
+
+    ctx.restore();
+  }
+
+  private _renderHeldMelee(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    originXPx: number,
+    originYPx: number,
+    angleRad: number,
+    isSwinging: boolean,
+    zoom: number,
+  ): void {
+    const swing = weapon.swing;
+    const reach = isSwinging && swing.reachWorld > 0
+      ? swing.reachWorld
+      : (def.range ?? 24);
+    if (reach <= 0) return;
+
+    const color = def.color ?? DEFAULT_BLADE_COLOR;
+    const isSpear = def.poseStyle === 'spear' || def.spearPose !== undefined;
+
     if (isSwinging) {
       this._renderSwingTrail(ctx, originXPx, originYPx, angleRad, reach, zoom, color, swing.startAngleRad);
     }
 
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const tipX = originXPx + cos * reach * zoom;
+    const tipY = originYPx + sin * reach * zoom;
+
+    if (isSpear) {
+      // Spear shaft
+      ctx.strokeStyle = color;
+      ctx.lineWidth = BLADE_WIDTH_PX;
+      ctx.beginPath();
+      ctx.moveTo(originXPx - cos * 6 * zoom, originYPx - sin * 6 * zoom);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+
+      // Spearhead diamond
+      const perpX = -sin;
+      const perpY = cos;
+      const headLen = 8 * zoom;
+      const headWidth = 3 * zoom;
+      ctx.fillStyle = def.highlightColor ?? color;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - cos * headLen + perpX * headWidth, tipY - sin * headLen + perpY * headWidth);
+      ctx.lineTo(tipX - cos * (headLen * 1.3), tipY - sin * (headLen * 1.3));
+      ctx.lineTo(tipX - cos * headLen - perpX * headWidth, tipY - sin * headLen - perpY * headWidth);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Standard blade
+      ctx.strokeStyle = color;
+      ctx.lineWidth = BLADE_WIDTH_PX;
+      ctx.beginPath();
+      ctx.moveTo(originXPx, originYPx);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+    }
+  }
+
+  private _renderHeldBow(
+    ctx: CanvasRenderingContext2D,
+    def: WeaponDef,
+    originXPx: number,
+    originYPx: number,
+    angleRad: number,
+    zoom: number,
+  ): void {
+    const color = def.color ?? '#c58f57';
+    const span = 14 * zoom;
+    const curveForward = 5 * zoom;
+
+    const fwdX = Math.cos(angleRad);
+    const fwdY = Math.sin(angleRad);
+    const perpX = -fwdY;
+    const perpY = fwdX;
+
+    const topX = originXPx + fwdX * curveForward + perpX * span;
+    const topY = originYPx + fwdY * curveForward + perpY * span;
+    const botX = originXPx + fwdX * curveForward - perpX * span;
+    const botY = originYPx + fwdY * curveForward - perpY * span;
+
+    // Curved bow limbs
     ctx.strokeStyle = color;
-    ctx.lineWidth = BLADE_WIDTH_PX;
-    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(originXPx, originYPx);
-    ctx.lineTo(
-      originXPx + Math.cos(angleRad) * reach * zoom,
-      originYPx + Math.sin(angleRad) * reach * zoom,
-    );
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(originXPx - fwdX * 2 * zoom, originYPx - fwdY * 2 * zoom, botX, botY);
     ctx.stroke();
 
-    ctx.restore();
+    // Bowstring
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(originXPx - fwdX * 3 * zoom, originYPx - fwdY * 3 * zoom);
+    ctx.lineTo(botX, botY);
+    ctx.stroke();
+  }
+
+  private _renderHeldGun(
+    ctx: CanvasRenderingContext2D,
+    def: WeaponDef,
+    originXPx: number,
+    originYPx: number,
+    angleRad: number,
+    zoom: number,
+  ): void {
+    const color = def.color ?? '#778899';
+    const barrelLen = (readNumber(def.gunPose, 'barrelLength') ?? 16) * zoom;
+    const fwdX = Math.cos(angleRad);
+    const fwdY = Math.sin(angleRad);
+    const perpX = -fwdY;
+    const perpY = fwdX;
+
+    // Main barrel
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(originXPx, originYPx);
+    ctx.lineTo(originXPx + fwdX * barrelLen, originYPx + fwdY * barrelLen);
+    ctx.stroke();
+
+    // Handle / receiver grip
+    ctx.strokeStyle = def.highlightColor ?? '#445566';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(originXPx, originYPx);
+    ctx.lineTo(originXPx - perpX * 5 * zoom - fwdX * 2 * zoom, originYPx - perpY * 5 * zoom - fwdY * 2 * zoom);
+    ctx.stroke();
+
+    // Scope / sight
+    if (def.scopeColor) {
+      ctx.fillStyle = def.scopeColor;
+      ctx.fillRect(
+        originXPx + fwdX * (barrelLen * 0.4) + perpX * 3 * zoom - 2,
+        originYPx + fwdY * (barrelLen * 0.4) + perpY * 3 * zoom - 2,
+        4,
+        4,
+      );
+    }
+  }
+
+  private _renderHeldStaff(
+    ctx: CanvasRenderingContext2D,
+    def: WeaponDef,
+    originXPx: number,
+    originYPx: number,
+    angleRad: number,
+    zoom: number,
+  ): void {
+    const config = def.staff as Readonly<Record<string, unknown>> | undefined;
+    const shaftLen = (readNumber(config, 'shaftLength') ?? 24) * zoom * 0.5;
+    const shaftColor = readString(config, 'shaftColor') ?? def.color ?? '#8b5a2b';
+    const gemColor = readString(config, 'gemColor') ?? def.beamCoreColor ?? '#77ddff';
+
+    const fwdX = Math.cos(angleRad);
+    const fwdY = Math.sin(angleRad);
+
+    const baseXPx = originXPx - fwdX * (shaftLen * 0.35);
+    const baseYPx = originYPx - fwdY * (shaftLen * 0.35);
+    const headXPx = originXPx + fwdX * (shaftLen * 0.65);
+    const headYPx = originYPx + fwdY * (shaftLen * 0.65);
+
+    // Shaft line
+    ctx.strokeStyle = shaftColor;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(baseXPx, baseYPx);
+    ctx.lineTo(headXPx, headYPx);
+    ctx.stroke();
+
+    // Glowing jewel head
+    const gemRadius = 3.5 * zoom * 0.5;
+    ctx.fillStyle = gemColor;
+    ctx.beginPath();
+    ctx.arc(headXPx, headYPx, Math.max(2, gemRadius), 0, Math.PI * 2);
+    ctx.fill();
+
+    // Subtle gem halo
+    ctx.strokeStyle = gemColor;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(headXPx, headYPx, Math.max(3, gemRadius * 1.5), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  private _renderHeldBook(
+    ctx: CanvasRenderingContext2D,
+    def: WeaponDef,
+    originXPx: number,
+    originYPx: number,
+    angleRad: number,
+    zoom: number,
+  ): void {
+    const coverColor = def.bookTrimColor ?? def.color ?? '#8a2be2';
+    const pageColor = def.bookPageColor ?? '#fdf5e6';
+    const runeColor = def.bookRuneColor ?? '#00ffff';
+
+    const fwdX = Math.cos(angleRad);
+    const fwdY = Math.sin(angleRad);
+    const perpX = -fwdY;
+    const perpY = fwdX;
+
+    const bookW = 8 * zoom;
+    const bookH = 11 * zoom;
+
+    // Tome cover background
+    ctx.fillStyle = coverColor;
+    ctx.beginPath();
+    ctx.moveTo(originXPx - perpX * (bookW * 0.5), originYPx - perpY * (bookW * 0.5));
+    ctx.lineTo(originXPx + perpX * (bookW * 0.5), originYPx + perpY * (bookW * 0.5));
+    ctx.lineTo(originXPx + perpX * (bookW * 0.5) + fwdX * bookH, originYPx + perpY * (bookW * 0.5) + fwdY * bookH);
+    ctx.lineTo(originXPx - perpX * (bookW * 0.5) + fwdX * bookH, originYPx - perpY * (bookW * 0.5) + fwdY * bookH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Pages (slightly inset)
+    ctx.fillStyle = pageColor;
+    ctx.beginPath();
+    ctx.moveTo(originXPx - perpX * (bookW * 0.4) + fwdX * 2 * zoom, originYPx - perpY * (bookW * 0.4) + fwdY * 2 * zoom);
+    ctx.lineTo(originXPx + perpX * (bookW * 0.4) + fwdX * 2 * zoom, originYPx + perpY * (bookW * 0.4) + fwdY * 2 * zoom);
+    ctx.lineTo(originXPx + perpX * (bookW * 0.4) + fwdX * (bookH - 2 * zoom), originYPx + perpY * (bookW * 0.4) + fwdY * (bookH - 2 * zoom));
+    ctx.lineTo(originXPx - perpX * (bookW * 0.4) + fwdX * (bookH - 2 * zoom), originYPx - perpY * (bookW * 0.4) + fwdY * (bookH - 2 * zoom));
+    ctx.closePath();
+    ctx.fill();
+
+    // Central glowing rune dot
+    const runeX = originXPx + fwdX * (bookH * 0.5);
+    const runeY = originYPx + fwdY * (bookH * 0.5);
+    ctx.fillStyle = runeColor;
+    ctx.beginPath();
+    ctx.arc(runeX, runeY, 2 * zoom, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   /** Draws a short fading arc behind the blade to read the swing's direction. */
