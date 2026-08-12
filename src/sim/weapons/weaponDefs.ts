@@ -376,10 +376,10 @@ export function isPlayerEquippableWeapon(def: WeaponDef): boolean {
  *   • Twelve weapons declare on-expiry callbacks that spawn bespoke secondary
  *     effects (pollen clouds, steam vents, gust shockwaves), still unported and
  *     listed in `UNPORTED_BEHAVIOR_FIELDS`.
- *   • Two staff auras are unported — `aegisStaff`'s projectile shield and
- *     `gravebindStaff`'s raise-on-death. `getStaffChannelKind` reports
- *     `STAFF_CHANNEL_NONE` for those, and `equipPlayerWeapon` refuses them, so
- *     neither can be equipped as a dead weapon.
+ *   • Phase 2e closed the last gap: `aegisStaff`'s projectile shield
+ *     (`projectileShield.ts`) and `gravebindStaff`'s raise-on-death
+ *     (`raiseThrallFromCorpse` in `weaponSummons.ts`) now run, so both staves
+ *     are equippable rather than refused as dead weapons.
  */
 const RUNTIME_IMPLEMENTED_KINDS: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
   'melee',

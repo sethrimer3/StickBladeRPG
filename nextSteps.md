@@ -8,6 +8,32 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 627 — STICK-RPG Port Phase 2e: The Two Bespoke Staff Auras
+
+**Accomplished in Phase 2e:**
+1. **Aegis Stave projectile ward:**
+   - Created `src/sim/weapons/projectileShield.ts`: config reader for the donor `aura.projectileShield` block, ward state, per-tick raise/regen/drop, and absorption.
+   - Ward capacity is `maxHpFactor × wielder max health` (Phase 1 derived stats), radius is `max(minRadius, aura.radius)`, regen is `regenPercent` of capacity per second while channelling. Dropping the channel drops the ward.
+   - **Deviation from the donor, deliberate:** the donor ward intercepts projectile entities. StickBlade has no single hostile-projectile type — spikes, lava, contact hits, wizard bolts, and poison all converge on `applyPlayerDamageWithKnockback` — so the ward is a damage pool spent there instead. One implementation, and it cannot miss a damage source.
+   - Wiring is the `statsDefense` pattern: `PlayerDamageTarget` gained an optional `projectileShield` (typed structurally as `DamageAbsorbingWard`, so `playerDamage.ts` keeps no weapon-system dependency), and `ClusterState` carries the live reference, attached each tick by `playerWeaponState.ts` only while the ward is up. Absent for every other target, so no existing damage path changed.
+   - A hit the ward fully swallows is not a hit: no motes lost, no invulnerability window, no hurt flash — the same shape as a hit fully absorbed by defense.
+2. **Gravebind Stave raise-on-death:**
+   - Added `getStaffRaiseOnDeathConfig` and `isPointInsideActiveStaffAura` to `src/sim/weapons/staffChannel.ts`.
+   - Added `raiseThrallFromCorpse` / `countLiveThralls` / `MAX_ACTIVE_THRALLS` (8) to `src/sim/weapons/weaponSummons.ts`. A thrall is a familiar in the existing pool — hopper locomotion, seeks and damages the nearest enemy, expires after `lifetimeMs` — with `isThrall` marking it for rendering and for its own cap.
+   - Thrall contact damage derives from the corpse's max health (20%, capped at 12) times `damageMultiplier`, since enemies carry no attack stat. `defenseMultiplier` and `healthMultiplier` are deliberately unused: familiars in this pool cannot be killed, they expire on a timer.
+   - Hooked into the existing defeat path in `src/sim/weaves/weaveCollisionUtils.ts`, gated on the staff actually channelling and the corpse being inside the aura radius.
+3. **Classification and equipping:**
+   - `getStaffChannelKind` now reports `STAFF_CHANNEL_AURA` for both staves (they channel a real effect but contribute no stat multiplier, so `getStaffAuraModifiers` returns identity), and `equipPlayerWeapon` accepts them. The `STAFF_CHANNEL_NONE` refusal remains as the guard for any future unimplemented staff.
+4. **Rendering:**
+   - `src/render/effects/weaponRenderer.ts` draws the ward bubble with opacity tracking remaining absorption (so it doubles as its own health bar) and an impact flash, plus necrotic coloring for raised thralls so they never borrow the equipped weapon's palette.
+5. **Validation:**
+   - Added `src/tests/bespokeStaffAuras.test.ts` (19 tests); updated the four assertions in `staffAndSpirit.test.ts` / `playerWeaponState.test.ts` that pinned these staves as unported.
+   - Validated: `npm test` (3,588 passing), `npm run build` (clean), `npm run lint` (clean).
+
+**Remaining Phase 2 work:** only Phase 2d (the 12 bespoke `projectileOnExpire` / `slashWaveOnExpire` callbacks; 9 of the 12 owning weapons are `enemyOnly`).
+
+---
+
 ## BUILD 626 — STICK-RPG Port Phase 2g: Souls and Empowered Guardian Familiars
 
 **Accomplished in Phase 2g:**
