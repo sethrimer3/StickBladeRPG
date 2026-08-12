@@ -10,9 +10,12 @@
 import { WorldState } from '../world';
 import { ClusterState } from '../clusters/state';
 import { applyODCHit } from '../clusters/orbitalDustCoreAi';
-import { grantExperience } from '../stats/characterStats';
+import { computeDerivedStats, grantExperience } from '../stats/characterStats';
 import { getEquippedWeaponDef } from '../weapons/playerWeaponState';
 import { spawnSoulOrb } from '../weapons/soulOrbs';
+import { getStaffRaiseOnDeathConfig, isPointInsideActiveStaffAura } from '../weapons/staffChannel';
+import { raiseThrallFromCorpse } from '../weapons/weaponSummons';
+import { getLeaderCluster } from '../party/partyWorld';
 
 /**
  * Squared distance from point `(px,py)` to the closest point on the segment
@@ -87,6 +90,35 @@ export function applyRoutedWeaveDamage(
             def.soulColor ?? '#dfc9ff',
             1,
           );
+        }
+
+        // Phase 2e: a Gravebind channel raises corpses inside its aura.
+        const raise = getStaffRaiseOnDeathConfig(def);
+        if (
+          raise !== null
+          && world.playerWeapon.staff.isChannellingFlag === 1
+          && world.playerWeapon.staff.charge > 0
+        ) {
+          const leader = getLeaderCluster(world);
+          const inAura = leader !== undefined && isPointInsideActiveStaffAura(
+            world.playerWeapon.staff, def,
+            leader.positionXWorld, leader.positionYWorld,
+            c.positionXWorld, c.positionYWorld,
+          );
+          if (inAura) {
+            raiseThrallFromCorpse(
+              world.playerWeapon.summons,
+              raise,
+              c.positionXWorld,
+              c.positionYWorld,
+              Math.min(c.halfWidthWorld, c.halfHeightWorld),
+              c.maxHealthPoints,
+              world.playerCharacterStats
+                ? computeDerivedStats(world.playerCharacterStats).attack
+                : 1,
+              world.rng,
+            );
+          }
         }
       }
     }

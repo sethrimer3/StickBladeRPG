@@ -26,6 +26,7 @@ import { raycastWalls } from '../clusters/grappleShared';
 import { applyRoutedWeaveDamage } from '../weaves/weaveCollisionUtils';
 import { computeStatDamage } from '../stats/characterStats';
 import { millisecondsToTicks, type WeaponDef } from './weaponDefs';
+import type { RaiseOnDeathConfig } from './staffChannel';
 
 // ---- Capacity -------------------------------------------------------------
 
@@ -109,6 +110,8 @@ export interface SummonPool {
   spawnSequence: Int32Array;
   /** 1 when this familiar is an empowered Guardian, 0 for regular. */
   isGuardian: Uint8Array;
+  /** 1 when this familiar is a raised thrall rather than a called familiar. */
+  isThrall: Uint8Array;
   /** Hit charges remaining before familiar dissipates. */
   multiHitCount: Uint8Array;
   liveCount: number;
@@ -137,6 +140,7 @@ export function createSummonPool(): SummonPool {
     knockScale: new Float32Array(n),
     spawnSequence: new Int32Array(n),
     isGuardian: new Uint8Array(n),
+    isThrall: new Uint8Array(n),
     multiHitCount: new Uint8Array(n),
     liveCount: 0,
     nextSequence: 1,
@@ -147,6 +151,7 @@ export function createSummonPool(): SummonPool {
 export function resetSummonPool(pool: SummonPool): void {
   pool.isLive.fill(0);
   pool.isGuardian.fill(0);
+  pool.isThrall.fill(0);
   pool.multiHitCount.fill(0);
   pool.liveCount = 0;
   pool.nextSequence = 1;
@@ -263,6 +268,7 @@ export function castWeaponSummons(
     const angle = (Math.PI * 2 * c) / charges;
     pool.isLive[i] = 1;
     pool.isGuardian[i] = isGuardian ? 1 : 0;
+    pool.isThrall[i] = 0;
     pool.multiHitCount[i] = multiHits;
     pool.xWorld[i] = originXWorld + Math.cos(angle) * radius;
     pool.yWorld[i] = originYWorld + Math.sin(angle) * radius;
@@ -290,6 +296,109 @@ export function castWeaponSummons(
 
   _castResult.activeCount = pool.liveCount;
   return _castResult;
+}
+
+// ---- Raise on death (Phase 2e) --------------------------------------------
+
+/**
+ * Thralls allowed at once.
+ *
+ * The donor sets no cap on `raiseOnDeath`, but an uncapped raise in a
+ * high-population room would fill the whole 32-slot pool and starve any called
+ * familiars, so this port caps thralls at a quarter of the pool.
+ */
+export const MAX_ACTIVE_THRALLS = 8;
+
+/**
+ * Fraction of a felled enemy's max health that becomes its thrall's contact
+ * damage. A tougher corpse raises a stronger thrall without needing enemy
+ * attack data, which enemies do not carry.
+ */
+const THRALL_DAMAGE_PER_ENEMY_HEALTH = 0.2;
+
+/** Ceiling on derived thrall damage, so a boss corpse cannot trivialize a room. */
+const THRALL_MAX_BASE_DAMAGE = 12;
+
+/**
+ * Raises a defeated enemy as a temporary thrall.
+ *
+ * Phase 2e, porting `gravebindStaff`'s `aura.raiseOnDeath`. The thrall is a
+ * familiar in this same pool — it seeks and damages the nearest enemy and
+ * expires after `lifetimeMs` — which is exactly the donor's behavior and keeps
+ * one simulation instead of two. It reuses the corpse's position and, scaled by
+ * `scale`, its size.
+ *
+ * Two donor fields have no meaning here and are deliberately unused:
+ * `defenseMultiplier` and `healthMultiplier` describe a thrall that can be
+ * killed, and familiars in this pool take no damage — they expire on a timer.
+ * See the module header for why familiars are not clusters.
+ *
+ * Returns true when a thrall was raised; false when the thrall cap is full.
+ */
+export function raiseThrallFromCorpse(
+  pool: SummonPool,
+  config: RaiseOnDeathConfig,
+  corpseXWorld: number,
+  corpseYWorld: number,
+  corpseRadiusWorld: number,
+  corpseMaxHealth: number,
+  attackerAttack: number,
+  rng: RngState,
+): boolean {
+  if (countLiveThralls(pool) >= MAX_ACTIVE_THRALLS) return false;
+
+  const i = acquireSummonSlot(pool);
+  const wasLive = pool.isLive[i] === 1;
+
+  const scale = config.scale > 0 ? config.scale : 1;
+  const radius = Math.max(4, corpseRadiusWorld * scale);
+  const baseDamage = Math.min(
+    THRALL_MAX_BASE_DAMAGE,
+    Math.max(1, corpseMaxHealth * THRALL_DAMAGE_PER_ENEMY_HEALTH),
+  ) * config.damageMultiplier;
+
+  const lifetime = millisecondsToTicks(config.lifetimeMs);
+
+  pool.isLive[i] = 1;
+  pool.isGuardian[i] = 0;
+  pool.isThrall[i] = 1;
+  pool.multiHitCount[i] = 1;
+  pool.xWorld[i] = corpseXWorld;
+  pool.yWorld[i] = corpseYWorld;
+  pool.velocityXWorld[i] = 0;
+  pool.velocityYWorld[i] = 0;
+  pool.damage[i] = computeStatDamage(baseDamage, attackerAttack, 0, rng);
+  pool.radiusWorld[i] = radius;
+  pool.lifetimeTicks[i] = lifetime > 0 ? lifetime : DEFAULT_SUMMON_LIFETIME_TICKS;
+  pool.hitCooldownTicks[i] = 0;
+  // A raised corpse walks: it keeps the grounded locomotion its body had.
+  pool.locomotion[i] = SUMMON_LOCOMOTION_HOPPER;
+  pool.seekForce[i] = THRALL_SEEK_FORCE;
+  pool.maxSpeed[i] = THRALL_MAX_SPEED;
+  pool.drag[i] = 1;
+  pool.bounciness[i] = 0.2;
+  pool.climbLift[i] = THRALL_CLIMB_LIFT;
+  pool.knockScale[i] = 1;
+  pool.spawnSequence[i] = pool.nextSequence++;
+
+  if (!wasLive) pool.liveCount++;
+  return true;
+}
+
+/** Steering acceleration a thrall uses to close on its target. */
+const THRALL_SEEK_FORCE = 900;
+/** Thrall top speed — slower than a called familiar; a corpse shambles. */
+const THRALL_MAX_SPEED = 220;
+/** Upward impulse a thrall uses to climb toward a higher target. */
+const THRALL_CLIMB_LIFT = 320;
+
+/** Live thralls currently in the pool. */
+export function countLiveThralls(pool: SummonPool): number {
+  let count = 0;
+  for (let i = 0; i < MAX_ACTIVE_SUMMONS; i++) {
+    if (pool.isLive[i] === 1 && pool.isThrall[i] === 1) count++;
+  }
+  return count;
 }
 
 /** Index of the longest-lived summon, or -1 when none are live. */

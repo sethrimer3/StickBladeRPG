@@ -33,6 +33,7 @@ import { applyWeaponSwingToClusters } from './weaponSwingClusters';
 import {
   createStaffChannelState,
   getStaffAuraModifiers,
+  getStaffAuraRadius,
   getStaffChannelKind,
   releaseStaffChannel,
   requestStaffChannel,
@@ -66,6 +67,13 @@ import {
   type WeaponProjectilePool,
 } from './weaponProjectiles';
 
+import {
+  createProjectileShieldState,
+  getProjectileShieldConfig,
+  resetProjectileShieldState,
+  tickProjectileShield,
+  type ProjectileShieldState,
+} from './projectileShield';
 import {
   createSoulOrbPool,
   resetSoulOrbPool,
@@ -112,6 +120,8 @@ export interface PlayerWeaponState {
   soulOrbs: SoulOrbPool;
   /** Souls currently banked for empowered Guardian summons. */
   soulsCollected: number;
+  /** The Aegis Stave's intercepting ward, up only while that staff channels. */
+  projectileShield: ProjectileShieldState;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -130,6 +140,7 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     summons: createSummonPool(),
     soulOrbs: createSoulOrbPool(),
     soulsCollected: 0,
+    projectileShield: createProjectileShieldState(),
   };
 }
 
@@ -148,6 +159,7 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   // Familiars and floating soul drops are bound to the room they were called into.
   resetSummonPool(state.summons);
   resetSoulOrbPool(state.soulOrbs);
+  resetProjectileShieldState(state.projectileShield);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -167,18 +179,21 @@ export function equipPlayerWeapon(state: PlayerWeaponState, weaponId: string | n
     resetWeaponSwingState(state.swing);
     resetStaffChannelState(state.staff);
     resetSpiritOrbs(state.spiritOrbs, null);
+    resetProjectileShieldState(state.projectileShield);
     return true;
   }
 
   const def = getWeaponDef(weaponId);
   if (def === null || !isWeaponRuntimeImplemented(def)) return false;
-  // A staff whose only effect is one of the unported bespoke auras has nothing
-  // to do when channelled, so refuse it rather than equip a dead weapon.
+  // A staff with no channelled effect at all would be a dead weapon. Since
+  // Phase 2e ported the last two bespoke auras, no ported staff trips this —
+  // it remains as the guard for any future unimplemented staff.
   if (def.kind === 'staff' && getStaffChannelKind(def) === STAFF_CHANNEL_NONE) return false;
 
   state.equippedWeaponId = weaponId;
   resetWeaponSwingState(state.swing);
   resetStaffChannelState(state.staff);
+  resetProjectileShieldState(state.projectileShield);
   resetSpiritOrbs(state.spiritOrbs, def);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
@@ -319,6 +334,44 @@ export function releasePlayerWeaponAttack(world: WorldState): void {
   releaseStaffChannel(world.playerWeapon.staff);
 }
 
+/**
+ * Advances the Aegis ward and keeps the player cluster's reference to it in
+ * sync.
+ *
+ * The reference is what makes the ward reachable from the damage pipeline
+ * (`sim/playerDamage.ts` reads `PlayerDamageTarget.projectileShield`), so it is
+ * attached only while the ward is genuinely up and cleared the moment it drops.
+ * Attaching a live object rather than copying its numbers means absorption can
+ * never be applied to a stale snapshot.
+ */
+function tickPlayerProjectileShield(
+  world: WorldState,
+  state: PlayerWeaponState,
+  def: WeaponDef | null,
+  player: ClusterState | null,
+): void {
+  const shield = state.projectileShield;
+  const hasWard = getProjectileShieldConfig(def) !== null;
+
+  const stats = world.playerCharacterStats;
+  const maxHealth = stats
+    ? computeDerivedStats(stats).maxHealth
+    : (player?.maxHealthPoints ?? 0);
+
+  tickProjectileShield(
+    shield,
+    def,
+    hasWard && state.staff.isChannellingFlag === 1 && state.staff.charge > 0,
+    maxHealth,
+    getStaffAuraRadius(def),
+    world.dtMs,
+  );
+
+  if (player !== null) {
+    player.projectileShield = shield.isActiveFlag === 1 ? shield : null;
+  }
+}
+
 /** Cooldown in ticks for a ranged weapon, floored at 1 so it cannot fire every tick. */
 function getRangedCooldownTicks(def: WeaponDef): number {
   const ms = def.cooldown ?? 0;
@@ -358,6 +411,8 @@ export function tickPlayerWeapon(
   } else if (state.staff.isChannellingFlag === 1) {
     releaseStaffChannel(state.staff);
   }
+
+  tickPlayerProjectileShield(world, state, def, player);
 
   tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
 

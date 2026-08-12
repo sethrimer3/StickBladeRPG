@@ -12,13 +12,13 @@
  *     `healthMultiplier`) — a stat multiplier applied while channelling, which
  *     feeds straight into the Phase 1 `StatModifiers` contract.
  *
- * Coverage is deliberately partial and self-reporting via
- * `getStaffChannelKind`. Two donor auras are NOT ported: `aegisStaff`'s
- * `projectileShield` needs a projectile-shield system that does not exist, and
- * `gravebindStaff`'s `raiseOnDeath` needs the summon system deferred to a later
- * phase. Ally targeting is also not meaningful yet — every ported aura sets
- * `includeSelf: true`, and the party arrives in Phase 3, so auras currently
- * affect only the wielder.
+ * Phase 2e added the two bespoke auras, so every donor staff now channels:
+ * `aegisStaff`'s `projectileShield` (see `projectileShield.ts`) and
+ * `gravebindStaff`'s `raiseOnDeath` (see `raiseThrallFromCorpse` in
+ * `weaponSummons.ts`). Neither contributes a stat multiplier, so both report
+ * `STAFF_CHANNEL_AURA` while `getStaffAuraModifiers` returns identity for them.
+ * Ally targeting remains approximate — the ported auras set `includeSelf: true`
+ * and only the wielder is affected.
  *
  * Deterministic and allocation-free per tick: charge is integrated from
  * `dtMs`, and beam damage rolls come from an injected `RngState`.
@@ -97,11 +97,16 @@ export function getStaffChannelKind(def: WeaponDef): StaffChannelKind {
 
   const aura = readObject(staff, 'aura');
   if (aura !== undefined) {
-    const hasPortedMultiplier =
+    const hasPortedEffect =
       readNumber(aura, 'attackMultiplier') !== undefined
       || readNumber(aura, 'defenseMultiplier') !== undefined
-      || readNumber(aura, 'healthMultiplier') !== undefined;
-    if (hasPortedMultiplier) return STAFF_CHANNEL_AURA;
+      || readNumber(aura, 'healthMultiplier') !== undefined
+      // Phase 2e: the two bespoke auras. Neither contributes a stat multiplier —
+      // the ward is a damage pool and raise-on-death is an event hook — but both
+      // are real channelled effects, so the staves are functional.
+      || readObject(aura, 'projectileShield') !== undefined
+      || readObject(aura, 'raiseOnDeath') !== undefined;
+    if (hasPortedEffect) return STAFF_CHANNEL_AURA;
   }
 
   return STAFF_CHANNEL_NONE;
@@ -380,8 +385,63 @@ export function getStaffAuraModifiers(
   return _auraModifiers;
 }
 
+/**
+ * The donor `aura.raiseOnDeath` block: what a felled enemy becomes.
+ *
+ * Phase 2e. Read defensively like every other `staff` sub-block, and returned
+ * as plain numbers so the summon pool needs no knowledge of the donor schema.
+ */
+export interface RaiseOnDeathConfig {
+  lifetimeMs: number;
+  damageMultiplier: number;
+  defenseMultiplier: number;
+  healthMultiplier: number;
+  /** Thrall size relative to the enemy it was raised from. */
+  scale: number;
+}
+
+/** Raise-on-death configuration for a staff, or null when it declares none. */
+export function getStaffRaiseOnDeathConfig(def: WeaponDef | null): RaiseOnDeathConfig | null {
+  if (def === null || def.kind !== 'staff') return null;
+  const raise = readObject(readObject(def.staff, 'aura'), 'raiseOnDeath');
+  if (raise === undefined) return null;
+
+  return {
+    lifetimeMs: readNumber(raise, 'lifetimeMs') ?? 0,
+    damageMultiplier: readNumber(raise, 'damageMultiplier') ?? 1,
+    defenseMultiplier: readNumber(raise, 'defenseMultiplier') ?? 1,
+    healthMultiplier: readNumber(raise, 'healthMultiplier') ?? 1,
+    scale: readNumber(raise, 'scale') ?? 1,
+  };
+}
+
+/**
+ * True when the staff's aura is currently reaching a world point.
+ *
+ * The ward and raise-on-death both need this: an aura only acts while it is
+ * actually channelled, and only within its own radius.
+ */
+export function isPointInsideActiveStaffAura(
+  state: StaffChannelState,
+  def: WeaponDef | null,
+  originXWorld: number,
+  originYWorld: number,
+  pointXWorld: number,
+  pointYWorld: number,
+): boolean {
+  if (def === null) return false;
+  if (state.isChannellingFlag === 0 || state.charge <= 0) return false;
+
+  const radius = readNumber(readObject(def.staff, 'aura'), 'radius') ?? 0;
+  if (radius <= 0) return false;
+
+  const dx = pointXWorld - originXWorld;
+  const dy = pointYWorld - originYWorld;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
 /** Aura radius in world units, or 0 when the staff has no ported aura. */
-export function getStaffAuraRadius(def: WeaponDef): number {
-  if (getStaffChannelKind(def) !== STAFF_CHANNEL_AURA) return 0;
+export function getStaffAuraRadius(def: WeaponDef | null): number {
+  if (def === null || getStaffChannelKind(def) !== STAFF_CHANNEL_AURA) return 0;
   return readNumber(readObject(def.staff, 'aura'), 'radius') ?? 0;
 }

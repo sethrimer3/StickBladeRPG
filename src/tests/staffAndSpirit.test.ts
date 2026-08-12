@@ -65,10 +65,11 @@ describe('staff classification', () => {
     assert.equal(getStaffChannelKind(WEAPONS['verdantStaff']), STAFF_CHANNEL_AURA);
   });
 
-  test('the two unported bespoke auras report as unimplemented', () => {
-    // aegisStaff = projectile shield, gravebindStaff = raise-on-death.
-    assert.equal(getStaffChannelKind(WEAPONS['aegisStaff']), STAFF_CHANNEL_NONE);
-    assert.equal(getStaffChannelKind(WEAPONS['gravebindStaff']), STAFF_CHANNEL_NONE);
+  test('the two bespoke auras channel since Phase 2e', () => {
+    // aegisStaff = projectile shield, gravebindStaff = raise-on-death. Neither
+    // contributes a stat multiplier, but both are real channelled effects.
+    assert.equal(getStaffChannelKind(WEAPONS['aegisStaff']), STAFF_CHANNEL_AURA);
+    assert.equal(getStaffChannelKind(WEAPONS['gravebindStaff']), STAFF_CHANNEL_AURA);
   });
 
   test('a non-staff weapon is never a staff channel', () => {
@@ -133,9 +134,14 @@ describe('staff charge meter', () => {
     assert.equal(requestStaffChannel(state, def, 100, 0), false);
   });
 
-  test('an unported staff refuses to channel', () => {
+  test('a bespoke-aura staff channels since Phase 2e', () => {
     const state = createStaffChannelState();
-    assert.equal(requestStaffChannel(state, WEAPONS['aegisStaff'], 100, 0), false);
+    assert.equal(requestStaffChannel(state, WEAPONS['aegisStaff'], 100, 0), true);
+  });
+
+  test('a non-staff weapon still refuses to channel', () => {
+    const state = createStaffChannelState();
+    assert.equal(requestStaffChannel(state, WEAPONS['sword'], 100, 0), false);
   });
 
   test('reset restores a full charge and stops channelling', () => {
@@ -417,10 +423,10 @@ describe('integration through the player weapon', () => {
     assert.equal(equipPlayerWeapon(state, 'tempestHalo'), true);
   });
 
-  test('an unported staff is refused rather than equipped dead', () => {
+  test('the bespoke-aura staves equip since Phase 2e', () => {
     const state = createPlayerWeaponState();
-    assert.equal(equipPlayerWeapon(state, 'aegisStaff'), false);
-    assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), false);
+    assert.equal(equipPlayerWeapon(state, 'aegisStaff'), true);
+    assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), true);
   });
 
   test('summoner weapons gained a runtime in Phase 2f', () => {

@@ -64,13 +64,13 @@ describe('equipping', () => {
     assert.equal(state.equippedWeaponId, 'sword');
   });
 
-  test('a weapon with no working effect is refused', () => {
+  test('the two bespoke-aura staves are equippable since Phase 2e', () => {
     const state = createPlayerWeaponState();
-    // Every KIND now has a runtime, but these two staves' only effect is an
-    // unported bespoke aura, so equipping them would be a dead weapon.
-    assert.equal(equipPlayerWeapon(state, 'aegisStaff'), false);
-    assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), false);
-    assert.equal(state.equippedWeaponId, null);
+    // Both were refused while their auras were unported; the ward and
+    // raise-on-death runtimes make them real weapons.
+    assert.equal(equipPlayerWeapon(state, 'aegisStaff'), true);
+    assert.equal(equipPlayerWeapon(state, 'gravebindStaff'), true);
+    assert.equal(state.equippedWeaponId, 'gravebindStaff');
   });
 
   test('null unequips', () => {

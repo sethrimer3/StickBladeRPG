@@ -2,6 +2,7 @@ import { PLAYER_HALF_WIDTH_WORLD, PLAYER_HALF_HEIGHT_WORLD } from '../../levels/
 import { MAX_CW_METEOR_SCHEDULE } from './crimsonWizardConfig';
 import { MT_MAX_RING_RADIUS_WORLD } from './momentumTurretConfig';
 import type { ChallengeModeState } from '../challengeMode';
+import type { DamageAbsorbingWard } from '../playerDamage';
 
 export interface ClusterState {
   /** World-local challenge state reference, assigned only on the active player. */
@@ -42,6 +43,14 @@ export interface ClusterState {
   xpValue: number;
   /** Coins granted on defeat. */
   coinValue: number;
+  /**
+   * The Aegis Stave's ward while it is up around this cluster, else null.
+   *
+   * Set each tick by `sim/weapons/playerWeaponState.ts` and read by
+   * `applyPlayerDamageWithKnockback`, which spends it before motes. Null for
+   * every cluster that is not the warded player.
+   */
+  projectileShield: DamageAbsorbingWard | null;
 
   // ---- Platformer physics -------------------------------------------------
   /** 1 when the cluster is resting on a surface (floor or platform top). */
@@ -1124,6 +1133,7 @@ export function createClusterState(
     stickRpgEnemyKind: null,
     xpValue: 0,
     coinValue: 0,
+    projectileShield: null,
     isGroundedFlag: 0,
     isGroundedOnIceFlag: 0,
     isGroundedOnUltraIceFlag: 0,

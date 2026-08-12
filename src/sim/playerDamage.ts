@@ -55,6 +55,25 @@ export interface PlayerDamageTarget {
    * stats. See `docs/decisions/STICK_RPG_PORT_PLAN.md`.
    */
   statsDefense?: number;
+  /**
+   * The Aegis Stave's intercepting ward (`sim/weapons/projectileShield.ts`),
+   * present only while that staff is channelling. Absent for every other
+   * damage target, in which case damage behaves exactly as before the port.
+   *
+   * Typed structurally rather than by importing `ProjectileShieldState` so this
+   * module keeps no dependency on the weapon system.
+   */
+  projectileShield?: DamageAbsorbingWard | null;
+}
+
+/** The subset of a ward this pipeline touches. */
+export interface DamageAbsorbingWard {
+  /** Remaining absorption; spent before the player's motes. */
+  hitPoints: number;
+  /** 1 while the ward is up. */
+  isActiveFlag: 0 | 1;
+  /** Set when the ward absorbs, for the renderer's impact flash. */
+  hitFlashTicks: number;
 }
 
 export interface PlayerDamageOptions {
@@ -111,6 +130,25 @@ function applyStatScaling(
   return computeStatDamage(damagePoints, attack, defense, rng);
 }
 
+/** Ticks a ward renders its impact flash after absorbing a hit. */
+export const WARD_HIT_FLASH_TICKS = 12;
+
+/**
+ * Spends ward points against an incoming hit and returns what gets through.
+ *
+ * Lives here rather than in the weapon module so the damage pipeline keeps no
+ * dependency on the weapon system; `sim/weapons/projectileShield.ts` re-uses it.
+ */
+export function absorbWithWard(ward: DamageAbsorbingWard | null | undefined, damagePoints: number): number {
+  if (!ward || ward.isActiveFlag === 0 || ward.hitPoints <= 0) return damagePoints;
+  if (!Number.isFinite(damagePoints) || damagePoints <= 0) return damagePoints;
+
+  const absorbed = Math.min(ward.hitPoints, damagePoints);
+  ward.hitPoints -= absorbed;
+  ward.hitFlashTicks = WARD_HIT_FLASH_TICKS;
+  return damagePoints - absorbed;
+}
+
 export function applyPlayerDamageWithKnockback(
   player: PlayerDamageTarget,
   damagePoints: number,
@@ -124,7 +162,11 @@ export function applyPlayerDamageWithKnockback(
   if (player.challengeReturnGuard === 1) return false;
 
   const scaledDamage = applyStatScaling(player, damagePoints, options);
-  const damageToApply = normalizeMoteCount(Math.ceil(scaledDamage));
+  // The ward is spent before motes. A hit it swallows entirely is not a hit:
+  // no motes lost, no invulnerability window, no hurt flash — the same shape as
+  // a hit fully absorbed by defense below.
+  const afterWard = absorbWithWard(player.projectileShield, scaledDamage);
+  const damageToApply = normalizeMoteCount(Math.ceil(afterWard));
   // A hit fully absorbed by defense deals nothing and is not treated as a hit,
   // so it grants no invulnerability window and triggers no hurt feedback.
   if (damageToApply <= 0) return false;

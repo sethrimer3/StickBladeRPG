@@ -41,6 +41,7 @@ import {
   type WeaponGripAnchor,
 } from '../../sim/weapons/weaponGrip';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
+import { getProjectileShieldConfig } from '../../sim/weapons/projectileShield';
 
 /** Blade thickness in virtual pixels. */
 const BLADE_WIDTH_PX = 2;
@@ -52,6 +53,10 @@ const SWING_TRAIL_SAMPLES = 6;
 const SWING_TRAIL_ARC_RAD = 0.5;
 /** Fallback blade color when a weapon declares none. */
 const DEFAULT_BLADE_COLOR = '#d8d8e8';
+/** Body color of a corpse raised by the Gravebind Stave. */
+const THRALL_BODY_COLOR = '#8b7fb5';
+/** Limb color of a raised thrall — the staff's necrotic green. */
+const THRALL_ACCENT_COLOR = '#88ffc4';
 /** Staff charge meter geometry, in world units (scaled by zoom at draw time). */
 const CHARGE_METER_WIDTH_PX = 24;
 const CHARGE_METER_HEIGHT_PX = 3;
@@ -116,11 +121,55 @@ export class WeaponRenderer {
       this._origin.yWorld = 0;
     }
 
+    this._renderProjectileShield(ctx, weapon, def, ox, oy, zoom);
     this._renderStaffBeam(ctx, weapon, def, ox, oy, zoom);
     this._renderSpiritOrbs(ctx, weapon, def, ox, oy, zoom);
     this._renderHeldWeapon(ctx, snapshot, weapon, def, ox, oy, zoom);
     // Drawn last so the meter is never occluded by the beam it describes.
     if (body !== null) this._renderStaffChargeMeter(ctx, weapon, def, ox, oy, zoom);
+  }
+
+  /**
+   * Draws the Aegis ward: a filled bubble around the wielder whose opacity
+   * tracks its remaining absorption, flashing on impact.
+   *
+   * Opacity carries the information the player needs — a nearly-spent ward is
+   * nearly invisible — so the bubble doubles as its own health bar and no
+   * separate meter is drawn.
+   */
+  private _renderProjectileShield(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    const shield = weapon.projectileShield;
+    if (shield.isActiveFlag === 0 || shield.radiusWorld <= 0) return;
+
+    const config = getProjectileShieldConfig(def);
+    if (config === null) return;
+
+    const xPx = (this._origin.xWorld - ox) * zoom;
+    const yPx = (this._origin.yWorld - oy) * zoom;
+    const radiusPx = shield.radiusWorld * zoom;
+    const fill = shield.maxHitPoints > 0
+      ? Math.max(0, Math.min(1, shield.hitPoints / shield.maxHitPoints))
+      : 0;
+
+    ctx.save();
+    ctx.globalAlpha = 0.15 + 0.55 * fill;
+    ctx.fillStyle = shield.hitFlashTicks > 0 ? config.hitColor : config.color;
+    ctx.beginPath();
+    ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.35 + 0.65 * fill;
+    ctx.strokeStyle = shield.hitFlashTicks > 0 ? config.hitColor : config.outlineColor;
+    ctx.lineWidth = Math.max(1, 2 * zoom);
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**
@@ -297,7 +346,13 @@ export class WeaponRenderer {
         ? Math.max(0.15, pool.lifetimeTicks[i] / fadeTicks)
         : 1;
 
-      const familiarColor = isGuardian ? (def?.guardianColor ?? '#f6baff') : bodyColor;
+      // A raised thrall is not the equipped weapon's familiar and must not
+      // borrow its coloring — it reads as necrotic instead, and keeps its own
+      // look after a weapon swap.
+      const isThrall = pool.isThrall[i] === 1;
+      const familiarColor = isThrall
+        ? THRALL_BODY_COLOR
+        : isGuardian ? (def?.guardianColor ?? '#f6baff') : bodyColor;
 
       // Guardian aura ring
       if (isGuardian) {
@@ -313,7 +368,7 @@ export class WeaponRenderer {
       ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = isGuardian ? '#ffffff' : accentColor;
+      ctx.strokeStyle = isThrall ? THRALL_ACCENT_COLOR : isGuardian ? '#ffffff' : accentColor;
       ctx.lineWidth = Math.max(1, radiusPx * 0.3);
       ctx.beginPath();
       if (pool.locomotion[i] === SUMMON_LOCOMOTION_FLIER) {
