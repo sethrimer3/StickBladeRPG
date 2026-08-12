@@ -4,6 +4,8 @@ import {
   createStickRangerBody,
   stepStickRangerBody,
   requestStickRangerJump,
+  canStickmanJump,
+  canFootJump,
   getStickRangerRenderAlpha,
   getStickRangerRenderX,
   SR_FRAME_MS,
@@ -422,3 +424,91 @@ test('joints never clip upward through a solid ceiling block when jumping', () =
     }
   }
 });
+
+test('foot ground check requires foot to be in 2-pixel space above surface and not inside a block', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, 100);
+
+  // 1. In mid-air (y = 100, floor = 140): feet are ~109.6, gap is ~30px > 2px -> cannot jump
+  assert.equal(canFootJump(body, SR_FOOT_L, floor), false, 'airborne foot cannot jump');
+  assert.equal(canFootJump(body, SR_FOOT_R, floor), false, 'airborne foot cannot jump');
+  assert.equal(canStickmanJump(body, floor), false, 'airborne stickman cannot jump');
+
+  // 2. Exactly 1 pixel above surface: foot at y = 139 on floor at 140 -> can jump
+  body.x[SR_FOOT_L] = 100;
+  body.y[SR_FOOT_L] = 139;
+  assert.equal(canFootJump(body, SR_FOOT_L, floor), true, 'foot 1px above surface can jump');
+  assert.equal(canStickmanJump(body, floor), true, 'stickman with 1 foot grounded can jump');
+
+  // 3. Exactly 2 pixels above surface: foot at y = 138 on floor at 140 -> can jump
+  body.y[SR_FOOT_L] = 138;
+  assert.equal(canFootJump(body, SR_FOOT_L, floor), true, 'foot 2px above surface can jump');
+
+  // 4. 2.5 pixels above surface: foot at y = 137.5 on floor at 140 -> cannot jump
+  body.y[SR_FOOT_L] = 137.5;
+  assert.equal(canFootJump(body, SR_FOOT_L, floor), false, 'foot >2px above surface cannot jump');
+
+  // 5. Inside a block: foot at y = 140.5 inside floor at 140 -> cannot jump ("Inside a block does not count")
+  body.y[SR_FOOT_L] = 140.5;
+  assert.equal(canFootJump(body, SR_FOOT_L, floor), false, 'foot inside block cannot jump');
+
+  // 6. Empty world (null solid mask) -> cannot jump
+  assert.equal(canStickmanJump(body, null), false, 'null solid mask cannot jump');
+});
+
+test('stickman cannot jump up vertical walls in mid-air', () => {
+  // A vertical wall on the left (x <= 50) and open air everywhere else
+  const wallX = 50;
+  const verticalWall = {
+    isSolid: (x: number, _y: number): boolean => x <= wallX,
+  } as unknown as SolidMask;
+
+  // Spawn the stickman in mid-air right next to the vertical wall
+  const body = createStickRangerBody(wallX + 4.8, 100);
+  advanceFrames(body, verticalWall, -1, 10); // push left against the vertical wall
+
+  // Verify body is touching/pressing the wall
+  assert.ok(body.x[SR_HIP] <= wallX + 8, 'body should be near the wall');
+
+  // Ground check must report FALSE because there is no floor underneath the feet
+  assert.equal(canStickmanJump(body, verticalWall), false, 'stickman touching vertical wall cannot jump');
+
+  // Requesting jumps while pressing against the wall should not produce upward launches
+  const startHipY = body.y[SR_HIP];
+  for (let f = 0; f < 30; f++) {
+    requestStickRangerJump(body);
+    stepStickRangerBody(body, verticalWall, -1, SR_FRAME_MS);
+  }
+
+  // Hip should have fallen under gravity, not climbed the wall
+  assert.ok(
+    body.y[SR_HIP] > startHipY,
+    `stickman climbed wall: hipY was ${startHipY}, became ${body.y[SR_HIP]}`,
+  );
+});
+
+test('repeated jump spam under a thin 8-pixel ceiling never tunnels limbs upward', () => {
+  // Thin ceiling between y = 92 and y = 100 (8 pixels thick), floor at y = 140
+  const thinCeiling = {
+    isSolid: (_x: number, y: number): boolean => (y >= 92 && y <= 100) || y >= 140,
+  } as unknown as SolidMask;
+
+  const body = createStickRangerBody(100, 140 - 9.6);
+  advanceFrames(body, thinCeiling, 0, 30); // settle on floor
+
+  // Repeatedly spam jump requests every single frame for 200 frames
+  for (let f = 0; f < 200; f++) {
+    requestStickRangerJump(body);
+    stepStickRangerBody(body, thinCeiling, 0, SR_FRAME_MS);
+
+    // Every joint must strictly stay in the room (y >= 100), never penetrating y in [92, 100] or tunneling above 92
+    for (let i = 0; i < SR_POINT_COUNT; i++) {
+      assert.ok(
+        body.y[i] >= 100,
+        `frame ${f}: joint ${i} tunneled into or above thin ceiling: y=${body.y[i]} < 100`,
+      );
+    }
+  }
+});
+

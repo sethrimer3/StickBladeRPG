@@ -20,6 +20,7 @@ import {
   resetStickRangerBody,
   stepStickRangerBody,
   requestStickRangerJump,
+  canStickmanJump,
   SR_HIP,
   SR_HEAD,
   SR_FOOT_L,
@@ -97,7 +98,7 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
   cluster.velocityXWorld = (body.x[SR_HIP] - body.prevX[SR_HIP]) * framesPerSecond;
   cluster.velocityYWorld = (body.y[SR_HIP] - body.prevY[SR_HIP]) * framesPerSecond;
 
-  cluster.isGroundedFlag = body.groundContactFlag;
+  cluster.isGroundedFlag = canStickmanJump(body, world.pixelMaterialSystem.solid) ? 1 : 0;
   cluster.isFacingLeftFlag = body.facingDirection < 0 ? 1 : 0;
 
   // Keep the hitbox wrapped around the actual drawn figure so contact damage

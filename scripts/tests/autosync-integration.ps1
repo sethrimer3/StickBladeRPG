@@ -441,6 +441,64 @@ try {
         Assert-True ($content -match 'AUTOSYNC_PAUSED') `
             'sync-repos.ps1 does not check AUTOSYNC_PAUSED'
     }
+
+    Invoke-Test 'the script the scheduled task actually launches checks pause leases' {
+        # The guard above watches a script at a FIXED path. That is what let the
+        # second incident through: the `\SyncGithubRepos` task launches a wrapper
+        # in a different repository entirely (DustWeaver's), whose runner still
+        # selected the safe path by directory name and fell through to a generic
+        # `git add -A` with no pause check. The fixed-path guard could not see it.
+        #
+        # So resolve the runner the way the scheduler does — from the task's own
+        # action — and assert whatever that turns out to be honours leases.
+        $task = Get-ScheduledTask -TaskName 'SyncGithubRepos' -ErrorAction SilentlyContinue
+        if ($null -eq $task) {
+            Write-Host '  (skipped: scheduled task \SyncGithubRepos not registered)'
+            return
+        }
+
+        $launched = @()
+        foreach ($action in @($task.Actions)) {
+            $command = "$($action.Execute) $($action.Arguments)"
+            foreach ($match in [regex]::Matches($command, '(?<path>[A-Za-z]:\\[^"'']+?\.(?:vbs|ps1))')) {
+                $path = $match.Groups['path'].Value
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+                $launched += $path
+                # A .vbs wrapper is a shim; the thing that commits is the .ps1
+                # it runs, so follow one level through it.
+                if ($path -like '*.vbs') {
+                    $wrapper = Get-Content -LiteralPath $path -Raw
+                    foreach ($inner in [regex]::Matches($wrapper, '(?<path>[A-Za-z]:\\[^"'']+?\.ps1)')) {
+                        $innerPath = $inner.Groups['path'].Value
+                        if (Test-Path -LiteralPath $innerPath -PathType Leaf) { $launched += $innerPath }
+                    }
+                }
+            }
+        }
+
+        $runners = @($launched | Where-Object { $_ -like '*.ps1' } | Sort-Object -Unique)
+        Assert-True ($runners.Count -gt 0) `
+            "could not resolve any PowerShell runner from the scheduled task's action; inspect it manually"
+
+        foreach ($runner in $runners) {
+            Write-Host "  resolved runner: $runner"
+            $runnerSource = Get-Content -LiteralPath $runner -Raw
+            # Strip comments before the directory-name check below: a runner is
+            # expected to DESCRIBE the defect it fixed, and that prose must not
+            # read as the defect itself.
+            $runnerCode = (
+                (Get-Content -LiteralPath $runner) |
+                    Where-Object { $_ -notmatch '^\s*#' }
+            ) -join [Environment]::NewLine
+            Assert-True ($runnerSource -match 'AUTOSYNC_PAUSE_LEASES') `
+                "the scheduled runner '$runner' does not check AUTOSYNC_PAUSE_LEASES; agent leases will be ignored"
+            Assert-True ($runnerSource -match 'AUTOSYNC_PAUSED') `
+                "the scheduled runner '$runner' does not check AUTOSYNC_PAUSED"
+            # Directory-name detection is the specific defect that recurred twice.
+            Assert-True ($runnerCode -notmatch '\$\w*[Nn]ame\s+-eq\s+') `
+                "the scheduled runner '$runner' selects the safe path by directory name; use presence of scripts\autosync.ps1 instead"
+        }
+    }
 } finally {
     Clear-LocalRemote
     Get-Process powershell -ErrorAction SilentlyContinue | Where-Object {

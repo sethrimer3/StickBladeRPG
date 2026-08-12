@@ -60,13 +60,19 @@ releasing that exact ID.
 ## Who actually enforces a lease
 
 A lease only protects the tree if the process doing the committing checks for
-it. Three runners can commit this repository, and all three must check:
+it. Four runners can commit this repository, and all four must check:
 
 | Runner | Location | Checks |
 |---|---|---|
 | `scripts/autosync.ps1` | this repo | marker + leases (always did) |
 | `scripts/scheduled-sync-all-repos.ps1` | this repo | marker + leases, and delegates to the repo-local protocol when `scripts/autosync.ps1` exists |
+| `scheduled-sync-all-repos.ps1` | **DustWeaver's copy — this is the one the scheduled task actually launches** | marker + leases, and delegates by protocol presence |
 | `sync-repos.ps1` | machine-wide, one directory above this repo | marker + leases, and delegates to the repo-local protocol |
+
+Only the first is version-controlled here. The others live outside this
+repository, so nothing stops them regressing — which is why the guard described
+below resolves the runner from the scheduled task itself rather than from a
+fixed path.
 
 Fixed in BUILD 615 after auto-sync committed an agent's in-progress tree twice
 while a lease was held (commits `d53116ab` and `134e54ae`). Two independent
@@ -83,13 +89,34 @@ defects:
 
 `scripts/tests/autosync-integration.ps1` covers all of this: three functional
 tests drive the scheduled runner against temporary repositories holding a lease,
-a legacy marker, and a deliberately non-`StickBlade` directory name, plus a
-source guard asserting the machine-wide script still checks both. The three
-functional tests were verified to fail against the pre-fix runner.
+a legacy marker, and a deliberately non-`StickBlade` directory name, plus source
+guards over the runners that live outside this repository. The three functional
+tests were verified to fail against the pre-fix runner.
 
-Note that `sync-repos.ps1` lives outside this repository and is therefore not
-version-controlled here. If it is restored from a backup or another machine,
-re-apply the lease check — the source-guard test will fail loudly if it regresses.
+### The same defect recurred (BUILDs 626–629)
+
+Auto-sync committed and pushed an agent's in-progress work three more times
+(`8a919cbe`, `4f8d558c`, and the tree behind `2d66dd13`) while a valid lease was
+held. Root cause: the `\SyncGithubRepos` task does not launch this repository's
+wrapper at all — it launches **DustWeaver's** copy of
+`scheduled-sync-all-repos.ps1`, which still selected the safe repository-local
+path with a directory-name test (`-eq 'DustWeaver'`) and fell through to a
+generic `git add -A` with no pause check for everything else. The BUILD 615 fix
+had been applied only to this repository's copy, which nothing runs.
+
+The machine-wide `sync-repos.ps1` had independently regressed to the same shape,
+special-casing `Equatoria_Idle` by name with no lease check on the generic path.
+
+Both were repaired the same way — delegate by presence of `scripts/autosync.ps1`,
+and honour the marker and leases on the generic path — and the guard was
+strengthened: it now reads the `\SyncGithubRepos` task's own action, follows the
+`.vbs` wrapper to the `.ps1` it runs, and asserts *that* file checks both, plus
+that it does not select its safe path by directory name. A fixed-path guard
+could not see this class of failure, which is precisely why it recurred.
+
+Note that these runners live outside this repository and are therefore not
+version-controlled here. If one is restored from a backup or another machine,
+re-apply the lease check — the source guards will fail loudly if it regresses.
 
 ## Lock and recovery
 
@@ -126,14 +153,25 @@ Task `\SyncGithubRepos` retains its ten-minute schedule, user context, hidden
 execution, and `C:\Users\srime\Documents\GitHub` working directory. It launches:
 
 ```text
-wscript.exe "C:\Users\srime\Documents\GitHub\StickBlade\scripts\scheduled-sync-all-repos-hidden.vbs"
+wscript.exe "C:\Users\srime\Documents\GitHub\DustWeaver\scripts\scheduled-sync-all-repos-hidden.vbs"
 ```
 
-That tracked wrapper runs `scripts/scheduled-sync-all-repos.ps1`, which verifies
-StickBlade's identity and delegates it to `scripts/autosync.ps1`; other
-repositories retain their prior behavior. While any lease or the emergency
-marker is present, StickBlade exits successfully and the scheduler continues
-servicing other repositories.
+Read that path carefully: it is **DustWeaver's** wrapper, not this repository's.
+This repo's own `scripts/scheduled-sync-all-repos-hidden.vbs` is not what the
+scheduler runs, and an earlier version of this document claimed otherwise —
+which is how a fix landed in the wrong copy and let the defect recur. Confirm
+what is actually scheduled before trusting any of this:
+
+```powershell
+(Get-ScheduledTask -TaskName 'SyncGithubRepos').Actions | Format-List Execute, Arguments
+```
+
+That wrapper runs DustWeaver's `scheduled-sync-all-repos.ps1`, which delegates
+any repository owning `scripts/autosync.ps1` to that script — which verifies its
+own repository identity and re-checks the pause state itself. Repositories
+without a protocol take a generic path that still honours the marker and leases.
+While any lease or the emergency marker is present, StickBlade exits
+successfully and the scheduler continues servicing other repositories.
 
 Run the disposable Git-repository regression suite with:
 

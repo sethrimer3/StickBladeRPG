@@ -190,11 +190,7 @@ const JUMP_IMPULSE = 1.85;
 const LANDING_ABSORB = 0.15;
 /** Airborne frames required before a touchdown counts as a real landing. */
 const LANDING_ABSORB_MIN_AIR_FRAMES = 8;
-/**
- * Frames after leaving the ground during which a jump is still allowed
- * (coyote time). `framesSinceGroundContact` already tracks this for the gait.
- */
-const JUMP_COYOTE_FRAMES = 4;
+
 /**
  * Frames a queued jump survives while airborne, so a press slightly before
  * landing still fires on touchdown instead of being swallowed.
@@ -328,6 +324,48 @@ export function requestStickRangerJump(body: StickRangerBody): void {
 }
 
 /**
+ * Checks whether a specific foot of the stickman is in a valid grounded
+ * position for jumping:
+ *   1. The foot itself must NOT be inside a solid block ("Inside a block does not count").
+ *   2. The foot must be within a rectangle space 2 in-game pixels above a valid solid surface.
+ */
+export function canFootJump(body: StickRangerBody, footIndex: number, solid: SolidMask | null): boolean {
+  if (solid === null) return false;
+
+  const fx = body.x[footIndex];
+  const fy = body.y[footIndex];
+
+  // 1. Inside a block does not count
+  if (isSolidAt(solid, fx, fy)) {
+    return false;
+  }
+
+  // 2. Check 2 in-game pixels above tiles/valid surfaces
+  // Sample the foot's horizontal footprint [fx - 1, fx + 1] and vertical space [1, 2] px below fy
+  const minX = Math.floor(fx - 1);
+  const maxX = Math.floor(fx + 1);
+
+  for (let x = minX; x <= maxX; x++) {
+    // The column at the foot's level must be open air (not a vertical wall)
+    if (!isSolidAt(solid, x, fy)) {
+      if (isSolidAt(solid, x, fy + 1) || isSolidAt(solid, x, fy + 2)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Returns true if at least one of the stickman's feet is in a rectangle space
+ * 2 in-game pixels above tiles/valid surfaces, and not inside a block.
+ */
+export function canStickmanJump(body: StickRangerBody, solid: SolidMask | null): boolean {
+  return canFootJump(body, SR_FOOT_L, solid) || canFootJump(body, SR_FOOT_R, solid);
+}
+
+/**
  * Verlet integration for one point — Stick Ranger's `X(a, b, c, d)`.
  * Gravity and damping are arguments, not constants, because varying them
  * per point per frame is how the character animates.
@@ -371,15 +409,32 @@ function constrain(
 }
 
 /**
- * Swept, axis-separated, elastic collision for one point using Maddy Thorson's
- * 1-pixel integer-resolution obstruction sweep.
+ * Resolves an overlap if a point starts inside solid geometry by finding the
+ * nearest open pixel in a small radius, never defaulting to an upward push.
+ */
+function resolveOverlap(solid: SolidMask, x: number, y: number): { x: number; y: number } {
+  for (let r = 1; r <= 4; r++) {
+    // Check cardinal directions first: down, up, left, right
+    if (!isSolidAt(solid, x, y + r)) return { x, y: y + r };
+    if (!isSolidAt(solid, x, y - r)) return { x, y: y - r };
+    if (!isSolidAt(solid, x + r, y)) return { x: x + r, y };
+    if (!isSolidAt(solid, x - r, y)) return { x: x - r, y };
+    // Check diagonals
+    if (!isSolidAt(solid, x + r, y + r)) return { x: x + r, y: y + r };
+    if (!isSolidAt(solid, x - r, y + r)) return { x: x - r, y: y + r };
+    if (!isSolidAt(solid, x + r, y - r)) return { x: x + r, y: y - r };
+    if (!isSolidAt(solid, x - r, y - r)) return { x: x - r, y: y - r };
+  }
+  return { x, y };
+}
+
+/**
+ * Swept, axis-separated, elastic collision for one point using continuous 1-pixel substeps.
  *
  * Traverses delta displacement 1 pixel at a time along Y, then X. If solid
  * geometry is encountered, movement halts immediately at the solid boundary,
- * preventing any overlap or tunneling into blocks upward, downward, or laterally.
- *
- * Normal velocity is reflected with SURFACE_TANGENT_RETENTION so the character
- * bounces elastically rather than sticking or clipping.
+ * bounces elastically with SURFACE_TANGENT_RETENTION, and prevents any overlap
+ * or tunneling into blocks upward, downward, or laterally.
  */
 function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null): boolean {
   if (solid === null) return false;
@@ -390,6 +445,15 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null)
   // Rewind: prev holds the pre-integration position, and this pass owns the move.
   body.x[i] = body.prevX[i];
   body.y[i] = body.prevY[i];
+
+  // Overlap recovery if start position is inside solid geometry
+  if (isSolidAt(solid, body.x[i], body.y[i])) {
+    const pushed = resolveOverlap(solid, body.x[i], body.y[i]);
+    body.x[i] = pushed.x;
+    body.y[i] = pushed.y;
+    body.prevX[i] = pushed.x;
+    body.prevY[i] = pushed.y;
+  }
 
   const distance = Math.sqrt(dx * dx + dy * dy);
   // 1-pixel integer-resolution substeps (Maddy Thorson precision)
@@ -422,15 +486,9 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null)
   // Final overlap safeguard: if currently inside solid geometry, push out immediately
   if (isSolidAt(solid, body.x[i], body.y[i])) {
     hit = true;
-    if (!isSolidAt(solid, body.x[i], body.y[i] + 1)) {
-      body.y[i] += 1;
-    } else if (!isSolidAt(solid, body.x[i], body.y[i] - 1)) {
-      body.y[i] -= 1;
-    } else if (!isSolidAt(solid, body.x[i] + 1, body.y[i])) {
-      body.x[i] += 1;
-    } else if (!isSolidAt(solid, body.x[i] - 1, body.y[i])) {
-      body.x[i] -= 1;
-    }
+    const pushed = resolveOverlap(solid, body.x[i], body.y[i]);
+    body.x[i] = pushed.x;
+    body.y[i] = pushed.y;
   }
 
   return hit;
@@ -458,13 +516,15 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
 
   // ── 0. Jump ─────────────────────────────────────────────────────────────
   // Fires before integration so the impulse is part of this frame's motion.
-  // Applied to every point equally: the constraints then have nothing to
-  // resolve and the figure leaves the ground in its current pose.
+  // Applied to every point equally by adjusting prevY (velocity impulse in Verlet)
+  // so points do not teleport into solid ceilings before integration and collision.
+  // Requires at least one foot in a 2px rectangle space above a solid surface,
+  // and not inside a block ("Inside a block does not count").
   if (body.jumpBufferFrames > 0) {
     body.jumpBufferFrames -= 1;
-    if (body.framesSinceGroundContact <= JUMP_COYOTE_FRAMES) {
+    if (canStickmanJump(body, solid)) {
       for (let i = 0; i < SR_POINT_COUNT; i++) {
-        body.y[i] -= JUMP_IMPULSE;
+        body.prevY[i] += JUMP_IMPULSE;
       }
       body.jumpBufferFrames = 0;
       body.jumpFiredFlag = 1;
