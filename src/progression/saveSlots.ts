@@ -5,7 +5,7 @@
  * Three save slots are available (indices 0–2).
  */
 
-import { PlayerProgress, createDefaultProgress, createOfficialNewProfileProgress, sanitizePlayerDustProgress, sanitizePlayerCharacterStats, sanitizePlayerPartyState, migrateStarterFireDustUnlock } from './playerProgress';
+import { PlayerProgress, createDefaultProgress, createOfficialNewProfileProgress, sanitizePlayerDustProgress, sanitizePlayerCharacterStats, sanitizePlayerPartyState, sanitizePlayerInventory, migrateStarterFireDustUnlock } from './playerProgress';
 import { migrateLegacyWeaveUnlocks } from './weaveMigration';
 // Presentation-only: used by the two display formatters at the bottom of this
 // file. Save serialisation and the slot schema stay locale-independent.
@@ -103,6 +103,9 @@ export function loadSaveSlot(slotIndex: number): SaveSlotData | null {
     // port omit `party` entirely; sanitizePlayerPartyState guarantees a valid
     // 3-member roster with synchronized stats.
     sanitizePlayerPartyState(parsed.progress);
+    // Backfill/repair the carried inventory. Runs after the party pass because
+    // the starter-weapon reconciliation reads the leader's equipped main hand.
+    sanitizePlayerInventory(parsed.progress);
     // Migrate legacy shield_sword secondary-weave saves to grant the new
     // independent Sword + Shield unlocks (idempotent; never removes an
     // ability the save already has — see weaveMigration.ts).

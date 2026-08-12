@@ -112,6 +112,8 @@ export interface InputState {
   isFullscreenToggleTriggeredFlag: boolean;
   /** Set to true for one collectCommands call to open the world map (M key). */
   isMapKeyTriggeredFlag: boolean;
+  /** Set to true for one collectCommands call to open the inventory screen. */
+  isInventoryKeyTriggeredFlag: boolean;
   /**
    * Set to true for one collectCommands call when the player presses the
    * dialogue advance key (Enter or E). Edge-triggered — only fires once per keydown,
@@ -170,6 +172,7 @@ export function createInputState(): InputState {
     isInteractReleaseEdgeFlag: false,
     isFullscreenToggleTriggeredFlag: false,
     isMapKeyTriggeredFlag: false,
+    isInventoryKeyTriggeredFlag: false,
     isDialogueAdvanceTriggeredFlag: false,
   };
 }
@@ -390,6 +393,7 @@ export function clearAllTriggeredInputFlags(state: InputState): void {
   state.isInteractReleaseEdgeFlag = false;
   state.isFullscreenToggleTriggeredFlag = false;
   state.isMapKeyTriggeredFlag = false;
+  state.isInventoryKeyTriggeredFlag = false;
   state.isDialogueAdvanceTriggeredFlag = false;
 }
 
@@ -449,6 +453,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     }
     if ((e.key === 'm' || e.key === 'M') && !e.repeat) {
       state.isMapKeyTriggeredFlag = true;
+    }
+    if (keyMatches(e.key, b.openInventory) && !e.repeat) {
+      state.isInventoryKeyTriggeredFlag = true;
     }
     // Dialogue advance: Enter or E key, edge-triggered (no repeat).
     // Using Enter/E allows advancing dialogue without conflicting with jump (Space/W).
@@ -757,6 +764,11 @@ export function collectCommands(input: InputState): GameCommand[] {
   if (input.isMapKeyTriggeredFlag) {
     input.isMapKeyTriggeredFlag = false;
     commands.push({ kind: CommandKind.OpenMap });
+  }
+
+  if (input.isInventoryKeyTriggeredFlag) {
+    input.isInventoryKeyTriggeredFlag = false;
+    commands.push({ kind: CommandKind.OpenInventory });
   }
 
   // ---- Dialogue advance command ------------------------------------------

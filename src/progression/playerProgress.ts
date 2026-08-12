@@ -24,6 +24,12 @@ import {
   createDefaultParty,
   sanitizePartyState,
 } from '../sim/party/partyState';
+import {
+  type PlayerInventory,
+  createDefaultInventory,
+  reconcileStarterEquipment,
+  sanitizeInventory,
+} from '../sim/party/inventory';
 
 export { getSlotCost, totalSlotCost };
 
@@ -165,6 +171,14 @@ export interface PlayerProgress {
   party?: PartyState;
 
   /**
+   * Carried items and coins ported from STICK-RPG — the pool the equipment
+   * slots in `party` draw from. Optional on the wire so saves written before
+   * this field existed still load; `loadSaveSlot` backfills and sanitizes it
+   * via `sanitizePlayerInventory`. See `src/sim/party/inventory.ts`.
+   */
+  inventory?: PlayerInventory;
+
+  /**
    * Completed world map stage IDs (e.g. 'world1Stage1', 'world1Stage2') ported
    * from STICK-RPG. Optional for backwards compatibility with legacy saves.
    */
@@ -231,6 +245,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     permanentlyOpenGateKeys: [],
     characterStats: createDefaultCharacterStats(),
     party: createDefaultParty(),
+    inventory: createDefaultInventory(),
     completedStageIds: [],
   };
 }
@@ -257,6 +272,20 @@ export function sanitizePlayerPartyState(progress: PlayerProgress): void {
   // If characterStats exists, ensure party leader's stats stay synchronized.
   if (progress.characterStats && progress.party.members[0]) {
     progress.party.members[0].stats = progress.characterStats;
+  }
+}
+
+/**
+ * Ensures `progress.inventory` is present, internally consistent, and agrees
+ * with the party's equipment slots.
+ *
+ * Must run *after* `sanitizePlayerPartyState`, because the starter-weapon
+ * reconciliation reads the leader's main hand. Idempotent.
+ */
+export function sanitizePlayerInventory(progress: PlayerProgress): void {
+  progress.inventory = sanitizeInventory(progress.inventory);
+  if (progress.party) {
+    reconcileStarterEquipment(progress.inventory, progress.party);
   }
 }
 

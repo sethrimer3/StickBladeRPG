@@ -116,6 +116,8 @@ export interface GameCommandContext {
   combatText: CombatTextSystem;
   currentRoomId: string;
   openMapOnly: () => void;
+  /** Opens the inventory screen (equipment + carried items). */
+  openInventory: () => void;
   /** The active room definition (used for dust swarm pickups). */
   currentRoom: RoomDef;
   /** Keys in the format `${roomId}:dustswarm:${index}` for collected dust swarms. */
@@ -167,7 +169,7 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
     virtualWidthPx, virtualHeightPx,
     skillTombRenderer, skillTombEffectRenderer,
     progress, consumedSkillTombKeySet, combatText,
-    currentRoomId, openMapOnly,
+    currentRoomId, openMapOnly, openInventory,
     currentRoom, collectedDustSwarmKeySet, nowMs,
     linkedAnchorIndex, linkedAnchorRoomId,
     setLambdaAnchorLink, clearLambdaAnchorLink, lambdaTeleportFlash,
@@ -395,6 +397,8 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
       }
     } else if (cmd.kind === CommandKind.OpenMap) {
       openMapOnly();
+    } else if (cmd.kind === CommandKind.OpenInventory) {
+      openInventory();
     } else if (cmd.kind === CommandKind.Interact) {
       interactInputPulseTrigger = true;
       const playerForInteract = world.clusters[0];

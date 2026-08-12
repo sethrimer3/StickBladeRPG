@@ -59,7 +59,11 @@ import { computeRoomRenderStateKey } from '../render/walls/roomRenderState';
 import { preloadTransitionSprites } from '../render/walls/seamBlending';
 import type { SkillTombRenderer } from '../render/skillTombRenderer';
 import type { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
-import type { PlayerProgress } from '../progression/playerProgress';
+import {
+  type PlayerProgress,
+  sanitizePlayerPartyState,
+  sanitizePlayerInventory,
+} from '../progression/playerProgress';
 import {
   type PlayerWeaveLoadout,
   sanitizePlayerWeaveLoadoutForProgress,
@@ -138,7 +142,7 @@ import { resetPoisonExposureState } from '../sim/poisonField/poisonExposureState
 import { resetVoidDashState } from '../sim/clusters/voidDash';
 import { resetPlayerWeaponRoomState, equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
 import { spawnFollowerClusters } from '../sim/party/partyWorld';
-import { sanitizePartyState, getActiveMember } from '../sim/party/partyState';
+import { getActiveMember } from '../sim/party/partyState';
 import type { CombatMode } from '../sim/combatMode';
 import { STICKMAN_CHARACTER_ID } from '../sim/clusters/stickRangerPlayer';
 
@@ -437,9 +441,20 @@ function applyPlayerWeaveWorldFields(
   // selection back.
   world.characterId                    = STICKMAN_CHARACTER_ID;
   // Mirror party state and active member's combat stats into the world.
-  world.party                          = ctx.progress?.party ? sanitizePartyState(ctx.progress.party) : null;
+  //
+  // Sanitized in place and then shared BY REFERENCE with `progress`, so XP and
+  // coins earned during a room accumulate in the record the inventory screen
+  // reads and the next save writes. (Previously the sanitize produced a private
+  // copy, and every reward granted mid-room was discarded at the next room
+  // transition.)
+  if (ctx.progress) {
+    sanitizePlayerPartyState(ctx.progress);
+    sanitizePlayerInventory(ctx.progress);
+  }
+  world.party                          = ctx.progress?.party ?? null;
   const activeMember                   = world.party ? getActiveMember(world.party) : null;
   world.playerCharacterStats           = activeMember ? activeMember.stats : (ctx.progress?.characterStats ?? null);
+  world.playerInventory                = ctx.progress?.inventory ?? null;
   // Equip active member's mainHand weapon if specified, otherwise default starter weapon.
   const desiredWeaponId = activeMember?.equipment.mainHand ?? DEFAULT_STARTER_WEAPON_ID;
   if (world.playerWeapon.equippedWeaponId !== desiredWeaponId) {

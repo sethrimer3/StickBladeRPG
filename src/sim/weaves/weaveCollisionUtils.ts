@@ -16,6 +16,7 @@ import { spawnSoulOrb } from '../weapons/soulOrbs';
 import { getStaffRaiseOnDeathConfig, isPointInsideActiveStaffAura } from '../weapons/staffChannel';
 import { raiseThrallFromCorpse } from '../weapons/weaponSummons';
 import { getLeaderCluster } from '../party/partyWorld';
+import { addGold } from '../party/inventory';
 
 /**
  * Squared distance from point `(px,py)` to the closest point on the segment
@@ -78,6 +79,12 @@ export function applyRoutedWeaveDamage(
         } else if (world.playerCharacterStats) {
           grantExperience(world.playerCharacterStats, c.xpValue);
         }
+      }
+
+      // Coin drop. `coinValue` is authored by gameEnemySpawn from the ported
+      // STICK-RPG enemy traits; this is where it finally reaches the player.
+      if (c.coinValue > 0 && world.playerInventory) {
+        addGold(world.playerInventory, c.coinValue);
       }
 
       if (world.playerWeapon) {

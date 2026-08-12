@@ -2680,3 +2680,40 @@ Notes for whoever does 3b:
   active member's stats should supersede it rather than both being maintained.
 - Nothing in 3a is reachable from gameplay yet — no `WorldState` field, no UI,
   no persistence. It is a tested foundation, not a feature.
+
+## Inventory system (BUILD 633)
+
+The STICK-RPG inventory screen, opened with `I` (rebindable — `openInventory`
+in `src/input/keybindings.ts`).
+
+- `src/sim/party/inventory.ts` is the model: stacks, coins, and the equip/unequip
+  *moves* between the pool and `partyState`'s slots. Its one invariant is that an
+  **equipped item is not in the inventory** — equipping removes a copy from the
+  pool, unequipping puts one back, and a displaced item always returns (including
+  the off-hand a two-hander evicts). Both directions refuse and roll back rather
+  than destroy an item when the pool cannot take it.
+- `src/ui/inventoryPanel.ts` is the screen: a sticky status bar (level, XP,
+  health, derived attack/defense, coins, and the three equipment slots) over the
+  carried-item grid. Unlike `partyPanel.ts` / `skillPanel.ts` it edits the live
+  records rather than a clone, because a toggle-open/closed screen with no
+  Confirm button must not silently discard the player's edits.
+- Persisted as `PlayerProgress.inventory`; `sanitizePlayerInventory` backfills
+  pre-inventory saves and hands an empty-handed leader the starter weapon, which
+  is what makes the previously implicit `DEFAULT_STARTER_WEAPON_ID` fallback
+  visible in the UI.
+- `gameLoadRoomPhases` now shares `progress.party` with `world.party` **by
+  reference** instead of mirroring a private sanitized copy. That copy meant XP
+  granted mid-room was discarded at the next room transition; the same reference
+  sharing is what lets enemy coin drops (`ClusterState.coinValue`, previously
+  authored but never collected) accumulate into the saved record.
+
+Not done, and deliberately so:
+
+- **Armor has no item table.** The armor subslot accepts ids structurally, so the
+  panel shows the slot but offers no way to fill it, and `addInventoryItem`
+  refuses ids the weapon table does not know (matching what survives a save).
+  Add the armor table and both restrictions can lift together.
+- **No shop, no item pickups.** Coins accumulate but nothing spends them, and
+  items enter the inventory only via the dev hook `window.__dwGrant(id, count)`.
+  A drop/pickup path and the donor's shop are the natural next step.
+- Glyphs (`glyphDefs.ts`) are not inventory items yet; socketing has no UI.

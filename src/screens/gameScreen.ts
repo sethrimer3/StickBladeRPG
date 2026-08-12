@@ -30,6 +30,7 @@ import { createCameraState, getCameraOffset } from '../render/camera';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { WeaponRenderer } from '../render/effects/weaponRenderer';
 import { getEquippedWeaponDef, equipPlayerWeapon } from '../sim/weapons/playerWeaponState';
+import { addInventoryItem, createDefaultInventory } from '../sim/party/inventory';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
 import { handleGateRoomExit, handleGateSaveCompleted, interactWithNearbyChallengeTotem, updateRoomChallengeElements } from './gameRoomChallenge';
 import { PlayerProgress } from '../progression/playerProgress';
@@ -1185,7 +1186,8 @@ export function startGameScreen(
     uiRoot,
     canOpenPauseMenu: () => !gameOverlayController.state.isPlayerDead
       && !gameOverlayController.state.isSkillTombMenuOpen
-      && !gameOverlayController.state.isMapOnlyOpen,
+      && !gameOverlayController.state.isMapOnlyOpen
+      && !gameOverlayController.state.isInventoryOpen,
     onResetFrameClock: () => {
       lastTimestampMs = 0;
     },
@@ -1566,6 +1568,7 @@ export function startGameScreen(
         progress, consumedSkillTombKeySet, combatText,
         currentRoomId: currentRoom.id,
         openMapOnly: gameOverlayController.openMapOnly,
+        openInventory: gameOverlayController.openInventory,
         currentRoom,
         collectedDustSwarmKeySet,
         levelRng,
@@ -1606,7 +1609,8 @@ export function startGameScreen(
     // While paused or in a menu, still render the frozen scene but skip sim and transitions
     if (pauseController.state.isPaused
       || gameOverlayController.state.isSkillTombMenuOpen
-      || gameOverlayController.state.isMapOnlyOpen) {
+      || gameOverlayController.state.isMapOnlyOpen
+      || gameOverlayController.state.isInventoryOpen) {
       playerSfx.stopWind();
       dustWheelController.cancel(timestampMs);
       deactivateShieldWeave(world.shieldWeave);
@@ -2346,9 +2350,10 @@ export function startGameScreen(
 
     // ── DEV-only inspection / equip hook for the STICK-RPG weapon ────────
     // `window.__dwWeapon()` — reports the equipped weapon, swing, and live
-    // projectile count. `window.__dwEquip('greatsword')` swaps weapons at
-    // runtime, which is the only way to try one until an inventory exists
-    // (see Phase 3 in docs/Todo.md).
+    // projectile count. `window.__dwEquip('greatsword')` swaps the held weapon
+    // directly, bypassing the equipment slots; `window.__dwGrant('greatsword')`
+    // instead puts one in the inventory so it can be equipped from the
+    // inventory screen (`I`) the way the player would.
     (w as DwWin & { __dwWeapon?: () => unknown }).__dwWeapon = (): unknown => {
       const weapon = world.playerWeapon;
       const def = getEquippedWeaponDef(weapon);
@@ -2367,6 +2372,16 @@ export function startGameScreen(
         const ok = equipPlayerWeapon(world.playerWeapon, id);
         console.log(`[dev] equip ${String(id)} → ${ok ? 'ok' : 'refused'}`);
         return ok;
+      };
+
+    (w as DwWin & { __dwGrant?: (id: string, count?: number) => number }).__dwGrant =
+      (id: string, count = 1): number => {
+        if (progress === undefined) return 0;
+        if (progress.inventory === undefined) progress.inventory = createDefaultInventory();
+        const added = addInventoryItem(progress.inventory, id, count);
+        world.playerInventory = progress.inventory;
+        console.log(`[dev] grant ${id} ×${count} → added ${added}`);
+        return added;
       };
 
     // ── DEV-only spawn hook for The Void Herald boss ─────────────────────

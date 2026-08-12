@@ -4,6 +4,9 @@ import type { SkillTombRenderer } from '../render/skillTombRenderer';
 import type { WorldState } from '../sim/world';
 import { showDeathScreen } from '../ui/deathScreen';
 import { showMapOnlyModal, showSkillTombMenu } from '../ui/skillTombMenu';
+import { showInventoryPanel } from '../ui/inventoryPanel';
+import { getActiveMember } from '../sim/party/partyState';
+import { equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
 import {
   executeGameDeathRespawn,
   type GameDeathRespawnPorts,
@@ -17,6 +20,7 @@ export interface GameOverlayControllerState {
   isPlayerDead: boolean;
   isSkillTombMenuOpen: boolean;
   isMapOnlyOpen: boolean;
+  isInventoryOpen: boolean;
 }
 
 interface CreateGameOverlayControllerParams {
@@ -45,6 +49,7 @@ export interface GameOverlayController {
   showPlayerDeathScreen: () => void;
   openSkillTombMenu: () => void;
   openMapOnly: () => void;
+  openInventory: () => void;
   destroy: () => void;
 }
 
@@ -74,11 +79,13 @@ export function createGameOverlayController(
     isPlayerDead: false,
     isSkillTombMenuOpen: false,
     isMapOnlyOpen: false,
+    isInventoryOpen: false,
   };
 
   let deathScreenCleanup: (() => void) | null = null;
   let skillTombMenuCleanup: (() => void) | null = null;
   let mapOnlyCleanup: (() => void) | null = null;
+  let inventoryCleanup: (() => void) | null = null;
 
   const skillTombActivationPorts: SkillTombActivationPorts = {
     getCurrentRoomOrigin,
@@ -174,6 +181,61 @@ export function createGameOverlayController(
     );
   }
 
+  /**
+   * Opens the inventory screen.
+   *
+   * Refused while another overlay owns the screen, and while the player is
+   * dead — the death screen is modal and its respawn rebuilds the world the
+   * inventory would be editing against.
+   */
+  function openInventory(): void {
+    if (state.isInventoryOpen || state.isPlayerDead) return;
+    if (state.isSkillTombMenuOpen || state.isMapOnlyOpen) return;
+    if (progress === undefined) return;
+
+    const world = getWorld();
+    const inventory = progress.inventory;
+    const party = progress.party;
+    // Both are backfilled by `sanitizePlayerInventory` / `sanitizePlayerPartyState`
+    // on load and on every room activation, so this only trips if the screen is
+    // somehow reached before a room has been loaded.
+    if (inventory === undefined || party === undefined) return;
+
+    const player = world.clusters[0];
+    state.isInventoryOpen = true;
+
+    inventoryCleanup = showInventoryPanel(
+      uiRoot,
+      {
+        inventory,
+        party,
+        healthPoints: player?.healthPoints,
+        maxHealthPoints: player?.maxHealthPoints,
+      },
+      {
+        // Equipment edits are applied to the live records immediately, so the
+        // held weapon has to follow them within the same frozen frame rather
+        // than waiting for the next room load to re-read the slot.
+        onEquipmentChanged: () => {
+          const live = getWorld();
+          const activeMember = getActiveMember(party);
+          live.party = party;
+          if (activeMember) live.playerCharacterStats = activeMember.stats;
+          const weaponId = activeMember?.equipment.mainHand ?? DEFAULT_STARTER_WEAPON_ID;
+          if (live.playerWeapon.equippedWeaponId !== weaponId) {
+            equipPlayerWeapon(live.playerWeapon, weaponId);
+          }
+        },
+        onClose: () => {
+          state.isInventoryOpen = false;
+          inventoryCleanup = null;
+          onResetFrameClock();
+          if (onSave) onSave();
+        },
+      },
+    );
+  }
+
   function destroy(): void {
     if (deathScreenCleanup !== null) {
       deathScreenCleanup();
@@ -187,9 +249,14 @@ export function createGameOverlayController(
       mapOnlyCleanup();
       mapOnlyCleanup = null;
     }
+    if (inventoryCleanup !== null) {
+      inventoryCleanup();
+      inventoryCleanup = null;
+    }
     state.isPlayerDead = false;
     state.isSkillTombMenuOpen = false;
     state.isMapOnlyOpen = false;
+    state.isInventoryOpen = false;
   }
 
   return {
@@ -197,6 +264,7 @@ export function createGameOverlayController(
     showPlayerDeathScreen,
     openSkillTombMenu,
     openMapOnly,
+    openInventory,
     destroy,
   };
 }

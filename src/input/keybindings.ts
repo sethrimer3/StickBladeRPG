@@ -17,6 +17,7 @@ export const KB_ACTIONS = [
   'jump',
   'interact',
   'weaponAttack',
+  'openInventory',
   'toggleFullscreen',
 ] as const;
 
@@ -37,6 +38,7 @@ export const KEYBOARD_ACTION_META: Record<KeyboardAction, KeyboardActionMeta> = 
   // The mouse buttons are owned by the Weave system, so the STICK-RPG weapon
   // attack gets its own rebindable key rather than displacing a weave.
   weaponAttack:     { label: 'Weapon Attack',      alwaysAlternates: [] },
+  openInventory:    { label: 'Inventory',          alwaysAlternates: [] },
   toggleFullscreen: { label: 'Toggle Fullscreen',  alwaysAlternates: [] },
 };
 
@@ -47,6 +49,7 @@ export const DEFAULT_KEYBOARD_BINDINGS: Record<KeyboardAction, string> = {
   jump:             'w',
   interact:         'f',
   weaponAttack:     'q',
+  openInventory:    'i',
   toggleFullscreen: 'p',
 };
 

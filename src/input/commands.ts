@@ -35,6 +35,8 @@ export enum CommandKind {
   AdvanceDialogue = 19,
   ShieldWeaveHold = 20,
   ShieldWeaveEnd = 21,
+  /** Open the inventory screen (equipment + carried items). */
+  OpenInventory = 22,
 }
 
 export interface MovePlayerCommand {
@@ -150,6 +152,11 @@ export interface OpenMapCommand {
   kind: CommandKind.OpenMap;
 }
 
+/** Open the inventory screen. */
+export interface OpenInventoryCommand {
+  kind: CommandKind.OpenInventory;
+}
+
 /** Trigger a zip toward the current grapple anchor (right mouse press). */
 export interface GrappleZipCommand {
   kind: CommandKind.GrappleZip;
@@ -189,6 +196,7 @@ export type GameCommand =
   | WeaveEndSecondaryCommand
   | ToggleFullscreenCommand
   | OpenMapCommand
+  | OpenInventoryCommand
   | GrappleZipCommand
   | AdvanceDialogueCommand
   | ShieldWeaveHoldCommand

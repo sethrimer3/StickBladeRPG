@@ -25,6 +25,7 @@ import { createVoidDashState, type VoidDashState } from './clusters/voidDash';
 import { createPlayerWeaponState, type PlayerWeaponState } from './weapons/playerWeaponState';
 import type { CharacterStats } from './stats/characterStats';
 import type { PartyState } from './party/partyState';
+import type { PlayerInventory } from './party/inventory';
 
 /** Fixed capacity for this tick's Verdant flower-bloom spawn events (see verdantFlowerEventCount). */
 export const VERDANT_FLOWER_EVENTS_CAPACITY = 16;
@@ -465,6 +466,13 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * Null when not initialized.
    */
   party: PartyState | null;
+  /**
+   * The player's carried items and coins, mirrored by reference from
+   * `PlayerProgress` on room load so enemy coin drops accumulate straight into
+   * the record the inventory screen and the save both read. Null when not
+   * initialized, in which case coin drops are simply not collected.
+   */
+  playerInventory: PlayerInventory | null;
 
   // ── Independent Sword Weave ─────────────────────────────────────────
   newSwordActiveFlag: number;
@@ -613,6 +621,12 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * movement/collision passes are skipped. See sim/clusters/stickRangerBody.ts.
    */
   stickRangerBody: StickRangerBody | null;
+
+  // ── Player Auto-Move / Mobile Navigation ─────────────────────────────────
+  /** Player auto-move target block [blockX, blockY] or null for manual input. */
+  playerAutoMoveTargetBlock: [number, number] | null;
+  /** Player auto-move navigation bot state. */
+  playerAutoMoveBotState: import('./ai/stickmanBotAi').StickmanBotState | null;
 }
 
 export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
@@ -735,6 +749,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     playerWeapon:                  createPlayerWeaponState(),
     playerCharacterStats:          null,
     party:                         null,
+    playerInventory:               null,
     newSwordActiveFlag:            0,
     newSwordGestureId:             0,
     newSwordTicksElapsed:          0,
@@ -801,6 +816,8 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     momentumTrailAgeTicks: new Uint8Array(MOMENTUM_TRAIL_MAX_POINTS),
     pixelMaterialSystem: new PixelMaterialSystem(NATIVE_WIDTH_PX, NATIVE_HEIGHT_PX),
     stickRangerBody: null,
+    playerAutoMoveTargetBlock: null,
+    playerAutoMoveBotState: null,
   };
 }
 
