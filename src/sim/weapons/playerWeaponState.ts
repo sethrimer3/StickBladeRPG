@@ -76,6 +76,12 @@ import {
   type ProjectileShieldState,
 } from './projectileShield';
 import {
+  createExpiryFlashPool,
+  resetExpiryFlashPool,
+  tickExpiryFlashes,
+  type ExpiryFlashPool,
+} from './weaponExpiryEffects';
+import {
   createSoulOrbPool,
   resetSoulOrbPool,
   tickSoulOrbs,
@@ -123,6 +129,8 @@ export interface PlayerWeaponState {
   soulsCollected: number;
   /** The Aegis Stave's intercepting ward, up only while that staff channels. */
   projectileShield: ProjectileShieldState;
+  /** Purely visual rings marking where on-expiry effects landed. */
+  expiryFlashes: ExpiryFlashPool;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -142,6 +150,7 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     soulOrbs: createSoulOrbPool(),
     soulsCollected: 0,
     projectileShield: createProjectileShieldState(),
+    expiryFlashes: createExpiryFlashPool(),
   };
 }
 
@@ -161,6 +170,7 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetSummonPool(state.summons);
   resetSoulOrbPool(state.soulOrbs);
   resetProjectileShieldState(state.projectileShield);
+  resetExpiryFlashPool(state.expiryFlashes);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -426,6 +436,7 @@ export function tickPlayerWeapon(
   tickPlayerProjectileShield(world, state, def, player);
 
   tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
+  tickExpiryFlashes(state.expiryFlashes);
 
   // Floating soul drops drift toward the wielder and get collected.
   if (state.soulOrbs.liveCount > 0 && player !== null) {

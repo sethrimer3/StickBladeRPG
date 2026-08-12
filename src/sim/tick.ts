@@ -23,6 +23,7 @@ import { applyClusterMovement } from './clusters/movement';
 import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleRopeAnchor } from './clusters/grapple';
 import { applyEnemyAI } from './clusters/enemyAi';
 import { tickPlayerWeapon } from './weapons/playerWeaponState';
+import { tickPartyAuras } from './party/partyAuras';
 import { applyRockElementalAI } from './clusters/rockElementalAi';
 import { applyRadiantTetherAI } from './clusters/radiantTetherAi';
 import { applyRadiantWebAI } from './clusters/radiantWebAi';
@@ -228,6 +229,9 @@ export function tick(world: WorldState): void {
         ? player
         : null;
     tickPlayerWeapon(world, livingPlayer, world.rng);
+    // After the weapon: the aura's reach depends on whether the staff is still
+    // channelling this tick, which the weapon step is what decides.
+    tickPartyAuras(world, livingPlayer);
   }
 
   // 0.5. Enemy AI — decide attack / block / dodge for each enemy cluster

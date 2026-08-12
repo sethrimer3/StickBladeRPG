@@ -64,6 +64,12 @@ export interface PlayerDamageTarget {
    * module keeps no dependency on the weapon system.
    */
   projectileShield?: DamageAbsorbingWard | null;
+  /**
+   * Fraction of incoming damage removed by a staff aura covering this party
+   * member (`sim/party/partyAuras.ts`). Absent or 0 for every other target, in
+   * which case damage is unchanged from its pre-port behavior.
+   */
+  auraDamageReduction?: number;
 }
 
 /** The subset of a ward this pipeline touches. */
@@ -130,6 +136,21 @@ function applyStatScaling(
   return computeStatDamage(damagePoints, attack, defense, rng);
 }
 
+/**
+ * Removes the share of a hit a covering staff aura absorbs.
+ *
+ * Deliberately not a roll: unlike `applyStatScaling`, this needs no `RngState`,
+ * so it works from every existing call site without threading one through. See
+ * `sim/party/partyAuras.ts` for why the donor's multiplier becomes a fraction.
+ */
+function applyAuraReduction(player: PlayerDamageTarget, damagePoints: number): number {
+  const reduction = player.auraDamageReduction;
+  if (typeof reduction !== 'number' || !Number.isFinite(reduction) || reduction <= 0) {
+    return damagePoints;
+  }
+  return damagePoints * (1 - Math.min(1, reduction));
+}
+
 /** Ticks a ward renders its impact flash after absorbing a hit. */
 export const WARD_HIT_FLASH_TICKS = 12;
 
@@ -162,10 +183,13 @@ export function applyPlayerDamageWithKnockback(
   if (player.challengeReturnGuard === 1) return false;
 
   const scaledDamage = applyStatScaling(player, damagePoints, options);
+  // A protective aura thins the hit before the ward catches what is left: the
+  // aura is armor on the body, the ward is a bubble around it.
+  const afterAura = applyAuraReduction(player, scaledDamage);
   // The ward is spent before motes. A hit it swallows entirely is not a hit:
   // no motes lost, no invulnerability window, no hurt flash — the same shape as
   // a hit fully absorbed by defense below.
-  const afterWard = absorbWithWard(player.projectileShield, scaledDamage);
+  const afterWard = absorbWithWard(player.projectileShield, afterAura);
   const damageToApply = normalizeMoteCount(Math.ceil(afterWard));
   // A hit fully absorbed by defense deals nothing and is not treated as a hit,
   // so it grants no invulnerability window and triggers no hurt feedback.

@@ -257,6 +257,11 @@ export function applyExpiryEffect(
   const radius = effect.radiusWorld;
   if (radius <= 0) return _result;
 
+  // The flash marks where the effect landed, whether or not it caught anything.
+  if (world.playerWeapon) {
+    spawnExpiryFlash(world.playerWeapon.expiryFlashes, xWorld, yWorld, radius, effect.color);
+  }
+
   const slowTicks = getExpiryEffectSlowTicks(effect);
   const appliesSlow = slowTicks > 0 && effect.slowMultiplier > 0 && effect.slowMultiplier < 1;
   const clusters = world.clusters;
@@ -307,6 +312,98 @@ export function applyExpiryEffect(
   }
 
   return _result;
+}
+
+// ---- Visual flashes -------------------------------------------------------
+
+/**
+ * Expanding rings left behind by expiry effects, for the renderer.
+ *
+ * The donor's helpers finish by pushing smoke puffs and expanding rings into
+ * `world.particles`. StickBlade's particle system is *simulation* — its
+ * particles carry mass, elemental behavior, and combat contacts — so spawning
+ * into it for decoration would put live combat particles on the field as a side
+ * effect of a cosmetic choice. This is a purely visual pool instead: position,
+ * radius, color, and a countdown, read by `weaponRenderer.ts` and touched by
+ * nothing else.
+ */
+export const MAX_EXPIRY_FLASHES = 16;
+
+/** Ticks an expiry flash takes to expand and fade (~0.4 s). */
+export const EXPIRY_FLASH_TICKS = 24;
+
+/** Live expiry flashes, parallel arrays indexed by slot. */
+export interface ExpiryFlashPool {
+  isLive: Uint8Array;
+  xWorld: Float32Array;
+  yWorld: Float32Array;
+  /** The effect's radius; the ring expands to it. */
+  radiusWorld: Float32Array;
+  ticksRemaining: Int32Array;
+  color: string[];
+  liveCount: number;
+  /** Round-robin cursor, so a burst of effects never starves the newest. */
+  nextSlot: number;
+}
+
+/** Allocates an empty flash pool. */
+export function createExpiryFlashPool(): ExpiryFlashPool {
+  const n = MAX_EXPIRY_FLASHES;
+  return {
+    isLive: new Uint8Array(n),
+    xWorld: new Float32Array(n),
+    yWorld: new Float32Array(n),
+    radiusWorld: new Float32Array(n),
+    ticksRemaining: new Int32Array(n),
+    color: new Array<string>(n).fill('#ffffff'),
+    liveCount: 0,
+    nextSlot: 0,
+  };
+}
+
+/** Clears every flash. Call on room teardown and respawn. */
+export function resetExpiryFlashPool(pool: ExpiryFlashPool): void {
+  pool.isLive.fill(0);
+  pool.liveCount = 0;
+  pool.nextSlot = 0;
+}
+
+/**
+ * Records one flash, overwriting the oldest slot when full.
+ *
+ * Overwriting rather than dropping keeps the most recent effect visible, which
+ * is the one the player just caused.
+ */
+export function spawnExpiryFlash(
+  pool: ExpiryFlashPool,
+  xWorld: number,
+  yWorld: number,
+  radiusWorld: number,
+  color: string,
+): void {
+  const i = pool.nextSlot;
+  pool.nextSlot = (pool.nextSlot + 1) % MAX_EXPIRY_FLASHES;
+
+  if (pool.isLive[i] === 0) pool.liveCount++;
+  pool.isLive[i] = 1;
+  pool.xWorld[i] = xWorld;
+  pool.yWorld[i] = yWorld;
+  pool.radiusWorld[i] = radiusWorld;
+  pool.ticksRemaining[i] = EXPIRY_FLASH_TICKS;
+  pool.color[i] = color;
+}
+
+/** Ages every flash by one tick. */
+export function tickExpiryFlashes(pool: ExpiryFlashPool): void {
+  if (pool.liveCount <= 0) return;
+  for (let i = 0; i < MAX_EXPIRY_FLASHES; i++) {
+    if (pool.isLive[i] === 0) continue;
+    pool.ticksRemaining[i]--;
+    if (pool.ticksRemaining[i] <= 0) {
+      pool.isLive[i] = 0;
+      pool.liveCount--;
+    }
+  }
 }
 
 /** Advances a cluster's slow timer. Called once per tick per enemy. */

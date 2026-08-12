@@ -42,6 +42,10 @@ import {
 } from '../../sim/weapons/weaponGrip';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
 import { getProjectileShieldConfig } from '../../sim/weapons/projectileShield';
+import {
+  EXPIRY_FLASH_TICKS,
+  MAX_EXPIRY_FLASHES,
+} from '../../sim/weapons/weaponExpiryEffects';
 
 /** Blade thickness in virtual pixels. */
 const BLADE_WIDTH_PX = 2;
@@ -109,6 +113,7 @@ export class WeaponRenderer {
     this._renderProjectiles(ctx, weapon, ox, oy, zoom);
     this._renderSummons(ctx, weapon, ox, oy, zoom);
     this._renderSoulOrbs(ctx, weapon, ox, oy, zoom);
+    this._renderExpiryFlashes(ctx, weapon, ox, oy, zoom);
 
     const def = getEquippedWeaponDef(weapon);
     if (def === null) return;
@@ -383,6 +388,53 @@ export class WeaponRenderer {
         ctx.lineTo(xPx + radiusPx * 1.4, yPx + radiusPx * 1.6);
       }
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Draws the expanding ring an on-expiry effect leaves behind.
+   *
+   * The ring grows to the effect's actual radius and fades out, so what the
+   * player sees is exactly the area that was damaged, slowed, or shoved — the
+   * simulation owns the number, and this never invents its own.
+   */
+  private _renderExpiryFlashes(
+    ctx: CanvasRenderingContext2D,
+    weapon: PlayerWeaponState,
+    ox: number,
+    oy: number,
+    zoom: number,
+  ): void {
+    const pool = weapon.expiryFlashes;
+    if (pool.liveCount <= 0) return;
+
+    ctx.save();
+    for (let i = 0; i < MAX_EXPIRY_FLASHES; i++) {
+      if (pool.isLive[i] === 0) continue;
+
+      // 0 at spawn, 1 at expiry.
+      const progress = 1 - pool.ticksRemaining[i] / EXPIRY_FLASH_TICKS;
+      const xPx = (pool.xWorld[i] - ox) * zoom;
+      const yPx = (pool.yWorld[i] - oy) * zoom;
+      // Starts at 35% and opens to the full radius, so the burst reads as
+      // outward motion rather than as a circle appearing.
+      const radiusPx = pool.radiusWorld[i] * zoom * (0.35 + 0.65 * progress);
+
+      ctx.globalAlpha = Math.max(0, 1 - progress) * 0.75;
+      ctx.strokeStyle = pool.color[i];
+      ctx.lineWidth = Math.max(1, 2.5 * zoom * (1 - progress * 0.6));
+      ctx.beginPath();
+      ctx.arc(xPx, yPx, radiusPx, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // A soft fill early on gives the burst body; it clears well before the
+      // ring does so the ring is what the eye follows outward.
+      if (progress < 0.5) {
+        ctx.globalAlpha = (0.5 - progress) * 0.4;
+        ctx.fillStyle = pool.color[i];
+        ctx.fill();
+      }
     }
     ctx.restore();
   }

@@ -58,6 +58,12 @@ export interface ClusterState {
   slowTicks: number;
   /** Velocity multiplier while `slowTicks > 0`; 1 means no slow. */
   slowMultiplier: number;
+  /**
+   * Fraction of incoming damage removed by a staff aura covering this party
+   * member (`sim/party/partyAuras.ts`). 0 for everything else, and recomputed
+   * every tick, so it can never linger past the channel that granted it.
+   */
+  auraDamageReduction: number;
 
   // ---- Platformer physics -------------------------------------------------
   /** 1 when the cluster is resting on a surface (floor or platform top). */
@@ -1143,6 +1149,7 @@ export function createClusterState(
     projectileShield: null,
     slowTicks: 0,
     slowMultiplier: 1,
+    auraDamageReduction: 0,
     isGroundedFlag: 0,
     isGroundedOnIceFlag: 0,
     isGroundedOnUltraIceFlag: 0,

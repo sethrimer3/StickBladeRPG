@@ -8,6 +8,25 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 629 — STICK-RPG Port: Closing the Two Recorded Gaps (Ally-Targeted Auras, Expiry Visuals)
+
+The port's five phases finished in BUILD 628. This closes the two gaps the plan recorded rather than tracked.
+
+**1. Staff auras now reach the party.**
+- Every donor aura declares `target: 'allies'` with `includeSelf: true`, but only the wielder was ever affected — when the auras landed in Phase 2c there was no party for them to reach. Phase 3 built one; `src/sim/party/partyAuras.ts` connects them.
+- `tickPartyAuras` runs once per tick from `sim/tick.ts`, immediately after the weapon step (which is what decides whether the staff is still channelling), and recomputes coverage for every party cluster inside the aura radius. Nothing is cached across ticks, so an aura cannot outlive its channel.
+- **What an ally gets is damage reduction, and the conversion is a deliberate deviation.** The donor contributes a `defenseMultiplier` to each ally's stats, and defense here means `computeStatDamage`'s mitigation roll — but `applyPlayerDamageWithKnockback` has no `RngState`, and all ~20 of its call sites would have to thread one through to give it one. So the multiplier becomes a deterministic fraction, `reduction = 1 - 1/defenseMultiplier` (×1.6 → 37.5% less damage), capped at 75% so no future donor value can make a member invulnerable. Wired as an optional `PlayerDamageTarget.auraDamageReduction` in the same shape as `statsDefense` and the Aegis ward: absent or 0 for every other target, so no existing damage path changed.
+- Deliberately not applied to allies: `attackMultiplier` (followers do not attack — only the active member has a weapon runtime, and that path already reads the aura directly) and `healthMultiplier` (a member's health is a mote count owned by progression; inflating it from a transient aura would desynchronize that).
+- Note the wielder is assumed to be the party leader, since only the active member carries a weapon runtime. `partyAuras.ts` is the one place that assumption needs revisiting when per-member weapons arrive.
+
+**2. On-expiry effects are now visible.**
+- BUILD 628 deliberately shipped no visuals. The reason not to reuse the donor's approach still stands: the donor pushes smoke puffs and rings into `world.particles`, but StickBlade's particles are *simulation* — mass, elemental behavior, combat contacts — so spawning into that system for decoration would put live combat particles on the field as a cosmetic side effect.
+- Instead: a purely visual 16-slot `ExpiryFlashPool` in `weaponExpiryEffects.ts` (position, radius, color, countdown), written by `applyExpiryEffect`, aged in `tickPlayerWeapon`, drawn by `weaponRenderer.ts` as a ring that expands to **the effect's actual radius** and fades. The simulation owns the number; the renderer never invents its own, so what the player sees is exactly the area that was hit.
+
+**Validation:** added `src/tests/partyAuras.test.ts` (13 tests). `npm test` 3,620 passing, `npm run build` clean, `npm run lint` clean.
+
+---
+
 ## BUILD 628 — STICK-RPG Port Phase 2d: Bespoke On-Expiry Effects, Slash Waves, and the Echo Return
 
 **Accomplished in Phase 2d — Phase 2 is now complete:**

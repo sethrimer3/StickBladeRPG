@@ -5,9 +5,15 @@ Status: all five phases implemented. Phase 1 in BUILD 613; Phase 2 in BUILD 614�
 callbacks plus the slash-wave runtime they needed, in BUILD 628); Phase 3 in BUILD
 621–622; Phase 4 in BUILD 623; Phase 5 in BUILD 624.
 
-Known gaps, each recorded where it lives rather than tracked here: staff auras declare
-`target: 'allies'` but affect only the wielder (true ally targeting across the Phase 3
-party is unimplemented), and the donor's decorative expiry particles were not ported.
+Both recorded gaps were closed in BUILD 629: staff auras now reach recruited party members
+inside their radius (`src/sim/party/partyAuras.ts`, as a deterministic damage reduction —
+see that module for why the donor's mitigation roll could not be used directly), and
+on-expiry effects now draw an expanding ring sized to the effect's own radius
+(`ExpiryFlashPool`, a visual-only pool kept out of the simulation particle system).
+
+Remaining known limitation: the wielder is assumed to be the party leader, because only
+the active member carries a weapon runtime. Per-member weapons would change that, and
+`partyAuras.ts` is the single place the assumption lives.
 
 Purpose: define how StickBlade absorbs the weapons, party system, enemies, world map, and
 stats from the STICK-RPG prototype without importing that prototype's engine.
