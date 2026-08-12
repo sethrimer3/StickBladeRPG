@@ -24,6 +24,7 @@ import {
   HURT_FLASH_MAX_ALPHA,
 } from './characterSprites';
 import { renderStickRangerBody } from './stickRangerRenderer';
+import { getEquippedWeaponDef } from '../../sim/weapons/playerWeaponState';
 import { renderGridBlockEnemy, renderGridSnakeEnemy } from './gridBlockEnemyRenderer';
 import { renderMomentumTurret } from './momentumTurretRenderer';
 import { renderSlimeSnailBody, renderSlimeSnailTrails } from './slimeSnailRenderer';
@@ -207,7 +208,9 @@ export function renderClusters(
       // The softbody is the character — there is no sprite to draw, and none
       // of the sprite-path decoration below (outline mask, afterimages,
       // cloak, flip transform) applies to a set of simulated line segments.
-      renderStickRangerBody(ctx, snapshot.stickRangerBody, offsetXPx, offsetYPx, scalePx);
+      const equippedDef = snapshot.playerWeapon ? getEquippedWeaponDef(snapshot.playerWeapon) : null;
+      const isTwoHandGrip = equippedDef?.grip === 'twoHand';
+      renderStickRangerBody(ctx, snapshot.stickRangerBody, offsetXPx, offsetYPx, scalePx, isTwoHandGrip);
     } else if (isPlayer) {
       // ── Player: character sprite (no rotation; flip when facing left) ────
       const charSprites = getCharacterSprites(snapshot.characterId);

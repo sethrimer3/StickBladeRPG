@@ -33,8 +33,8 @@ const VALID_KINDS: readonly WeaponKind[] = [
 const VALID_GRIPS: readonly WeaponGrip[] = ['oneHand', 'twoHand', 'dual'];
 
 describe('weapon data integrity', () => {
-  test('all 75 donor weapons are present', () => {
-    assert.equal(WEAPON_IDS.length, 75);
+  test('all 76 weapons are present', () => {
+    assert.equal(WEAPON_IDS.length, 76);
   });
 
   test('ids are unique and sorted', () => {
@@ -76,6 +76,12 @@ describe('weapon data integrity', () => {
       name: 'Sword', kind: 'melee', range: 42, arc: 1.0, dmg: 2,
       cooldown: 550, knock: 160, color: '#d0f', grip: 'oneHand',
     });
+    assert.deepEqual(WEAPONS['woodenSword'], {
+      name: 'Wooden Sword', kind: 'melee', range: 42, arc: 1.1, dmg: 2,
+      cooldown: 550, knock: 160, color: '#c89d66', grip: 'twoHand',
+      spriteUrl: 'SPRITES/Weapons/WoodenSword.png',
+      spriteGripRatioX: 0.5, spriteGripRatioY: 0.9,
+    });
     assert.equal(WEAPONS['greatsword'].swingDuration, 320);
     assert.equal(WEAPONS['greatsword'].grip, 'twoHand');
     assert.equal(WEAPONS['templarianWallShield'].kind, 'shield');
@@ -94,7 +100,7 @@ describe('weapon data integrity', () => {
   });
 
   test('the donor kind distribution is preserved', () => {
-    assert.equal(getWeaponIdsOfKind('melee').length, 24);
+    assert.equal(getWeaponIdsOfKind('melee').length, 25);
     assert.equal(getWeaponIdsOfKind('shield').length, 1);
     assert.equal(getWeaponIdsOfKind('staff').length, 9);
     assert.equal(getWeaponIdsOfKind('bow').length, 6);

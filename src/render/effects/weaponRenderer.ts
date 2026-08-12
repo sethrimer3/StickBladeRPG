@@ -21,6 +21,7 @@
  */
 
 import type { WorldSnapshot } from '../snapshot';
+import { loadImg, isSpriteReady } from '../imageCache';
 import {
   getEquippedWeaponDef,
   type PlayerWeaponState,
@@ -537,6 +538,27 @@ export class WeaponRenderer {
 
     if (isSwinging) {
       this._renderSwingTrail(ctx, originXPx, originYPx, angleRad, reach, zoom, color, swing.startAngleRad);
+    }
+
+    if (def.spriteUrl) {
+      const img = loadImg(def.spriteUrl);
+      if (isSpriteReady(img)) {
+        const gripRatioX = def.spriteGripRatioX ?? 0.5;
+        const gripRatioY = def.spriteGripRatioY ?? 0.9;
+        const drawHWorld = reach / gripRatioY;
+        const drawWWorld = drawHWorld * (img.naturalWidth / img.naturalHeight);
+        const drawHPx = drawHWorld * zoom;
+        const drawWPx = drawWWorld * zoom;
+
+        ctx.save();
+        ctx.translate(originXPx, originYPx);
+        // Sprite has tip at top (pointing along -Y in unrotated space).
+        // Rotate by (angleRad + Math.PI / 2) so the tip points along angleRad.
+        ctx.rotate(angleRad + Math.PI / 2);
+        ctx.drawImage(img, -drawWPx * gripRatioX, -drawHPx * gripRatioY, drawWPx, drawHPx);
+        ctx.restore();
+        return;
+      }
     }
 
     const cos = Math.cos(angleRad);

@@ -61,6 +61,7 @@ export function renderStickRangerBody(
   offsetXPx: number,
   offsetYPx: number,
   scalePx: number,
+  isTwoHandGrip = false,
 ): void {
   const alpha = getStickRangerRenderAlpha(body);
   const toScreenX = (i: number): number => getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx;
@@ -73,10 +74,38 @@ export function renderStickRangerBody(
   ctx.lineJoin = 'round';
 
   ctx.beginPath();
-  for (let s = 0; s < SEGMENTS.length; s++) {
-    const [a, b] = SEGMENTS[s];
-    ctx.moveTo(toScreenX(a), toScreenY(a));
-    ctx.lineTo(toScreenX(b), toScreenY(b));
+  if (isTwoHandGrip) {
+    const handX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
+    const handY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
+    const toGripX = handX * scalePx + offsetXPx;
+    const toGripY = handY * scalePx + offsetYPx;
+
+    // Body segments without forearm defaults
+    const nonArmSegments: ReadonlyArray<readonly [number, number]> = [
+      [SR_CHEST, SR_HIP],
+      [SR_CHEST, SR_SHOULDER_L],
+      [SR_CHEST, SR_SHOULDER_R],
+      [SR_HIP, SR_KNEE_L],
+      [SR_HIP, SR_KNEE_R],
+      [SR_KNEE_L, SR_FOOT_L],
+      [SR_KNEE_R, SR_FOOT_R],
+    ];
+    for (let s = 0; s < nonArmSegments.length; s++) {
+      const [a, b] = nonArmSegments[s];
+      ctx.moveTo(toScreenX(a), toScreenY(a));
+      ctx.lineTo(toScreenX(b), toScreenY(b));
+    }
+    // Both forearms meet at the two-handed weapon grip anchor
+    ctx.moveTo(toScreenX(SR_SHOULDER_L), toScreenY(SR_SHOULDER_L));
+    ctx.lineTo(toGripX, toGripY);
+    ctx.moveTo(toScreenX(SR_SHOULDER_R), toScreenY(SR_SHOULDER_R));
+    ctx.lineTo(toGripX, toGripY);
+  } else {
+    for (let s = 0; s < SEGMENTS.length; s++) {
+      const [a, b] = SEGMENTS[s];
+      ctx.moveTo(toScreenX(a), toScreenY(a));
+      ctx.lineTo(toScreenX(b), toScreenY(b));
+    }
   }
   ctx.stroke();
 

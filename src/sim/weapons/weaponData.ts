@@ -1525,6 +1525,21 @@ export const WEAPON_DATA: Readonly<Record<WeaponId, WeaponDef>> = {
     grip: "oneHand"
   },
 
+  woodenSword: {
+    name: "Wooden Sword",
+    kind: "melee",
+    range: 42,
+    arc: 1.1,
+    dmg: 2,
+    cooldown: 550,
+    knock: 160,
+    color: "#c89d66",
+    grip: "twoHand",
+    spriteUrl: "SPRITES/Weapons/WoodenSword.png",
+    spriteGripRatioX: 0.5,
+    spriteGripRatioY: 0.9
+  },
+
   tempestBow: {
     name: "Tempest Bow",
     description: "Channels a storm burst that splits into a volley when fully charged.",

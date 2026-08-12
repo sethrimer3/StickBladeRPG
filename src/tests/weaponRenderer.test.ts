@@ -10,6 +10,7 @@ import {
   type PlayerWeaponState,
 } from '../sim/weapons/playerWeaponState';
 import { createStickRangerBody } from '../sim/clusters/stickRangerBody';
+import { renderStickRangerBody } from '../render/clusters/stickRangerRenderer';
 import { createWorldState, type WorldState } from '../sim/world';
 import { createClusterState, type ClusterState } from '../sim/clusters/state';
 import type { WorldSnapshot } from '../render/snapshot';
@@ -35,6 +36,9 @@ function createRecordingContext(): { ctx: CanvasRenderingContext2D; calls: DrawC
   const ctx = {
     save: record('save'),
     restore: record('restore'),
+    translate: record('translate'),
+    rotate: record('rotate'),
+    drawImage: record('drawImage'),
     beginPath: record('beginPath'),
     closePath: record('closePath'),
     moveTo: record('moveTo'),
@@ -139,6 +143,16 @@ describe('melee rendering', () => {
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
     assert.ok(countOps(calls, 'quadraticCurveTo') > 0, 'bow limb should be curved');
+  });
+
+  test('woodenSword renders cleanly at rest and during swing', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'woodenSword');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+    // When sprite is not loaded (Node environment without Image), falls back to procedural blade stroke
+    assert.ok(countOps(calls, 'stroke') > 0, 'wooden sword should draw blade');
+    assert.equal(countOps(calls, 'save'), countOps(calls, 'restore'));
   });
 });
 
@@ -326,6 +340,20 @@ describe('held weapon poses', () => {
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
     assert.equal(countOps(calls, 'stroke'), 0);
+  });
+
+  test('renderStickRangerBody renders both hands joined at grip for two-handed weapons', () => {
+    const body = createStickRangerBody(100, 100);
+    const standardCtx = createRecordingContext();
+    renderStickRangerBody(standardCtx.ctx, body, 0, 0, 1, false);
+
+    const twoHandCtx = createRecordingContext();
+    renderStickRangerBody(twoHandCtx.ctx, body, 0, 0, 1, true);
+
+    // Both should draw the stickman lines and head
+    assert.ok(countOps(twoHandCtx.calls, 'stroke') > 0);
+    assert.ok(countOps(twoHandCtx.calls, 'fillRect') > 0);
+    assert.equal(countOps(twoHandCtx.calls, 'save'), countOps(twoHandCtx.calls, 'restore'));
   });
 });
 

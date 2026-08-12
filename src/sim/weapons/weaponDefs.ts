@@ -259,6 +259,11 @@ export interface WeaponDef {
   // ---- Presentation ----
   color?: string;
   highlightColor?: string;
+  spriteUrl?: string;
+  /** Horizontal grip position in sprite [0..1], 0=left, 1=right. Defaults to 0.5 (centered). */
+  spriteGripRatioX?: number;
+  /** Vertical grip position in sprite [0..1], 0=top, 1=bottom. Defaults to 0.9 (10% from bottom). */
+  spriteGripRatioY?: number;
   ammoColor?: string;
   poseStyle?: string;
   lightEmitterRadius?: number;

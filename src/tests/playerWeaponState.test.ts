@@ -54,7 +54,10 @@ describe('equipping', () => {
 
   test('the starter weapon id names a real, runtime-implemented weapon', () => {
     const state = createPlayerWeaponState();
+    assert.equal(DEFAULT_STARTER_WEAPON_ID, 'woodenSword');
     assert.equal(equipPlayerWeapon(state, DEFAULT_STARTER_WEAPON_ID), true);
+    assert.equal(getEquippedWeaponDef(state)?.name, 'Wooden Sword');
+    assert.equal(getEquippedWeaponDef(state)?.grip, 'twoHand');
   });
 
   test('an unknown weapon is refused and leaves the current weapon in place', () => {

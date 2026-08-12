@@ -98,7 +98,7 @@ const BURST_SHOT_INTERVAL_TICKS = 4;
  * default disappears with it. Until then it is what makes the weapon system
  * reachable in game at all.
  */
-export const DEFAULT_STARTER_WEAPON_ID = 'sword';
+export const DEFAULT_STARTER_WEAPON_ID = 'woodenSword';
 
 /** The player's weapon runtime. */
 export interface PlayerWeaponState {
