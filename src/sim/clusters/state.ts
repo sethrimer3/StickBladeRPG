@@ -51,6 +51,13 @@ export interface ClusterState {
    * every cluster that is not the warded player.
    */
   projectileShield: DamageAbsorbingWard | null;
+  /**
+   * Ticks remaining on a movement slow from a weapon's on-expiry effect
+   * (`sim/weapons/weaponExpiryEffects.ts`). 0 means unslowed.
+   */
+  slowTicks: number;
+  /** Velocity multiplier while `slowTicks > 0`; 1 means no slow. */
+  slowMultiplier: number;
 
   // ---- Platformer physics -------------------------------------------------
   /** 1 when the cluster is resting on a surface (floor or platform top). */
@@ -1134,6 +1141,8 @@ export function createClusterState(
     xpValue: 0,
     coinValue: 0,
     projectileShield: null,
+    slowTicks: 0,
+    slowMultiplier: 1,
     isGroundedFlag: 0,
     isGroundedOnIceFlag: 0,
     isGroundedOnUltraIceFlag: 0,
