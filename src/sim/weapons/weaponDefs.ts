@@ -374,8 +374,9 @@ export function isPlayerEquippableWeapon(def: WeaponDef): boolean {
  *
  * Note this reports the KIND's coverage, not every donor flourish:
  *   • Twelve weapons declare on-expiry callbacks that spawn bespoke secondary
- *     effects (pollen clouds, steam vents, gust shockwaves), still unported and
- *     listed in `UNPORTED_BEHAVIOR_FIELDS`.
+ *     effects (pollen clouds, steam vents, gust shockwaves). Phase 2d ported
+ *     all of them — see `weaponExpiryEffects.ts`; `UNPORTED_BEHAVIOR_FIELDS`
+ *     now serves as the list of which weapons carry one.
  *   • Phase 2e closed the last gap: `aegisStaff`'s projectile shield
  *     (`projectileShield.ts`) and `gravebindStaff`'s raise-on-death
  *     (`raiseThrallFromCorpse` in `weaponSummons.ts`) now run, so both staves

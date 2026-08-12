@@ -8,6 +8,23 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 628 — STICK-RPG Port Phase 2d: Bespoke On-Expiry Effects, Slash Waves, and the Echo Return
+
+**Accomplished in Phase 2d — Phase 2 is now complete:**
+1. **The twelve callbacks, read rather than guessed:**
+   - Donor source is `js/weapons.js:1715–1851` plus the `trigger*` helpers in `js/projectiles.js:2921–3169`. The twelve fields are eleven distinct functions (`spawnChronoglassField` is used by two weapons), and every one is a thin wrapper over the same shape: damage everything in a radius once, apply a movement slow, and/or shove bodies outward and upward.
+   - **Key finding:** despite the "pollen cloud" / "steam vent" naming, none of them is a lingering field. The donor applies its effect exactly once at expiry and then spawns decorative particles. So this is one parameterized effect, not five systems.
+2. **`src/sim/weapons/weaponExpiryEffects.ts`:** `ExpiryEffectDef` (radius, damage, slow multiplier + duration, push force, lift force, color) and the twelve ported entries. `triggerSteamBurst` composing `triggerPressureBurst` composing `triggerGustBurst` is flattened into single effects carrying all three components. `applyExpiryEffect` does damage + slow + impulse in one pass, with the donor's linear `1 - dist/radius` falloff on impulse only. Donor force units convert through a documented `IMPULSE_WORLD_PER_SEC_PER_FORCE`, tuned so the donor's 1600–2400 range lands in the same band as existing knockback.
+3. **Movement slow:** `ClusterState` gained `slowTicks` / `slowMultiplier`. Applied in `src/sim/clusters/movement.ts` *after* `tickEnemyMovement` rather than inside it — most enemy AIs set their own velocity and return early from that function, so this is the only point every enemy passes through with a final velocity. Horizontal only: scaling the vertical component would make a slowed enemy fall slowly, which reads as floating rather than sluggish. A stronger slow never loses to a weaker one; an equal one refreshes.
+4. **Slash waves (a prerequisite that had no runtime):** five of the twelve callbacks hang off `slashWaveOnExpire`, and slash waves themselves were carried as data and never read. `fireWeaponSlashWaves` in `weaponProjectiles.ts` fans `slashWaveCount` short-lived, terrain-ignoring, piercing projectiles along the swing, launched from `tryStartPlayerWeaponAttack` when the swing begins.
+5. **Echo disc return:** `echoRepeater`'s callback is not an area effect — the disc flies home. It relaunches into its own slot (so it cannot evict a fresh shot at capacity), clears its pierce registry for the return leg, and is gated by `isReturning`, which is what stops the donor's disc from looping forever.
+6. **Expiry routing:** all three projectile death paths — consumed by an enemy, stopped by terrain, out of lifetime — now route through one `expireProjectile`, matching the donor, which fires `projectileOnExpire` whenever the projectile leaves the world.
+7. **Validation:** added `src/tests/weaponExpiryEffects.test.ts` (19 tests, including a coverage assertion that every weapon named in `UNPORTED_BEHAVIOR_FIELDS` now resolves to a ported effect). `npm test` 3,607 passing, `npm run build` clean, `npm run lint` clean.
+
+**Not done, deliberately:** no new rendering. The effects are instantaneous, and the donor's contribution at the draw layer is decorative particles (smoke puffs, expanding rings) that StickBlade's particle system would express differently. Slash waves and the returning disc do draw, since they are ordinary projectiles.
+
+---
+
 ## BUILD 627 — STICK-RPG Port Phase 2e: The Two Bespoke Staff Auras
 
 **Accomplished in Phase 2e:**

@@ -204,6 +204,12 @@ export function getExpiryEffectIndex(def: WeaponDef | null): number {
   return EFFECT_INDEX_BY_DEF.get(def) ?? EXPIRY_EFFECT_NONE;
 }
 
+/** The weapon id owning an effect index, or null when the index names none. */
+export function getExpiryEffectWeaponId(index: number): string | null {
+  if (index < 0 || index >= EXPIRY_EFFECT_IDS.length) return null;
+  return EXPIRY_EFFECT_IDS[index];
+}
+
 /** The effect at an index, or null when the index names none. */
 export function getExpiryEffectByIndex(index: number): ExpiryEffectDef | null {
   if (index < 0 || index >= EXPIRY_EFFECT_IDS.length) return null;

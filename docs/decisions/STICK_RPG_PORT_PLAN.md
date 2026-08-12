@@ -1,10 +1,13 @@
 # STICK-RPG Port Plan
 
-Status: living plan. Phase 1 implemented in BUILD 613; Phase 2 complete except 2d
-(BUILD 614–620, 625–627 — 2e, the two bespoke staff auras, landed in BUILD 627, so every
-ported weapon including `aegisStaff` and `gravebindStaff` now has a working runtime);
-Phase 3 complete in BUILD 621–622; Phase 4 complete in BUILD 623; Phase 5 complete in
-BUILD 624. Remaining: Phase 2d, the 12 bespoke on-expiry callbacks.
+Status: all five phases implemented. Phase 1 in BUILD 613; Phase 2 in BUILD 614–620 and
+625–628 (2e, the two bespoke staff auras, in BUILD 627; 2d, the twelve on-expiry
+callbacks plus the slash-wave runtime they needed, in BUILD 628); Phase 3 in BUILD
+621–622; Phase 4 in BUILD 623; Phase 5 in BUILD 624.
+
+Known gaps, each recorded where it lives rather than tracked here: staff auras declare
+`target: 'allies'` but affect only the wielder (true ally targeting across the Phase 3
+party is unimplemented), and the donor's decorative expiry particles were not ported.
 
 Purpose: define how StickBlade absorbs the weapons, party system, enemies, world map, and
 stats from the STICK-RPG prototype without importing that prototype's engine.

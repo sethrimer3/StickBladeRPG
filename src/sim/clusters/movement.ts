@@ -39,6 +39,7 @@
 import { WorldState } from '../world';
 import { tickPlayerMovement } from './playerMovement';
 import { tickEnemyMovement } from './enemyMovement';
+import { tickClusterSlow } from '../weapons/weaponExpiryEffects';
 import { clearPlayerSkidState } from './playerSkid';
 import { computeSkidJumpSpeedWorld } from './skidJumpHeight';
 import { rechargeGrappleCharge } from './grappleShared';
@@ -162,6 +163,17 @@ export function applyClusterMovement(world: WorldState): void {
       }
     } else {
       tickEnemyMovement(cluster, world, dtSec, playerX, playerY, playerFound);
+
+      // ── Weapon slow (STICK-RPG Phase 2d) ─────────────────────────────────
+      // Applied here, after movement, rather than inside tickEnemyMovement:
+      // most enemy AIs set their own velocity and return early from that
+      // function, so this is the only point every enemy passes through with a
+      // final velocity. Horizontal only — scaling the vertical component would
+      // make a slowed enemy fall slowly, which reads as floating, not sluggish.
+      if (cluster.slowTicks > 0) {
+        cluster.velocityXWorld *= cluster.slowMultiplier;
+        tickClusterSlow(cluster);
+      }
     }
 
     // ── Store pre-integration position ───────────────────────────────────

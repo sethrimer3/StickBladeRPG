@@ -60,6 +60,7 @@ import {
 import {
   createWeaponProjectilePool,
   fireRangedWeapon,
+  fireWeaponSlashWaves,
   getWeaponBurstCount,
   isRangedWeaponKind,
   resetWeaponProjectilePool,
@@ -319,7 +320,17 @@ export function tryStartPlayerWeaponAttack(
     player.positionXWorld, player.positionYWorld,
     player.isFacingLeftFlag === 1,
   );
-  if (started) state.attackStartedFlag = 1;
+  if (started) {
+    state.attackStartedFlag = 1;
+    // Weapons that throw slash waves launch them with the swing, not on hit —
+    // the donor fans them out from the wielder as the arc begins.
+    fireWeaponSlashWaves(
+      state.projectiles, def,
+      player.positionXWorld, player.positionYWorld,
+      aimXWorld, aimYWorld,
+      attack, rng,
+    );
+  }
   return started;
 }
 

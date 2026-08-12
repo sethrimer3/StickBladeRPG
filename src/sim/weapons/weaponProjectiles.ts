@@ -27,7 +27,14 @@ import { nextFloatRange } from '../rng';
 import { raycastWalls } from '../clusters/grappleShared';
 import { applyRoutedWeaveDamage, segmentPointDistanceSq } from '../weaves/weaveCollisionUtils';
 import { computeStatDamage } from '../stats/characterStats';
-import { getWeaponProjectileTtlTicks, type WeaponDef } from './weaponDefs';
+import type { ClusterState } from '../clusters/state';
+import { getWeaponProjectileTtlTicks, millisecondsToTicks, type WeaponDef } from './weaponDefs';
+import {
+  applyExpiryEffect,
+  getExpiryEffectByIndex,
+  getExpiryEffectIndex,
+  EXPIRY_EFFECT_NONE,
+} from './weaponExpiryEffects';
 
 // ---- Capacity -------------------------------------------------------------
 
@@ -91,6 +98,17 @@ export interface WeaponProjectilePool {
   blastDamage: Float32Array;
   /** Monotonic spawn sequence, used to evict the oldest when at capacity. */
   spawnSequence: Int32Array;
+  /**
+   * Index into `EXPIRY_EFFECT_IDS` for the bespoke on-expiry effect this
+   * projectile carries, or `EXPIRY_EFFECT_NONE`. See `weaponExpiryEffects.ts`.
+   */
+  expiryEffect: Int32Array;
+  /** Attack stat latched at launch, so the expiry effect scales like the shot. */
+  attackerAttack: Float32Array;
+  /** 1 once an echo disc is already flying home, so it cannot loop forever. */
+  isReturning: Uint8Array;
+  /** Speed an echo disc relaunches at; 0 for every other projectile. */
+  returnSpeed: Float32Array;
   /** Per-projectile hit registry for piercing shots (bitset over cluster index). */
   piercedFlags: Uint8Array;
   /** Number of live projectiles. */
@@ -122,6 +140,10 @@ export function createWeaponProjectilePool(): WeaponProjectilePool {
     blastRadiusWorld: new Float32Array(n),
     blastDamage: new Float32Array(n),
     spawnSequence: new Int32Array(n),
+    expiryEffect: new Int32Array(n).fill(EXPIRY_EFFECT_NONE),
+    attackerAttack: new Float32Array(n),
+    isReturning: new Uint8Array(n),
+    returnSpeed: new Float32Array(n),
     piercedFlags: new Uint8Array(n * PIERCE_FLAGS_PER_PROJECTILE),
     liveCount: 0,
     nextSequence: 1,
@@ -139,6 +161,8 @@ const PIERCE_FLAGS_PER_PROJECTILE = 64;
 export function resetWeaponProjectilePool(pool: WeaponProjectilePool): void {
   pool.isLive.fill(0);
   pool.piercedFlags.fill(0);
+  pool.expiryEffect.fill(EXPIRY_EFFECT_NONE);
+  pool.isReturning.fill(0);
   pool.liveCount = 0;
   pool.nextSequence = 1;
 }
@@ -173,6 +197,15 @@ export interface ProjectileSpawnOptions {
   damage: number;
   /** Overrides the weapon's `speed` when provided (e.g. charged shots). */
   speedOverride?: number;
+  /**
+   * Attack stat of whoever fired, latched so the on-expiry effect scales the
+   * same way the contact hit did. Defaults to 1 (no scaling).
+   */
+  attackerAttack?: number;
+  /** Overrides the weapon's `ttl`; used by slash waves, which live briefly. */
+  ttlTicksOverride?: number;
+  /** Marks an echo disc that is already flying home, so it does not loop. */
+  isReturning?: boolean;
 }
 
 /**
@@ -200,8 +233,12 @@ export function spawnWeaponProjectile(
   pool.damage[i] = Math.max(0, options.damage);
   pool.radiusWorld[i] = def.projectileRadius ?? DEFAULT_PROJECTILE_RADIUS_WORLD;
 
-  const ttl = getWeaponProjectileTtlTicks(def);
-  pool.ttlTicks[i] = ttl > 0 ? ttl : DEFAULT_PROJECTILE_TTL_TICKS;
+  if (options.ttlTicksOverride !== undefined && options.ttlTicksOverride > 0) {
+    pool.ttlTicks[i] = options.ttlTicksOverride;
+  } else {
+    const ttl = getWeaponProjectileTtlTicks(def);
+    pool.ttlTicks[i] = ttl > 0 ? ttl : DEFAULT_PROJECTILE_TTL_TICKS;
+  }
 
   pool.hasGravity[i] = def.gravity === true ? 1 : 0;
   // Donor `projectileDrag` is a per-second retention factor; convert to
@@ -221,6 +258,10 @@ export function spawnWeaponProjectile(
   pool.blastRadiusWorld[i] = def.blastRadius ?? 0;
   pool.blastDamage[i] = def.blastDamage ?? 0;
   pool.spawnSequence[i] = pool.nextSequence++;
+  pool.expiryEffect[i] = getExpiryEffectIndex(def);
+  pool.attackerAttack[i] = options.attackerAttack ?? 1;
+  pool.isReturning[i] = options.isReturning === true ? 1 : 0;
+  pool.returnSpeed[i] = def.projectileReturnSpeed ?? 0;
 
   const flagBase = i * PIERCE_FLAGS_PER_PROJECTILE;
   for (let f = 0; f < PIERCE_FLAGS_PER_PROJECTILE; f++) pool.piercedFlags[flagBase + f] = 0;
@@ -297,9 +338,10 @@ export function tickWeaponProjectiles(
     const consumedByEnemy = stepDist > 1e-6
       && applyProjectileEnemyHits(world, pool, i, startX, startY, startX + stepX, startY + stepY, _projectileTickResult);
     if (consumedByEnemy) {
-      detonateProjectile(world, pool, i, _projectileTickResult);
-      killProjectile(pool, i);
-      _projectileTickResult.expiredCount++;
+      if (!expireProjectile(world, pool, i, _projectileTickResult)) {
+        killProjectile(pool, i);
+        _projectileTickResult.expiredCount++;
+      }
       continue;
     }
 
@@ -324,9 +366,10 @@ export function tickWeaponProjectiles(
         } else {
           pool.xWorld[i] = hit.x;
           pool.yWorld[i] = hit.y;
-          detonateProjectile(world, pool, i, _projectileTickResult);
-          killProjectile(pool, i);
-          _projectileTickResult.expiredCount++;
+          if (!expireProjectile(world, pool, i, _projectileTickResult)) {
+            killProjectile(pool, i);
+            _projectileTickResult.expiredCount++;
+          }
         }
         continue;
       }
@@ -337,9 +380,10 @@ export function tickWeaponProjectiles(
 
     pool.ttlTicks[i]--;
     if (pool.ttlTicks[i] <= 0) {
-      detonateProjectile(world, pool, i, _projectileTickResult);
-      killProjectile(pool, i);
-      _projectileTickResult.expiredCount++;
+      if (!expireProjectile(world, pool, i, _projectileTickResult)) {
+        killProjectile(pool, i);
+        _projectileTickResult.expiredCount++;
+      }
     }
   }
 
@@ -447,6 +491,87 @@ function applyProjectileEnemyHits(
 }
 
 /**
+ * Everything that happens when a projectile dies: its blast, then its bespoke
+ * on-expiry effect.
+ *
+ * All three death paths — consumed by an enemy, stopped by terrain, out of
+ * lifetime — route through here, matching the donor, which calls
+ * `projectileOnExpire` whenever the projectile leaves the world.
+ *
+ * Returns true when the projectile relaunched itself instead of dying (the echo
+ * disc), in which case the caller must NOT free the slot.
+ */
+function expireProjectile(
+  world: WorldState,
+  pool: WeaponProjectilePool,
+  i: number,
+  result: ProjectileTickResult,
+): boolean {
+  detonateProjectile(world, pool, i, result);
+
+  const effect = getExpiryEffectByIndex(pool.expiryEffect[i]);
+  if (effect === null) return false;
+
+  if (effect.returnsToOwner === true) {
+    return relaunchProjectileAtOwner(world, pool, i);
+  }
+
+  const applied = applyExpiryEffect(
+    world, effect, pool.xWorld[i], pool.yWorld[i], pool.attackerAttack[i], world.rng,
+  );
+  result.hitCount += applied.hitCount;
+  result.totalDamage += applied.totalDamage;
+  return false;
+}
+
+/**
+ * Sends an echo disc back toward the player, once.
+ *
+ * Ports `spawnEchoDiscReturn`: the donor refuses to turn a disc that is already
+ * returning, which is what stops a disc from bouncing between owner and world
+ * forever. Reuses the same slot rather than spawning into a new one, so a
+ * returning disc cannot evict a freshly-fired shot at capacity.
+ */
+function relaunchProjectileAtOwner(
+  world: WorldState,
+  pool: WeaponProjectilePool,
+  i: number,
+): boolean {
+  if (pool.isReturning[i] === 1) return false;
+
+  const clusters = world.clusters;
+  let owner: ClusterState | null = null;
+  for (let ci = 0; ci < clusters.length; ci++) {
+    const c = clusters[ci];
+    if (c.isPlayerFlag === 1 && c.isAliveFlag === 1) {
+      owner = c;
+      break;
+    }
+  }
+  if (owner === null) return false;
+
+  const dx = owner.positionXWorld - pool.xWorld[i];
+  const dy = owner.positionYWorld - pool.yWorld[i];
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist <= 1e-6) return false;
+
+  const speed = pool.returnSpeed[i] > 0 ? pool.returnSpeed[i] : DEFAULT_RETURN_SPEED;
+  pool.velocityXWorld[i] = (dx / dist) * speed;
+  pool.velocityYWorld[i] = (dy / dist) * speed;
+  pool.isReturning[i] = 1;
+  pool.hasGravity[i] = 0;
+  // Long enough to cross the distance it just travelled outward.
+  pool.ttlTicks[i] = Math.max(1, Math.ceil((dist / speed) * 60) + 10);
+  // The return leg is a fresh pass: it may hit the enemies the outbound leg did.
+  const flagBase = i * PIERCE_FLAGS_PER_PROJECTILE;
+  for (let f = 0; f < PIERCE_FLAGS_PER_PROJECTILE; f++) pool.piercedFlags[flagBase + f] = 0;
+  return true;
+}
+
+/** Return speed used when the weapon declares no `projectileReturnSpeed`. */
+const DEFAULT_RETURN_SPEED = 600;
+
+/**
  * Applies a projectile's blast on death, if it has one.
  *
  * Blast damage ignores the pierce registry deliberately: an explosion is a
@@ -493,6 +618,72 @@ export interface WeaponFireResult {
 }
 
 const _fireResult: WeaponFireResult = { projectileCount: 0 };
+
+/**
+ * Launches a melee weapon's slash waves, if it declares any.
+ *
+ * Phase 2d. Five of the twelve bespoke on-expiry callbacks hang off
+ * `slashWaveOnExpire`, and slash waves themselves had no runtime — the donor's
+ * `slashWaveCount` / `Speed` / `Ttl` / `Damage` fields were carried as data and
+ * never read. A slash wave is a short-lived projectile fanned out along the
+ * swing, so it reuses this pool rather than getting a system of its own; the
+ * only differences from an ordinary shot are its own damage, speed, and
+ * lifetime, all passed as overrides.
+ *
+ * Returns the number of waves launched.
+ */
+export function fireWeaponSlashWaves(
+  pool: WeaponProjectilePool,
+  def: WeaponDef,
+  originXWorld: number,
+  originYWorld: number,
+  aimXWorld: number,
+  aimYWorld: number,
+  attackerAttack: number,
+  rng: RngState,
+): number {
+  const count = Math.max(0, Math.floor(def.slashWaveCount ?? 0));
+  const speed = def.slashWaveSpeed ?? 0;
+  if (count === 0 || speed <= 0) return 0;
+
+  const dx = aimXWorld - originXWorld;
+  const dy = aimYWorld - originYWorld;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist <= 1e-6) return 0;
+
+  const baseAngle = Math.atan2(dy, dx);
+  const spread = def.slashWaveSpread ?? 0;
+  const baseDamage = def.slashWaveDamage ?? def.dmg ?? 0;
+  const ttlTicks = millisecondsToTicks(def.slashWaveTtl);
+
+  let launched = 0;
+  for (let w = 0; w < count; w++) {
+    // Fan the waves evenly across the spread rather than randomly, so a
+    // three-wave swing reads as a deliberate arc.
+    const offset = count === 1 ? 0 : (w / (count - 1) - 0.5) * spread * count;
+    const angle = baseAngle + offset;
+
+    const slot = spawnWeaponProjectile(pool, def, {
+      xWorld: originXWorld,
+      yWorld: originYWorld,
+      dirXWorld: Math.cos(angle),
+      dirYWorld: Math.sin(angle),
+      damage: computeStatDamage(baseDamage, attackerAttack, 0, rng),
+      speedOverride: speed,
+      ttlTicksOverride: ttlTicks > 0 ? ttlTicks : undefined,
+      attackerAttack,
+    });
+    if (slot === -1) continue;
+
+    // A wave rides over terrain and through bodies: it is an energy crescent,
+    // not a thrown object, and the donor gives it no bounce or collision data.
+    pool.hasGravity[slot] = 0;
+    pool.ignoresTerrain[slot] = 1;
+    pool.isPiercing[slot] = 1;
+    launched++;
+  }
+  return launched;
+}
 
 /** Weapon kinds this module can fire. */
 export function isRangedWeaponKind(def: WeaponDef): boolean {
@@ -548,6 +739,7 @@ export function fireRangedWeapon(
       dirXWorld: Math.cos(angle),
       dirYWorld: Math.sin(angle),
       damage,
+      attackerAttack,
     });
     if (slot !== -1) _fireResult.projectileCount++;
   }

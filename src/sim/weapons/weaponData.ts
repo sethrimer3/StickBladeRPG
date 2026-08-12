@@ -12,10 +12,9 @@
  * (`getWeaponCooldownTicks`, `getWeaponSwingDurationTicks`, …), which perform
  * the conversion in one audited place.
  *
- * 12 function-valued fields in the donor could not be
- * represented as data and were dropped. They are listed in
- * `UNPORTED_BEHAVIOR_FIELDS` below so a later phase can reimplement them
- * deliberately rather than discover their absence by accident.
+ * 12 function-valued fields in the donor could not be represented as data and
+ * were dropped. They are listed in `UNPORTED_BEHAVIOR_FIELDS` below, and Phase
+ * 2d reimplemented every one of them in `weaponExpiryEffects.ts`.
  *
  * Regenerating: this file was produced mechanically from the donor once. It is
  * now normal source — edit it directly rather than re-running a generator.
@@ -27,8 +26,12 @@ import type { WeaponDef, WeaponId } from './weaponDefs';
 
 /**
  * Donor fields whose values were JavaScript functions (projectile/slash-wave
- * expiry callbacks). The owning weapons are present with all of their data
- * fields; only these behaviors are missing.
+ * expiry callbacks), which could not travel as data in this file.
+ *
+ * They are no longer missing: Phase 2d reimplemented all twelve as data in
+ * `weaponExpiryEffects.ts`, keyed by the weapon ids listed here. This list is
+ * kept as the record of which weapons carry a bespoke expiry behavior, and as
+ * the fixture the port test asserts full coverage against.
  */
 export const UNPORTED_BEHAVIOR_FIELDS: readonly string[] = [
   'anchorFlail.slashWaveOnExpire',
