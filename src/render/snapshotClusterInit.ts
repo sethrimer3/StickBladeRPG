@@ -227,6 +227,11 @@ export function _makeEmptyCluster(): _MutableCluster {
     dustEchoLungeHitPlayerFlag: 0,
     dustEchoLungeCooldownTicks: 0,
     dustEchoHitFlashTicks: 0,
+    isStickmanEnemyFlag: 0,
+    stickmanEnemyWeaponId: null,
+    stickmanEnemyBody: null,
+    stickmanEnemyIsSwinging: 0,
+    stickmanEnemySwingAngleRad: 0,
     renderPositionXWorld: 0,
     renderPositionYWorld: 0,
   };
@@ -447,6 +452,11 @@ export function _fillCluster(dst: _MutableCluster, src: ClusterState): void {
   dst.dustEchoLungeHitPlayerFlag     = src.dustEchoLungeHitPlayerFlag;
   dst.dustEchoLungeCooldownTicks     = src.dustEchoLungeCooldownTicks;
   dst.dustEchoHitFlashTicks          = src.dustEchoHitFlashTicks;
+  dst.isStickmanEnemyFlag            = src.isStickmanEnemyFlag;
+  dst.stickmanEnemyWeaponId          = src.stickmanEnemyWeaponId;
+  dst.stickmanEnemyBody              = src.stickmanEnemyBody;
+  dst.stickmanEnemyIsSwinging        = src.stickmanEnemyIsSwinging;
+  dst.stickmanEnemySwingAngleRad     = src.stickmanEnemySwingAngleRad;
   // Render interpolation: initialised to the physics position by default.
   // updateSnapshotInPlace() overwrites these with the blended position when
   // prev-position buffers and an alpha are supplied.

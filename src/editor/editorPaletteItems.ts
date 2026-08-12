@@ -227,6 +227,9 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'enemy_zeta_glyph', label: 'Zeta Glyph (STICK-RPG)', category: 'enemies' },
   { id: 'enemy_xi_glyph', label: 'Xi Glyph (STICK-RPG)', category: 'enemies' },
   { id: 'enemy_theta_harmonic', label: 'Theta Harmonic (STICK-RPG)', category: 'enemies' },
+  { id: 'enemy_stickman_swordsman', label: 'Stickman Swordsman (AI)', category: 'enemies' },
+  { id: 'enemy_stickman_archer', label: 'Stickman Archer (AI)', category: 'enemies' },
+  { id: 'enemy_stickman_mage', label: 'Stickman Mage (AI)', category: 'enemies' },
   // Triggers (player-facing activators and room logic)
   { id: 'campaign_spawn',  label: 'Campaign Spawn',          category: 'triggers' },
   { id: 'player_spawn',    label: 'Room Spawn (Fallback)',   category: 'triggers' },

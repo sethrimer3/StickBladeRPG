@@ -27,6 +27,11 @@ import {
   SR_FOOT_R,
   SR_FRAME_MS,
 } from './stickRangerBody';
+import {
+  createStickmanBotState,
+  setStickmanBotTarget,
+  stepStickmanBotAi,
+} from '../ai/stickmanBotAi';
 
 /** The characterId that selects the Stick Ranger stickman. */
 export const STICKMAN_CHARACTER_ID = 'stickman';
@@ -64,22 +69,57 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     }
   }
 
-  // Latch the one-shot jump input. The body runs on its own fixed accumulator
-  // (30Hz x STICKMAN_TIME_SCALE), so a host tick may advance no body frame at
-  // all — queueing here rather than applying an impulse directly means the
-  // press is never swallowed.
-  // applyClusterMovement clears the flag after the cluster loop, so reading it
-  // here sees the current tick's press.
-  if (world.playerJumpTriggeredFlag === 1) {
-    requestStickRangerJump(body);
+  // ── Auto-Move / Mobile Navigation ───────────────────────────────────────
+  if (world.playerAutoMoveTargetBlock !== null) {
+    if (world.playerMoveInputDxWorld !== 0 || world.playerJumpTriggeredFlag === 1) {
+      // Manual input cancels auto-move
+      world.playerAutoMoveTargetBlock = null;
+      world.playerAutoMoveBotState = null;
+    } else {
+      if (world.playerAutoMoveBotState === null) {
+        world.playerAutoMoveBotState = createStickmanBotState(
+          world.playerAutoMoveTargetBlock[0],
+          world.playerAutoMoveTargetBlock[1],
+        );
+      } else {
+        setStickmanBotTarget(
+          world.playerAutoMoveBotState,
+          world.playerAutoMoveTargetBlock[0],
+          world.playerAutoMoveTargetBlock[1],
+        );
+      }
+
+      const botRes = stepStickmanBotAi(
+        world.playerAutoMoveBotState,
+        body,
+        world.pixelMaterialSystem.solid,
+        world.dtMs,
+      );
+
+      if (botRes.isArrived) {
+        world.playerAutoMoveTargetBlock = null;
+      }
+    }
   }
 
-  stepStickRangerBody(
-    body,
-    world.pixelMaterialSystem.solid,
-    world.playerMoveInputDxWorld,
-    world.dtMs,
-  );
+  if (world.playerAutoMoveTargetBlock === null) {
+    // Latch the one-shot jump input. The body runs on its own fixed accumulator
+    // (30Hz x STICKMAN_TIME_SCALE), so a host tick may advance no body frame at
+    // all — queueing here rather than applying an impulse directly means the
+    // press is never swallowed.
+    // applyClusterMovement clears the flag after the cluster loop, so reading it
+    // here sees the current tick's press.
+    if (world.playerJumpTriggeredFlag === 1) {
+      requestStickRangerJump(body);
+    }
+
+    stepStickRangerBody(
+      body,
+      world.pixelMaterialSystem.solid,
+      world.playerMoveInputDxWorld,
+      world.dtMs,
+    );
+  }
 
   // ── Mirror the body onto the cluster box ────────────────────────────────
   cluster.positionXWorld = body.x[SR_HIP];

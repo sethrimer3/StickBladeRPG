@@ -23,8 +23,9 @@ import {
   HURT_FLASH_DURATION_TICKS,
   HURT_FLASH_MAX_ALPHA,
 } from './characterSprites';
-import { renderStickRangerBody } from './stickRangerRenderer';
+import { renderStickRangerBody, renderStickRangerWeapon } from './stickRangerRenderer';
 import { getEquippedWeaponDef } from '../../sim/weapons/playerWeaponState';
+import { getWeaponDef } from '../../sim/weapons/weaponDefs';
 import { renderGridBlockEnemy, renderGridSnakeEnemy } from './gridBlockEnemyRenderer';
 import { renderMomentumTurret } from './momentumTurretRenderer';
 import { renderSlimeSnailBody, renderSlimeSnailTrails } from './slimeSnailRenderer';
@@ -573,6 +574,24 @@ export function renderClusters(
       renderMomentumTurret(ctx, cluster, snapshot.clusters[0], scalePx, offsetXPx, offsetYPx, snapshot.tick);
     } else if (cluster.isGridBlockEnemyFlag === 1) {
       renderGridBlockEnemy(ctx, screenX, screenY, cluster, scalePx);
+    } else if (cluster.isStickmanEnemyFlag === 1 && cluster.stickmanEnemyBody !== null) {
+      // ── Enemy Stickman: render softbody figure & weapon ──────────────────
+      const weaponDef = cluster.stickmanEnemyWeaponId ? getWeaponDef(cluster.stickmanEnemyWeaponId) : null;
+      const isTwoHandGrip = weaponDef?.grip === 'twoHand';
+      renderStickRangerBody(ctx, cluster.stickmanEnemyBody, offsetXPx, offsetYPx, scalePx, isTwoHandGrip, true);
+
+      if (weaponDef) {
+        renderStickRangerWeapon(
+          ctx,
+          cluster.stickmanEnemyBody,
+          weaponDef,
+          cluster.stickmanEnemyIsSwinging === 1,
+          cluster.stickmanEnemySwingAngleRad,
+          offsetXPx,
+          offsetYPx,
+          scalePx,
+        );
+      }
     } else {
       // ── Regular cluster box body ─────────────────────────────────────────
       const bodyColor = '#ff6600';

@@ -1031,7 +1031,10 @@ export function placeEnemyAtCursor(
              item.id === 'enemy_shin_glyph' ||
              item.id === 'enemy_zeta_glyph' ||
              item.id === 'enemy_xi_glyph' ||
-             item.id === 'enemy_theta_harmonic') {
+             item.id === 'enemy_theta_harmonic' ||
+             item.id === 'enemy_stickman_swordsman' ||
+             item.id === 'enemy_stickman_archer' ||
+             item.id === 'enemy_stickman_mage') {
     const STICK_RPG_MAP: Record<string, string> = {
       enemy_bald_roller: 'baldRoller',
       enemy_slime_cube: 'slimeCube',
@@ -1048,6 +1051,9 @@ export function placeEnemyAtCursor(
       enemy_zeta_glyph: 'zetaGlyph',
       enemy_xi_glyph: 'xiGlyph',
       enemy_theta_harmonic: 'thetaHarmonic',
+      enemy_stickman_swordsman: 'stickmanSwordsman',
+      enemy_stickman_archer: 'stickmanArcher',
+      enemy_stickman_mage: 'stickmanMage',
     };
     const kind = STICK_RPG_MAP[item.id];
     const isBoss: 0 | 1 = kind === 'realmGuardian' ? 1 : 0;

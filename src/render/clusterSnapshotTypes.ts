@@ -353,6 +353,13 @@ export interface ClusterSnapshot {
   readonly dustEchoLungeCooldownTicks: number;
   readonly dustEchoHitFlashTicks: number;
 
+  // ── Stickman Enemy fields ────────────────────────────────────────────────
+  readonly isStickmanEnemyFlag: 0 | 1;
+  readonly stickmanEnemyWeaponId: string | null;
+  readonly stickmanEnemyBody: import('../sim/clusters/stickRangerBody').StickRangerBody | null;
+  readonly stickmanEnemyIsSwinging: 0 | 1;
+  readonly stickmanEnemySwingAngleRad: number;
+
   /**
    * Render-interpolated X position (world units).
    * Linearly blended between the previous tick's position and the current tick's

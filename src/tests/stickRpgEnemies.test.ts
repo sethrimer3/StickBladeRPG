@@ -56,8 +56,8 @@ function makeTestRoom(): EditorRoomData {
 }
 
 describe('STICK-RPG enemy traits catalog', () => {
-  test('contains all 15 canonical enemy kinds', () => {
-    assert.equal(STICK_RPG_ENEMY_KINDS.length, 15);
+  test('contains all canonical and stickman enemy kinds', () => {
+    assert.equal(STICK_RPG_ENEMY_KINDS.length, 18);
     for (const kind of STICK_RPG_ENEMY_KINDS) {
       assert(isStickRpgEnemyKind(kind));
       const trait = getStickRpgEnemyTrait(kind);

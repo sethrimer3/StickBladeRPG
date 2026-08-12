@@ -20,7 +20,12 @@ import { RngState } from '../sim/rng';
 import type { RoomEnemyDef } from '../levels/roomDef';
 import { BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
 import { createClusterState } from '../sim/clusters/state';
-import { getStickRpgEnemyTrait, computeEnemyXpDrop, computeEnemyCoinDrop } from '../sim/clusters/stickRpgEnemyTraits';
+import { createStickmanEnemyState } from '../sim/clusters/stickmanEnemy';
+import {
+  getStickRpgEnemyTrait,
+  computeEnemyXpDrop,
+  computeEnemyCoinDrop,
+} from '../sim/clusters/stickRpgEnemyTraits';
 import { MT_HALF_HEIGHT_WORLD, MT_HALF_WIDTH_WORLD, MT_HP, MT_MAX_RING_RADIUS_WORLD } from '../sim/clusters/momentumTurretConfig';
 import { SLIME_HALF_SIZE_WORLD, LARGE_SLIME_HALF_SIZE_WORLD } from '../sim/clusters/slimeAi';
 import { WHEEL_ENEMY_HALF_SIZE_WORLD } from '../sim/clusters/wheelEnemyAi';
@@ -231,7 +236,13 @@ export function spawnEnemyClusters(
       enemyCluster.halfHeightWorld = trait.hitboxHeight / 16;
       enemyCluster.xpValue = computeEnemyXpDrop(trait);
       enemyCluster.coinValue = computeEnemyCoinDrop(trait);
-      if (trait.locomotion === 'roller') {
+      if (trait.id === 'stickmanSwordsman') {
+        createStickmanEnemyState(enemyCluster, 'sword');
+      } else if (trait.id === 'stickmanArcher') {
+        createStickmanEnemyState(enemyCluster, 'bow');
+      } else if (trait.id === 'stickmanMage') {
+        createStickmanEnemyState(enemyCluster, 'aegisStaff');
+      } else if (trait.locomotion === 'roller') {
         enemyCluster.isRollingEnemyFlag = 1;
         enemyCluster.rollingEnemySpriteIndex = 1;
         enemyCluster.rollingEnemyRollAngleRad = 0;

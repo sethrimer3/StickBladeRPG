@@ -239,6 +239,11 @@ export function createSnapshot(world: WorldState): WorldSnapshot {
       dustEchoLungeHitPlayerFlag:        c.dustEchoLungeHitPlayerFlag,
       dustEchoLungeCooldownTicks:        c.dustEchoLungeCooldownTicks,
       dustEchoHitFlashTicks:             c.dustEchoHitFlashTicks,
+      isStickmanEnemyFlag:               c.isStickmanEnemyFlag,
+      stickmanEnemyWeaponId:             c.stickmanEnemyWeaponId,
+      stickmanEnemyBody:                 c.stickmanEnemyBody,
+      stickmanEnemyIsSwinging:           c.stickmanEnemyIsSwinging,
+      stickmanEnemySwingAngleRad:        c.stickmanEnemySwingAngleRad,
       renderPositionXWorld:          c.positionXWorld,
       renderPositionYWorld:          c.positionYWorld,
     });

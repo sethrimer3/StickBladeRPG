@@ -28,6 +28,8 @@ import {
   SR_FOOT_R,
   type StickRangerBody,
 } from '../../sim/clusters/stickRangerBody';
+import type { WeaponDef } from '../../sim/weapons/weaponDefs';
+import { computeWeaponGripAnchor, createWeaponGripAnchor } from '../../sim/weapons/weaponGrip';
 
 /** Limb segments, in draw order — same set Stick Ranger strokes per frame. */
 const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
@@ -42,18 +44,26 @@ const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
   [SR_KNEE_R, SR_FOOT_R],
 ];
 
-/** Head marker size in world units (Stick Ranger draws a 5x5 pixel block). */
-const HEAD_SIZE_WORLD = 5;
+/** Stick Ranger figures are pure black lines. */
+const FIGURE_COLOR = '#000000';
+/** Enemy stickmen line color (crimson dark). */
+const ENEMY_FIGURE_COLOR = '#881111';
 
-/** Figure colour. White, so the stickman reads against this game's dark rock. */
-const FIGURE_COLOR = '#ffffff';
+/** Size of the head square in world units (native pixels). Matches Stick Ranger. */
+const HEAD_SIZE_WORLD = 4.8;
+
+const _weaponAnchorScratch = createWeaponGripAnchor();
 
 /**
- * Strokes the stickman into `ctx`.
+ * Renders the stickman softbody onto the canvas.
  *
+ * @param ctx        Canvas 2D context.
+ * @param body       The simulated softbody.
  * @param offsetXPx  Camera X offset, screen pixels.
  * @param offsetYPx  Camera Y offset, screen pixels.
  * @param scalePx    Screen pixels per world unit.
+ * @param isTwoHandGrip True when holding a two-handed weapon.
+ * @param isEnemy    True if this is an enemy stickman.
  */
 export function renderStickRangerBody(
   ctx: CanvasRenderingContext2D,
@@ -62,13 +72,16 @@ export function renderStickRangerBody(
   offsetYPx: number,
   scalePx: number,
   isTwoHandGrip = false,
+  isEnemy = false,
 ): void {
   const alpha = getStickRangerRenderAlpha(body);
   const toScreenX = (i: number): number => getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx;
   const toScreenY = (i: number): number => getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx;
 
+  const color = isEnemy ? ENEMY_FIGURE_COLOR : FIGURE_COLOR;
+
   ctx.save();
-  ctx.strokeStyle = FIGURE_COLOR;
+  ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(1, scalePx);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -111,13 +124,107 @@ export function renderStickRangerBody(
 
   // Head: filled square centred on the head point.
   const headSizePx = HEAD_SIZE_WORLD * scalePx;
-  ctx.fillStyle = FIGURE_COLOR;
+  ctx.fillStyle = color;
   ctx.fillRect(
     toScreenX(SR_HEAD) - headSizePx * 0.5,
     toScreenY(SR_HEAD) - headSizePx * 0.5,
     headSizePx,
     headSizePx,
   );
+
+  ctx.restore();
+}
+
+/**
+ * Renders a stickman's equipped weapon (blade, bow, staff) attached to their grip anchor.
+ */
+export function renderStickRangerWeapon(
+  ctx: CanvasRenderingContext2D,
+  body: StickRangerBody,
+  def: WeaponDef,
+  isSwinging: boolean,
+  swingAngleRad: number,
+  offsetXPx: number,
+  offsetYPx: number,
+  scalePx: number,
+): void {
+  computeWeaponGripAnchor(body, def, 1, _weaponAnchorScratch);
+
+  const originXPx = _weaponAnchorScratch.xWorld * scalePx + offsetXPx;
+  const originYPx = _weaponAnchorScratch.yWorld * scalePx + offsetYPx;
+  const angleRad = isSwinging ? swingAngleRad : _weaponAnchorScratch.angleRad;
+
+  ctx.save();
+  ctx.translate(originXPx, originYPx);
+  ctx.rotate(angleRad);
+
+  const reachPx = (def.range ?? 20) * scalePx;
+  const color = def.color ?? '#e0e0e0';
+
+  if (def.kind === 'melee' || def.kind === 'shield') {
+    // ── Sword Blade ────────────────────────────────────────────────────────
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.5, scalePx * 1.2);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(reachPx, 0);
+    ctx.stroke();
+
+    // Crossguard
+    ctx.strokeStyle = '#8a6f3d';
+    ctx.lineWidth = Math.max(1, scalePx * 0.8);
+    ctx.beginPath();
+    ctx.moveTo(reachPx * 0.15, -scalePx * 2);
+    ctx.lineTo(reachPx * 0.15, scalePx * 2);
+    ctx.stroke();
+
+    // Swing swoosh arc if active
+    if (isSwinging) {
+      ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
+      ctx.lineWidth = scalePx * 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, reachPx, -0.6, 0.6);
+      ctx.stroke();
+    }
+  } else if (def.kind === 'bow') {
+    // ── Bow Arc & String ───────────────────────────────────────────────────
+    const bowRadiusPx = 7 * scalePx;
+    ctx.strokeStyle = '#8b5a2b';
+    ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
+    ctx.beginPath();
+    ctx.arc(0, 0, bowRadiusPx, -Math.PI * 0.35, Math.PI * 0.35);
+    ctx.stroke();
+
+    // Bowstring
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(0.8, scalePx * 0.5);
+    ctx.beginPath();
+    const topX = Math.cos(-Math.PI * 0.35) * bowRadiusPx;
+    const topY = Math.sin(-Math.PI * 0.35) * bowRadiusPx;
+    const botX = Math.cos(Math.PI * 0.35) * bowRadiusPx;
+    const botY = Math.sin(Math.PI * 0.35) * bowRadiusPx;
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(-scalePx * 1.5, 0);
+    ctx.lineTo(botX, botY);
+    ctx.stroke();
+  } else if (def.kind === 'staff' || def.kind === 'magic') {
+    // ── Staff Shaft & Magic Orb ───────────────────────────────────────────
+    const staffLenPx = 18 * scalePx;
+    ctx.strokeStyle = '#6e4720';
+    ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
+    ctx.beginPath();
+    ctx.moveTo(-staffLenPx * 0.2, 0);
+    ctx.lineTo(staffLenPx * 0.8, 0);
+    ctx.stroke();
+
+    // Glowing tip
+    const tipX = staffLenPx * 0.8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(tipX, 0, scalePx * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.restore();
 }

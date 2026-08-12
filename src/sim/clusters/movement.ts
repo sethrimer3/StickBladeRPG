@@ -46,6 +46,7 @@ import { rechargeGrappleCharge } from './grappleShared';
 import { isVerdantDustEquipped, VERDANT_JUMP_LAUNCH_MULTIPLIER } from './verdantMobility';
 import { updateVerdantFlowerSpawn, type VerdantFlowerSpawnEvent } from './verdantFlowerSpawn';
 import { tickStickRangerPlayer, isStickRangerActive } from './stickRangerPlayer';
+import { tickStickmanEnemy } from './stickmanEnemy';
 import { computeAllFollowerIntents } from '../party/partyWorld';
 
 /** Reused (never reallocated) scratch buffer for this tick's flower-bloom events. */
@@ -135,6 +136,12 @@ export function applyClusterMovement(world: WorldState): void {
       // emergent gait. Skip the AABB movement + collision passes below —
       // running both would have the box fight the softbody every tick.
       tickStickRangerPlayer(cluster, world);
+      continue;
+    }
+
+    if (cluster.isPlayerFlag === 0 && (cluster.isStickmanEnemyFlag === 1 || cluster.stickRpgEnemyKind?.startsWith('stickman'))) {
+      // Enemy Stickman uses softbody Verlet physics, bot pathfinding, and weapon combat
+      tickStickmanEnemy(cluster, world, dtSec, playerX, playerY, playerFound);
       continue;
     }
 

@@ -65,6 +65,18 @@ export interface ClusterState {
    */
   auraDamageReduction: number;
 
+  // ---- Stickman Enemy fields ----------------------------------------------
+  /** 1 if this cluster is an enemy stickman with softbody physics & weapon. */
+  isStickmanEnemyFlag: 0 | 1;
+  /** Equipped weapon ID for the stickman enemy. */
+  stickmanEnemyWeaponId: string | null;
+  /** Softbody rig reference for the stickman enemy. */
+  stickmanEnemyBody: import('./stickRangerBody').StickRangerBody | null;
+  /** 1 while the stickman enemy is performing a weapon attack/swing. */
+  stickmanEnemyIsSwinging: 0 | 1;
+  /** Current aim / swing angle in radians. */
+  stickmanEnemySwingAngleRad: number;
+
   // ---- Platformer physics -------------------------------------------------
   /** 1 when the cluster is resting on a surface (floor or platform top). */
   isGroundedFlag: 0 | 1;
@@ -1506,5 +1518,10 @@ export function createClusterState(
     dustEchoLungeHitPlayerFlag: 0,
     dustEchoLungeCooldownTicks: 0,
     dustEchoHitFlashTicks: 0,
+    isStickmanEnemyFlag: 0,
+    stickmanEnemyWeaponId: null,
+    stickmanEnemyBody: null,
+    stickmanEnemyIsSwinging: 0,
+    stickmanEnemySwingAngleRad: 0,
   };
 }
