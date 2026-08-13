@@ -23,6 +23,15 @@ import {
   MOTE_LIFE_SLOT_HEIGHT_PX,
 } from '../render/hud/moteLifeSlots';
 import { drawAnimatedDustContainerHud, preloadDustContainerHudFrames } from '../render/hud/dustContainerAnimation';
+import {
+  drawPlayerTopBar,
+  getTopBarWidthPx,
+  MOTE_LIFE_CONTAINERS_ENABLED,
+  TOP_BAR_ORIGIN_X_PX,
+  TOP_BAR_ORIGIN_Y_PX,
+  TOP_BAR_HEIGHT_PX,
+} from '../render/hud/playerTopBar';
+import { getEquippedWeaponDef } from '../sim/weapons/playerWeaponState';
 import { formatRunTimer } from '../progression/saveSlots';
 import { drawChallengeHudShield } from '../render/challengeElementRenderer';
 import { getSpeedrunTimerEnabled } from '../ui/renderSettings';
@@ -240,6 +249,27 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
   const dustSquareHeight = MOTE_LIFE_SLOT_HEIGHT_PX;
   const dustStartX = 8;
 
+  if (!MOTE_LIFE_CONTAINERS_ENABLED) {
+    // ── Player top bar (life bar + equipped weapon slot) ────────────────────
+    // Temporarily replaces the dust container life indicators.
+    const weaponDef = getEquippedWeaponDef(world.playerWeapon);
+    drawPlayerTopBar(
+      ctx,
+      {
+        currentHp: currentMoteCount,
+        maxHp: maxMoteCapacity,
+        weaponName: weaponDef ? weaponDef.name : null,
+      },
+      nowMs,
+    );
+    if (r.isChallengeModeActive) {
+      drawChallengeHudShield(
+        ctx,
+        TOP_BAR_ORIGIN_X_PX + getTopBarWidthPx() + 8,
+        TOP_BAR_ORIGIN_Y_PX + TOP_BAR_HEIGHT_PX * 0.5,
+      );
+    }
+  } else {
   ctx.save();
   for (let moteIndex = 0; moteIndex < maxMoteCapacity; moteIndex++) {
     const slot = getMoteLifeSlotPosition(moteIndex);
@@ -271,6 +301,7 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
     drawChallengeHudShield(ctx, dustStartX + moteLifeColumnCount * (dustSquareWidth + MOTE_LIFE_SLOT_GAP_PX) + 4, MOTE_LIFE_ORIGIN_Y_PX + 6);
   }
   ctx.restore();
+  }
 
   // ── Health bar / combat-text event detection ──────────────────────────────
   // Detect BLOCKED events (armor absorbed a full hit) and spawn floater text.

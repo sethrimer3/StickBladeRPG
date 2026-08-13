@@ -333,7 +333,7 @@ export function updateInspector(
       sectionLabel.style.cssText = `font-size: 11px; color: ${ACCENT_GOLD}; margin-top: 8px; margin-bottom: 4px; font-weight: bold;`;
       div.appendChild(sectionLabel);
 
-      addNumberField(div, 'Starting Dust Motes', opts?.startingHealth ?? 10, 0, 999999,
+      addNumberField(div, 'Starting Dust Motes', opts?.startingHealth ?? 20, 0, 999999,
         v => callbacks?.onPropertyChange('campaignSpawn.startingHealth', v));
       addNumberField(div, 'Containers', opts?.startingDustContainerCount ?? 0, 0, 20,
         v => callbacks?.onPropertyChange('campaignSpawn.startingDustContainerCount', v));

@@ -70,7 +70,7 @@ export const MOMENTUM_TRAIL_MAX_POINTS = 8;
  * Maximum canonical motes derived from player life (mirrors MAX_LIFE_MOTES in
  * stormweave/lifeMotes.ts — the two must stay equal).
  *
- * Sized to comfortably cover base capacity (PLAYER_BASE_MOTE_CAPACITY = 10)
+ * Sized to comfortably cover base capacity (PLAYER_BASE_MOTE_CAPACITY = 20)
  * plus permanent Dust Container upgrades (currently a handful authored across
  * the campaign, 4 motes each) plus realistic one-shot overhealth grants from
  * Dust Boost Jars / Dust Swarms (authored/test dustCount values top out

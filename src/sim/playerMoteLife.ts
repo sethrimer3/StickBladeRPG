@@ -4,7 +4,7 @@ import { onMoteCountChanged } from '../progression/achievementTracker';
 export const MOTES_PER_DUST_CONTAINER = 4;
 
 /** Baseline mote capacity before permanent Dust Container upgrades. */
-export const PLAYER_BASE_MOTE_CAPACITY = 10;
+export const PLAYER_BASE_MOTE_CAPACITY = 20;
 
 export interface PlayerMoteLifeState {
   healthPoints: number;
@@ -33,7 +33,7 @@ export function getPlayerMoteCapacityForContainerCount(containerCount: number, b
 
 /**
  * Derives maximum mote capacity from player progress, using the campaign's starting dust motes
- * (`startingHealth`) as the baseline if configured, falling back to `PLAYER_BASE_MOTE_CAPACITY` (10) otherwise.
+ * (`startingHealth`) as the baseline if configured, falling back to `PLAYER_BASE_MOTE_CAPACITY` (20) otherwise.
  */
 export function getPlayerMoteCapacityFromProgress(
   progress?: { dustContainerCount?: number; startingHealth?: number } | null,
