@@ -44,8 +44,11 @@ const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
   [SR_KNEE_R, SR_FOOT_R],
 ];
 
-/** Stick Ranger figures are pure black lines. */
-const FIGURE_COLOR = '#000000';
+/**
+ * Player figure line color. Stick Ranger draws its figures pure black, but this
+ * game's dark rock makes a black stickman nearly invisible, so it is white here.
+ */
+const FIGURE_COLOR = '#ffffff';
 /** Enemy stickmen line color (crimson dark). */
 const ENEMY_FIGURE_COLOR = '#881111';
 

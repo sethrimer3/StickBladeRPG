@@ -24,8 +24,13 @@ if (-not (Test-Path -LiteralPath $IconPath)) {
 $ShortcutPath = Join-Path $DesktopPath "$ShortcutName.lnk"
 
 # Use powershell.exe with -WindowStyle Hidden so double-clicking launches Electron cleanly without leaving a persistent console window.
+# `npm run desktop` wipes dist/ and rebuilds before starting Electron, so the shortcut always launches current source.
+# The console is hidden, so a failed build would otherwise be silent - surface it in a message box instead.
 $TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ""Set-Location -LiteralPath '$RepositoryRoot'; npm run desktop"""
+$Command = "Set-Location -LiteralPath '$RepositoryRoot'; npm run desktop; " +
+    'if ($LASTEXITCODE -ne 0) { Add-Type -AssemblyName PresentationFramework; ' +
+    "[System.Windows.MessageBox]::Show('StickBlade RPG failed to build. Run build-game.bat in $RepositoryRoot to see the error.', 'StickBlade RPG') }"
+$Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ""$Command"""
 
 $WScriptShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
