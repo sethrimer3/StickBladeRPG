@@ -10,6 +10,7 @@ cannot become automatic commits.
 powershell -NoProfile -File scripts/pause-autosync.ps1 -LeaseId codex-<new-guid> -Owner Codex -Purpose "<short task>"
 powershell -NoProfile -File scripts/autosync-status.ps1
 powershell -NoProfile -File scripts/resume-autosync.ps1 -LeaseId codex-<same-guid>
+powershell -NoProfile -File scripts/autosync-lease-watchdog.ps1
 powershell -NoProfile -File scripts/tests/autosync-integration.ps1
 ```
 
@@ -50,6 +51,40 @@ remain preserved for human review.
 If work is interrupted, tests fail, a conflict occurs, or push verification
 fails, leave the task lease present, keep incomplete work uncommitted, and
 report the exact lease ID and repository status.
+
+## Abandoned-lease watchdog
+
+Step 5 says a task is not finished until its lease is absent, but nothing
+enforced it, and a paused auto-sync is silent by design — it exits successfully
+and looks exactly like a healthy run. That is how the repository sat paused for
+three days behind two leases whose sessions had ended.
+
+```powershell
+powershell -NoProfile -File scripts/autosync-lease-watchdog.ps1
+```
+
+It classifies every lease and **reports only**:
+
+| Class | Meaning | Watchdog action |
+|---|---|---|
+| `Active` | younger than `-StaleLeaseHours` (default 6) | none |
+| `Stale` | old, but the tree is dirty, commits are unpushed, or the metadata is unreadable | none — a human must inspect it |
+| `Abandoned` | old **and** the tree is clean **and** nothing is unpushed | prints the exact release command |
+
+Age alone never decides. `Abandoned` requires positive evidence that the lease
+is protecting nothing, because releasing a lease that *is* protecting work is
+exactly how auto-sync committed agents' in-progress trees in BUILD 615 and
+again through BUILDs 626–629. Nothing is deleted unless a human passes
+`-Release`, which acts only on `Abandoned` leases and re-checks each one
+immediately before removing it. The emergency marker is never touched.
+
+Exit codes: `0` clear, `2` stale (inspect), `3` abandoned, `1` the check failed.
+
+A paused `autosync.ps1` run now performs the same assessment at its first gate,
+emits a warning naming any abandoned lease, and appends it to
+`.git/AUTOSYNC_LEASE_WARNINGS.log` so an unattended run leaves a trail. It
+still only reports — the scheduled process never releases a lease it did not
+create.
 
 `autosync-status.ps1` lists every lease with its owner, purpose, creation time,
 age, and a `stale=true` warning after six hours by default. Override the display

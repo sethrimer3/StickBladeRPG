@@ -104,6 +104,81 @@ function Get-AutosyncPauseState {
     }
 }
 
+# Classify each pause lease as Active / Stale / Abandoned.
+#
+# Age alone cannot distinguish an abandoned lease from a legitimately long task,
+# so it is never sufficient on its own. A lease is only ever called Abandoned
+# when age is joined by positive evidence that it is protecting nothing:
+#
+#   Abandoned = older than $StaleLeaseHours AND the working tree is clean AND
+#               the branch is not ahead of origin.
+#
+# That is precisely the state the three-day pause was found in - 69h and 70h old,
+# clean tree, ahead=0, both covering work already committed. If the tree is dirty
+# or commits are unpushed, the lease IS doing its job however old it looks, and
+# is reported Stale so a human inspects rather than releases it.
+#
+# Leases record no owning process ID, so process liveness is not available as a
+# signal; adding one would be misleading here because each agent shell exits
+# between tool calls and would look dead immediately.
+function Get-AutosyncLeaseAssessment {
+    param(
+        [Parameter(Mandatory)]$Paths,
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [ValidateRange(1, 8760)][int]$StaleLeaseHours = 6
+    )
+    $porcelain = @(& git -C $RepositoryRoot status --porcelain 2>$null)
+    $treeClean = ($LASTEXITCODE -eq 0) -and $porcelain.Count -eq 0
+    $treeKnown = $LASTEXITCODE -eq 0
+    $ahead = $null
+    $divergence = & git -C $RepositoryRoot rev-list --left-right --count 'origin/main...main' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $divergence -match '^\s*(\d+)\s+(\d+)\s*$') { $ahead = [int]$Matches[2] }
+    $results = @()
+    foreach ($leaseFile in (Get-AutosyncPauseLeases $Paths.PauseLeasesDirectory)) {
+        $leaseId = [IO.Path]::GetFileNameWithoutExtension($leaseFile.Name)
+        $owner = $null; $purpose = $null; $createdUtc = $null; $ageHours = $null; $readable = $true
+        try {
+            $lease = Get-Content -LiteralPath $leaseFile.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $owner = [string]$lease.owner
+            $purpose = [string]$lease.purpose
+            $createdUtc = [DateTime]::Parse([string]$lease.createdUtc).ToUniversalTime()
+            $ageHours = ([DateTime]::UtcNow - $createdUtc).TotalHours
+        } catch { $readable = $false }
+        # An unreadable lease is never auto-classified as abandoned: its age and
+        # purpose are unknown, so a human must look at it.
+        $old = $readable -and $null -ne $ageHours -and $ageHours -ge $StaleLeaseHours
+        $protectingWork = (-not $treeClean) -or ($null -eq $ahead) -or ($ahead -gt 0) -or (-not $treeKnown)
+        $classification = if (-not $readable) { 'Stale' } elseif (-not $old) { 'Active' } elseif ($protectingWork) { 'Stale' } else { 'Abandoned' }
+        $reason = switch ($classification) {
+            'Active' { "age {0:N1}h is under the {1}h threshold" -f $ageHours, $StaleLeaseHours }
+            'Abandoned' { "age {0:N1}h exceeds {1}h, working tree is clean, and the branch is not ahead of origin/main - it is protecting nothing" -f $ageHours, $StaleLeaseHours }
+            default {
+                if (-not $readable) {
+                    'lease metadata is unreadable; age and purpose are unknown'
+                } elseif (-not $treeKnown) {
+                    'working-tree state could not be determined'
+                } elseif (-not $treeClean) {
+                    "age {0:N1}h exceeds {1}h, but the working tree is dirty - this lease may be protecting work in progress" -f $ageHours, $StaleLeaseHours
+                } else {
+                    "age {0:N1}h exceeds {1}h, but the branch is ahead of origin/main by {2} commit(s) - unpushed work is present" -f $ageHours, $StaleLeaseHours, $ahead
+                }
+            }
+        }
+        $results += [pscustomobject]@{
+            LeaseId = $leaseId
+            Path = $leaseFile.FullName
+            Owner = $owner
+            Purpose = $purpose
+            CreatedUtc = $createdUtc
+            AgeHours = $ageHours
+            Readable = $readable
+            Classification = $classification
+            Reason = $reason
+        }
+    }
+    return $results
+}
+
 # Resolve the scheduled task(s) that can auto-commit this repository, and the
 # PowerShell runner each one ultimately launches.
 #
@@ -125,7 +200,7 @@ function Find-AutosyncScheduledTasks {
         $runners = @()
         $launched = @()
         foreach ($action in @($task.Actions)) {
-            # Not every action is an Exec action — COM handler and e-mail actions
+            # Not every action is an Exec action - COM handler and e-mail actions
             # carry no Execute/Arguments at all, and touching those properties on
             # them throws.
             if ($null -eq $action.PSObject.Properties['Execute']) { continue }

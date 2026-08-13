@@ -410,7 +410,7 @@ try {
 
     Invoke-Test 'scheduled runner delegates by protocol presence, not directory name' {
         $scheduledRoot = Join-Path $testRoot 'scheduled'
-        # Deliberately NOT named 'StickBlade' — this is the exact condition that
+        # Deliberately NOT named 'StickBlade' - this is the exact condition that
         # routed the real checkout down the unguarded generic path.
         $renamed = New-PlainRepository 'StickBladeRPG'
         New-Item -ItemType Directory -Path (Join-Path $renamed 'scripts') -Force | Out-Null
@@ -427,6 +427,142 @@ try {
 
         Assert-True ($log -notmatch 'auto-commit') 'generic auto-commit path ran for a protocol repository'
         Assert-True ((& git -C $renamed rev-parse HEAD) -eq $head) 'protocol repository was auto-committed'
+    }
+
+    function New-AgedLease($Repository, [string]$LeaseId, [double]$AgeHours, [string]$Owner = 'TestAgent', [string]$Purpose = 'aged lease') {
+        $directory = Join-Path $Repository.Path '.git\AUTOSYNC_PAUSE_LEASES'
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $path = Join-Path $directory "$LeaseId.json"
+        @{
+            version = 1
+            leaseId = $LeaseId
+            owner = $Owner
+            purpose = $Purpose
+            createdUtc = [DateTime]::UtcNow.AddHours(-$AgeHours).ToString('o')
+            repository = $Repository.Path
+        } | ConvertTo-Json -Compress | Set-Content -LiteralPath $path -Encoding utf8
+        return $path
+    }
+
+    # Earlier tests leave the fixture ahead of its origin, which the watchdog
+    # correctly refuses to call abandoned. Push first so "abandoned" is being
+    # tested on the state it is actually defined for: clean AND fully pushed.
+    function Sync-FixtureToOrigin($Repository) {
+        # git writes progress to stderr even on success, and the harness runs
+        # under ErrorActionPreference 'Stop', which would turn that into a
+        # thrown test failure. Drop to Continue for the call.
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try { & git -C $Repository.Path push --quiet origin main 2>&1 | Out-Null } finally { $ErrorActionPreference = $previous }
+    }
+
+    function Clear-AllLeases($Repository) {
+        $directory = Join-Path $Repository.Path '.git\AUTOSYNC_PAUSE_LEASES'
+        if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
+        Remove-Item -LiteralPath (Join-Path $Repository.Path '.git\AUTOSYNC_PAUSED') -Force -ErrorAction SilentlyContinue
+    }
+
+    Invoke-Test 'watchdog reports nothing when no leases are held' {
+        Clear-AllLeases $repo
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path
+        Assert-True ($result.ExitCode -eq 0) "expected exit 0, got $($result.ExitCode): $($result.Output)"
+        Assert-True ($result.Output -match 'No agent pause leases') $result.Output
+    }
+
+    Invoke-Test 'watchdog treats a recent lease as active' {
+        Clear-AllLeases $repo
+        [void](New-AgedLease $repo 'fresh-lease' 0.5)
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path
+        Assert-True ($result.ExitCode -eq 0) "a 0.5h lease must not be flagged: $($result.Output)"
+        Assert-True ($result.Output -match '\[Active\] id=fresh-lease') $result.Output
+        Clear-AllLeases $repo
+    }
+
+    Invoke-Test 'watchdog flags an old lease on a clean tree as abandoned but does not release it' {
+        Clear-AllLeases $repo
+        Sync-FixtureToOrigin $repo
+        $leasePath = New-AgedLease $repo 'abandoned-lease' 70 'Codex' 'phase work already committed'
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path
+        Assert-True ($result.ExitCode -eq 3) "expected exit 3 for an abandoned lease, got $($result.ExitCode): $($result.Output)"
+        Assert-True ($result.Output -match '\[Abandoned\] id=abandoned-lease') $result.Output
+        # Report-only by default is the whole safety property of this watchdog.
+        Assert-True (Test-Path -LiteralPath $leasePath) 'watchdog released a lease without -Release'
+        Assert-True ($result.Output -match 'resume-autosync\.ps1 -LeaseId') 'watchdog did not print the exact release command'
+        Clear-AllLeases $repo
+    }
+
+    Invoke-Test 'watchdog refuses to call an old lease abandoned while the tree is dirty' {
+        Clear-AllLeases $repo
+        [void](New-AgedLease $repo 'busy-lease' 70)
+        $scratch = Join-Path $repo.Path 'watchdog-work-in-progress.txt'
+        Set-Content -LiteralPath $scratch -Value 'uncommitted work'
+        try {
+            $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path
+            Assert-True ($result.ExitCode -eq 2) "expected exit 2 (stale, may hold work), got $($result.ExitCode): $($result.Output)"
+            Assert-True ($result.Output -match '\[Stale\] id=busy-lease') $result.Output
+            Assert-True ($result.Output -notmatch '\[Abandoned\]') 'a dirty tree must never yield an abandoned classification'
+            # And -Release must still refuse it.
+            $released = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path @('-Release')
+            Assert-True ($released.ExitCode -eq 2) $released.Output
+            Assert-True (Test-Path -LiteralPath (Join-Path $repo.Path '.git\AUTOSYNC_PAUSE_LEASES\busy-lease.json')) `
+                '-Release removed a lease that was protecting an uncommitted change'
+        } finally {
+            Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue
+            Clear-AllLeases $repo
+        }
+    }
+
+    Invoke-Test 'watchdog -Release removes only the abandoned lease' {
+        Clear-AllLeases $repo
+        Sync-FixtureToOrigin $repo
+        [void](New-AgedLease $repo 'old-and-idle' 70)
+        [void](New-AgedLease $repo 'still-working' 0.2)
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path @('-Release')
+        Assert-True ($result.ExitCode -eq 3) $result.Output
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $repo.Path '.git\AUTOSYNC_PAUSE_LEASES\old-and-idle.json'))) `
+            '-Release did not remove the abandoned lease'
+        Assert-True (Test-Path -LiteralPath (Join-Path $repo.Path '.git\AUTOSYNC_PAUSE_LEASES\still-working.json')) `
+            '-Release removed an active lease belonging to another task'
+        Clear-AllLeases $repo
+    }
+
+    Invoke-Test 'watchdog never releases an unreadable lease' {
+        Clear-AllLeases $repo
+        $directory = Join-Path $repo.Path '.git\AUTOSYNC_PAUSE_LEASES'
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $corrupt = Join-Path $directory 'corrupt-lease.json'
+        Set-Content -LiteralPath $corrupt -Value '{ this is not json' -Encoding utf8
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path @('-Release')
+        Assert-True ($result.ExitCode -eq 2) "an unreadable lease must be Stale, not Abandoned: $($result.Output)"
+        Assert-True (Test-Path -LiteralPath $corrupt) '-Release removed a lease whose metadata could not be read'
+        Clear-AllLeases $repo
+    }
+
+    Invoke-Test 'watchdog leaves the emergency marker alone' {
+        Clear-AllLeases $repo
+        Set-Content -LiteralPath (Join-Path $repo.Path '.git\AUTOSYNC_PAUSED') -Value ''
+        $result = Invoke-WorkflowScript 'autosync-lease-watchdog.ps1' $repo.Path @('-Release')
+        Assert-True ($result.ExitCode -eq 0) $result.Output
+        Assert-True (Test-Path -LiteralPath (Join-Path $repo.Path '.git\AUTOSYNC_PAUSED')) `
+            'watchdog removed the manual emergency pause marker'
+        Clear-AllLeases $repo
+    }
+
+    Invoke-Test 'a paused auto-sync run warns about an abandoned lease and logs it' {
+        Clear-AllLeases $repo
+        Sync-FixtureToOrigin $repo
+        [void](New-AgedLease $repo 'silent-holder' 72 'Codex' 'never released')
+        $head = & git -C $repo.Path rev-parse HEAD
+        $result = Invoke-WorkflowScript 'autosync.ps1' $repo.Path
+        Assert-True ($result.ExitCode -eq 0) "a paused run must still exit 0: $($result.Output)"
+        Assert-True ((& git -C $repo.Path rev-parse HEAD) -eq $head) 'paused auto-sync committed while a lease was held'
+        Assert-True ($result.Output -match 'silent-holder') `
+            'a paused run stayed silent about a lease that is protecting nothing'
+        $logPath = Join-Path $repo.Path '.git\AUTOSYNC_LEASE_WARNINGS.log'
+        Assert-True (Test-Path -LiteralPath $logPath) 'no warning was recorded to AUTOSYNC_LEASE_WARNINGS.log'
+        Assert-True ((Get-Content -LiteralPath $logPath -Raw) -match 'ABANDONED.*silent-holder') 'warning log entry is malformed'
+        Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+        Clear-AllLeases $repo
     }
 
     Invoke-Test 'the machine-wide sync script checks pause leases' {
@@ -462,7 +598,7 @@ try {
         # out to be honours leases.
         $discovered = @(Find-AutosyncScheduledTasks)
         Assert-True ($discovered.Count -gt 0) `
-            'no scheduled task launching a sync runner was found; auto-sync either never runs unattended or the task escaped discovery — inspect Get-ScheduledTask manually'
+            'no scheduled task launching a sync runner was found; auto-sync either never runs unattended or the task escaped discovery - inspect Get-ScheduledTask manually'
 
         $runners = @($discovered | ForEach-Object { $_.Runners } | Sort-Object -Unique)
         Assert-True ($runners.Count -gt 0) `

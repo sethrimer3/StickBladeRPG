@@ -7,13 +7,30 @@ param(
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'autosync-common.ps1')
 
-function Stop-IfPaused($Paths) {
+function Stop-IfPaused($Paths, [string]$Repository) {
     $pauseState = Get-AutosyncPauseState $Paths
     if ($pauseState.Paused) {
         $reasons = @()
         if ($pauseState.EmergencyPause) { $reasons += 'emergency marker' }
         if ($pauseState.Leases.Count -gt 0) { $reasons += "$($pauseState.Leases.Count) agent lease(s)" }
         Write-Host "StickBlade auto-sync is paused by $($reasons -join ' and ')."
+        # A paused run is silent by design - it exits 0 and looks identical to a
+        # healthy one, which is how a three-day pause went unnoticed. Surface any
+        # lease that is holding the repository while protecting nothing. Report
+        # only: this process must never release a lease it did not create.
+        if ($Repository -and $pauseState.Leases.Count -gt 0) {
+            try {
+                $assessments = @(Get-AutosyncLeaseAssessment -Paths $Paths -RepositoryRoot $Repository)
+                foreach ($assessment in @($assessments | Where-Object { $_.Classification -eq 'Abandoned' })) {
+                    $warning = "Auto-sync has been held by lease '$($assessment.LeaseId)' (owner=$($assessment.Owner), purpose=$($assessment.Purpose)) for $('{0:N1}' -f $assessment.AgeHours)h and it is protecting nothing. Release it with scripts/resume-autosync.ps1 -LeaseId '$($assessment.LeaseId)'."
+                    Write-Warning $warning
+                    Add-Content -LiteralPath (Join-Path $Paths.GitDirectory 'AUTOSYNC_LEASE_WARNINGS.log') `
+                        -Value ("{0} ABANDONED {1}" -f [DateTime]::UtcNow.ToString('o'), $warning) -Encoding utf8 -ErrorAction SilentlyContinue
+                }
+            } catch {
+                Write-Host "Lease assessment was skipped: $($_.Exception.Message)"
+            }
+        }
         return $true
     }
     return $false
@@ -84,8 +101,9 @@ try {
     [void](Test-StickBladeRepositoryIdentity $RepositoryRoot -ThrowOnFailure)
     $paths = Get-AutosyncPaths $RepositoryRoot
 
-    # Gate 1: before locking or staging.
-    if (Stop-IfPaused $paths) { exit 0 }
+    # Gate 1: before locking or staging. Only this gate assesses leases - the
+    # later gates re-check the pause state mid-run and would repeat the warning.
+    if (Stop-IfPaused $paths $RepositoryRoot) { exit 0 }
     $lockState = Get-AutosyncLockState $paths.RunningLock
     if ($lockState.Exists) {
         Write-Host "StickBlade auto-sync did not start: $($lockState.Detail). Locks are never removed automatically."

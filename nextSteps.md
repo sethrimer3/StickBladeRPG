@@ -8,6 +8,55 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 636 — Auto-Sync: watchdog for abandoned pause leases
+
+Follow-up to BUILD 635. The workflow's step 5 ("a task is not finished until its
+lease is absent") had no enforcement, and a paused auto-sync run is silent by
+design — it exits 0 and is indistinguishable from a healthy run — so two leases
+left behind by ended agent sessions held the repository for three days unnoticed.
+
+New `scripts/autosync-lease-watchdog.ps1` classifies every lease via
+`Get-AutosyncLeaseAssessment` (`scripts/autosync-common.ps1`):
+
+- `Active` — younger than `-StaleLeaseHours` (default 6).
+- `Stale` — old, but the tree is dirty, commits are unpushed, or the metadata is
+  unreadable. Never released automatically.
+- `Abandoned` — old AND clean tree AND nothing unpushed.
+
+**Age alone never decides**, deliberately: a legitimately long agent task and an
+abandoned lease are indistinguishable by age, and releasing one that is actually
+protecting work is precisely how auto-sync committed in-progress trees in BUILD
+615 and BUILDs 626–629. `Abandoned` therefore requires positive evidence the
+lease is protecting nothing — which is exactly the state the three-day pause was
+found in (69h/70h, clean, ahead=0).
+
+Report-only by default; `-Release` is opt-in, acts only on `Abandoned`, and
+re-assesses each lease immediately before removal in case an agent woke up in
+between. The emergency marker is never touched. Exit codes 0/2/3 (clear /
+stale / abandoned) so a scheduler or CI step can act. `autosync.ps1` performs the
+same assessment at its first pause gate, warns, and appends to
+`.git/AUTOSYNC_LEASE_WARNINGS.log`; it still never releases a lease.
+
+Leases record no owning PID and deliberately still don't: each agent shell exits
+between tool calls, so process liveness would read as "dead" instantly and make
+every active lease look abandoned.
+
+Validated: autosync-integration 38/38 (8 new, covering the report-only default,
+the dirty-tree and unreadable-metadata refusals, selective `-Release`, the
+untouched emergency marker, and the warning a paused run now emits). `npm test`
+3,666 passing, build and lint clean.
+
+Two process notes worth keeping:
+
+- Non-ASCII punctuation in a `.ps1` is a parse hazard here. Windows PowerShell
+  5.1 reads these UTF-8 files as CP1252, so an em dash's trailing byte `0x94`
+  becomes a smart closing quote and terminates the enclosing string. Keep
+  PowerShell sources ASCII.
+- In `$x = if (...) { } elseif (...) { }`, the `elseif` must sit on the same line
+  as the closing brace or the assignment silently ends early.
+
+---
+
 ## BUILD 635 — Auto-Sync: the scheduled-task guard was checking a task that does not exist
 
 Found while inspecting auto-sync on this machine: it had been **paused for ~3 days**
