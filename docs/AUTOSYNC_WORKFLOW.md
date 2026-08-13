@@ -66,8 +66,8 @@ it. Four runners can commit this repository, and all four must check:
 |---|---|---|
 | `scripts/autosync.ps1` | this repo | marker + leases (always did) |
 | `scripts/scheduled-sync-all-repos.ps1` | this repo | marker + leases, and delegates to the repo-local protocol when `scripts/autosync.ps1` exists |
-| `scheduled-sync-all-repos.ps1` | **DustWeaver's copy — this is the one the scheduled task actually launches** | marker + leases, and delegates by protocol presence |
-| `sync-repos.ps1` | machine-wide, one directory above this repo | marker + leases, and delegates to the repo-local protocol |
+| `scheduled-sync-all-repos.ps1` | DustWeaver's copy | marker + leases, and delegates by protocol presence |
+| `sync-repos.ps1` | **machine-wide, one directory above this repo — this is the one `\GitHub-SyncRepos` actually launches today** | marker + leases, and delegates to the repo-local protocol |
 
 Only the first is version-controlled here. The others live outside this
 repository, so nothing stops them regressing — which is why the guard described
@@ -97,8 +97,8 @@ tests were verified to fail against the pre-fix runner.
 
 Auto-sync committed and pushed an agent's in-progress work three more times
 (`8a919cbe`, `4f8d558c`, and the tree behind `2d66dd13`) while a valid lease was
-held. Root cause: the `\SyncGithubRepos` task does not launch this repository's
-wrapper at all — it launches **DustWeaver's** copy of
+held. Root cause: the scheduled task does not launch this repository's
+wrapper at all — at that time it launched **DustWeaver's** copy of
 `scheduled-sync-all-repos.ps1`, which still selected the safe repository-local
 path with a directory-name test (`-eq 'DustWeaver'`) and fell through to a
 generic `git add -A` with no pause check for everything else. The BUILD 615 fix
@@ -109,10 +109,26 @@ special-casing `Equatoria_Idle` by name with no lease check on the generic path.
 
 Both were repaired the same way — delegate by presence of `scripts/autosync.ps1`,
 and honour the marker and leases on the generic path — and the guard was
-strengthened: it now reads the `\SyncGithubRepos` task's own action, follows the
+strengthened: it now reads the scheduled task's own action, follows the
 `.vbs` wrapper to the `.ps1` it runs, and asserts *that* file checks both, plus
 that it does not select its safe path by directory name. A fixed-path guard
 could not see this class of failure, which is precisely why it recurred.
+
+### And the guard itself was blind (BUILD 635)
+
+The strengthened guard looked up the task by the fixed name `\SyncGithubRepos`.
+No such task exists on this machine — the real one is **`\GitHub-SyncRepos`** —
+so `Get-ScheduledTask` returned `$null`, the test took its "not registered"
+skip branch, and it asserted nothing at all. `autosync-status.ps1` probed the
+same wrong name and printed `not found or inaccessible` for the scheduled task
+on every run. A hard-coded name is the same defect as a hard-coded path, one
+level up: it points the check at something that is not what commits.
+
+Both now **discover** the task instead, via `Find-AutosyncScheduledTasks` in
+`scripts/autosync-common.ps1`: scan every scheduled task, follow each action's
+`.vbs` shim to the `.ps1` it runs, and treat any task reaching a sync runner as
+in scope. The guard fails loudly when discovery finds nothing, rather than
+skipping. Renaming the task can no longer make either check blind.
 
 Note that these runners live outside this repository and are therefore not
 version-controlled here. If one is restored from a backup or another machine,
@@ -149,25 +165,32 @@ creates the emergency pause marker, preserves the reported
 
 ## Scheduled task
 
-Task `\SyncGithubRepos` retains its ten-minute schedule, user context, hidden
-execution, and `C:\Users\srime\Documents\GitHub` working directory. It launches:
+On this machine the task is **`\GitHub-SyncRepos`**, on a ten-minute repetition,
+running as `srime`, hidden. It launches:
 
 ```text
-wscript.exe "C:\Users\srime\Documents\GitHub\DustWeaver\scripts\scheduled-sync-all-repos-hidden.vbs"
+wscript.exe "C:\Users\srime\Documents\GitHub\sync-repos-hidden.vbs"
 ```
 
-Read that path carefully: it is **DustWeaver's** wrapper, not this repository's.
-This repo's own `scripts/scheduled-sync-all-repos-hidden.vbs` is not what the
-scheduler runs, and an earlier version of this document claimed otherwise —
-which is how a fix landed in the wrong copy and let the defect recur. Confirm
-what is actually scheduled before trusting any of this:
+Read that path carefully: it is the **machine-wide** wrapper one directory above
+this repository — not this repo's `scripts/scheduled-sync-all-repos-hidden.vbs`,
+and not DustWeaver's copy. Earlier versions of this document asserted each of
+those in turn, and being wrong about it is exactly how a fix landed in a copy
+nothing runs. Never trust the name or path recorded here; resolve it:
 
 ```powershell
-(Get-ScheduledTask -TaskName 'SyncGithubRepos').Actions | Format-List Execute, Arguments
+powershell -NoProfile -File scripts/autosync-status.ps1
 ```
 
-That wrapper runs DustWeaver's `scheduled-sync-all-repos.ps1`, which delegates
-any repository owning `scripts/autosync.ps1` to that script — which verifies its
+The status report now discovers and prints every scheduled task that reaches a
+sync runner, with its actions and resolved `.ps1`. To inspect the raw task:
+
+```powershell
+(Get-ScheduledTask -TaskName 'GitHub-SyncRepos').Actions | Format-List Execute, Arguments
+```
+
+That wrapper runs the machine-wide `sync-repos.ps1`, which delegates any
+repository owning `scripts/autosync.ps1` to that script — which verifies its
 own repository identity and re-checks the pause state itself. Repositories
 without a protocol take a generic path that still honours the marker and leases.
 While any lease or the emergency marker is present, StickBlade exits

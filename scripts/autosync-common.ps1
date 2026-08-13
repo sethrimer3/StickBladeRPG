@@ -104,6 +104,65 @@ function Get-AutosyncPauseState {
     }
 }
 
+# Resolve the scheduled task(s) that can auto-commit this repository, and the
+# PowerShell runner each one ultimately launches.
+#
+# Deliberately discovered rather than named. Two incidents (BUILD 615, and again
+# through BUILDs 626-629) were caused by a guard that looked at a FIXED target
+# while the thing actually committing was somewhere else. A hard-coded task name
+# is the same mistake one level up: on this machine the task is
+# `\GitHub-SyncRepos`, not the `\SyncGithubRepos` the scripts used to probe, so
+# every scheduled-task check silently reported "not found" and asserted nothing.
+#
+# So scan every task, follow each action's .vbs shim to the .ps1 it runs, and
+# treat any task reaching a sync runner as in scope. Renaming a task can no
+# longer make the guard blind.
+function Find-AutosyncScheduledTasks {
+    param([string[]]$RunnerNamePatterns = @('sync-repos', 'scheduled-sync-all-repos', 'autosync'))
+    $results = @()
+    $tasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue)
+    foreach ($task in $tasks) {
+        $runners = @()
+        $launched = @()
+        foreach ($action in @($task.Actions)) {
+            # Not every action is an Exec action — COM handler and e-mail actions
+            # carry no Execute/Arguments at all, and touching those properties on
+            # them throws.
+            if ($null -eq $action.PSObject.Properties['Execute']) { continue }
+            $command = "$($action.Execute) $($action.Arguments)"
+            foreach ($match in [regex]::Matches($command, '(?<path>[A-Za-z]:\\[^"'']+?\.(?:vbs|ps1))')) {
+                $path = $match.Groups['path'].Value
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+                $launched += $path
+                # A .vbs wrapper is a shim; the thing that commits is the .ps1
+                # it runs, so follow one level through it.
+                if ($path -like '*.vbs') {
+                    $wrapper = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
+                    foreach ($inner in [regex]::Matches([string]$wrapper, '(?<path>[A-Za-z]:\\[^"'']+?\.ps1)')) {
+                        $innerPath = $inner.Groups['path'].Value
+                        if (Test-Path -LiteralPath $innerPath -PathType Leaf) { $launched += $innerPath }
+                    }
+                }
+            }
+        }
+        $runners = @($launched | Where-Object { $_ -like '*.ps1' } | Sort-Object -Unique)
+        $relevant = @($launched | Where-Object {
+            $leaf = Split-Path $_ -Leaf
+            $null -ne ($RunnerNamePatterns | Where-Object { $leaf -like "*$_*" })
+        })
+        if ($relevant.Count -eq 0) { continue }
+        $results += [pscustomobject]@{
+            TaskName = $task.TaskName
+            TaskPath = "$($task.TaskPath)$($task.TaskName)"
+            Enabled = [bool]$task.Settings.Enabled
+            State = [string]$task.State
+            Actions = @(@($task.Actions) | ForEach-Object { "$($_.Execute) $($_.Arguments)".Trim() })
+            Runners = $runners
+        }
+    }
+    return $results
+}
+
 function Get-AutosyncLockState {
     param([Parameter(Mandatory)][string]$LockPath)
     if (-not (Test-Path -LiteralPath $LockPath)) {

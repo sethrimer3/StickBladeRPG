@@ -8,6 +8,42 @@ Current focus: large-room loading and rendering performance, especially room-tra
 
 ---
 
+## BUILD 635 — Auto-Sync: the scheduled-task guard was checking a task that does not exist
+
+Found while inspecting auto-sync on this machine: it had been **paused for ~3 days**
+by two stale agent leases (`antigravity-phase2e-…` 69h, `claude-5c12356a-…` 70h,
+both for work already committed in BUILD 621/626). Both released; the tree was
+clean and `ahead=0`, so neither was protecting anything. Auto-sync is active again.
+
+The reason nobody noticed is the real defect:
+
+- `autosync-status.ps1` and the BUILD 615/626–629 source guard both looked up the
+  scheduled task by the fixed name `\SyncGithubRepos`. **No such task exists** —
+  this machine's task is `\GitHub-SyncRepos`, launching the machine-wide
+  `C:\Users\srime\Documents\GitHub\sync-repos-hidden.vbs` → `sync-repos.ps1`.
+- So the status report printed `not found or inaccessible` on every run, and the
+  guard test took its `(skipped: … not registered)` branch and **asserted nothing**.
+  The check that exists specifically because this defect recurred twice was itself
+  inert. A hard-coded task name is the same mistake as a hard-coded path, one level up.
+
+Fixed by discovery, not by correcting the name: new `Find-AutosyncScheduledTasks`
+in `scripts/autosync-common.ps1` scans every scheduled task, follows each action's
+`.vbs` shim to the `.ps1` it runs, and returns any task reaching a sync runner.
+Shared by the status script and the guard so they cannot disagree. The guard now
+**fails loudly** when discovery finds nothing, instead of skipping. Non-`Exec`
+actions (COM handler, e-mail) are skipped — reading `Execute` on those throws,
+which is what the first draft did across the machine's full task list.
+
+Validated: `scripts/tests/autosync-integration.ps1` 30/30 — and the runner guard
+now genuinely resolves `sync-repos.ps1` and asserts against it rather than
+skipping. `npm test` 3,666 passing, `npm run build` and `npm run lint` clean.
+
+Note `docs/AUTOSYNC_WORKFLOW.md` has now been wrong about what the scheduler runs
+twice (this repo's wrapper, then DustWeaver's, now the machine-wide one). Treat
+the path recorded there as a hint; `autosync-status.ps1` prints the live answer.
+
+---
+
 ## BUILD 629 — STICK-RPG Port: Closing the Two Recorded Gaps (Ally-Targeted Auras, Expiry Visuals)
 
 The port's five phases finished in BUILD 628. This closes the two gaps the plan recorded rather than tracked.

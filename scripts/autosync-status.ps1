@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$RepositoryRoot,
-    [string]$ScheduledTaskName = '\SyncGithubRepos',
+    # Empty means "discover it". Pass a name only to inspect one specific task.
+    [string]$ScheduledTaskName,
     [ValidateRange(1, 8760)][int]$StaleLeaseHours = 6
 )
 $ErrorActionPreference = 'Continue'
@@ -32,22 +33,15 @@ try {
     }
     $lastCommit = & git -C $RepositoryRoot log -1 --date=iso --pretty=format:'%h %ad %s' --grep='^Auto-sync' 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $lastCommit) { $lastCommit = 'none found' }
-    $scheduledTaskState = 'unavailable'
-    $scheduledTaskExecutable = 'unavailable'
-    $scheduledTaskArguments = 'unavailable'
+    $scheduledTasks = @()
+    $scheduledTaskError = $null
     try {
-        $taskOutput = & schtasks.exe /Query /TN $ScheduledTaskName /XML 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            [xml]$taskXml = $taskOutput -join [Environment]::NewLine
-            $namespace = New-Object Xml.XmlNamespaceManager($taskXml.NameTable)
-            $namespace.AddNamespace('t', $taskXml.DocumentElement.NamespaceURI)
-            $scheduledTaskExecutable = $taskXml.SelectSingleNode('//t:Exec/t:Command', $namespace).InnerText
-            $argumentNode = $taskXml.SelectSingleNode('//t:Exec/t:Arguments', $namespace)
-            $scheduledTaskArguments = if ($argumentNode) { $argumentNode.InnerText } else { '<none>' }
-            $enabledNode = $taskXml.SelectSingleNode('//t:Settings/t:Enabled', $namespace)
-            $scheduledTaskState = if ($enabledNode -and $enabledNode.InnerText -eq 'false') { 'disabled' } else { 'enabled' }
-        } else { $scheduledTaskState = 'not found or inaccessible' }
-    } catch { $scheduledTaskState = 'not queryable' }
+        $scheduledTasks = @(Find-AutosyncScheduledTasks)
+        if ($ScheduledTaskName) {
+            $wanted = $ScheduledTaskName.TrimStart('\')
+            $scheduledTasks = @($scheduledTasks | Where-Object { $_.TaskPath.TrimStart('\') -eq $wanted -or $_.TaskName -eq $wanted })
+        }
+    } catch { $scheduledTaskError = $_.Exception.Message }
     Write-Host 'Repository identity: passed (sethrimer3/StickBlade)'
     Write-Host "Auto-sync: $(if ($pauseState.Paused) { 'paused' } else { 'active' })"
     Write-Host "Emergency pause marker: $(if ($pauseState.EmergencyPause) { 'present' } else { 'absent' })"
@@ -73,9 +67,18 @@ try {
     if ($lockState.Exists) {
         Write-Host "Lock metadata: pid=$($lockState.ProcessId) processStartUtc=$($lockState.ProcessStartUtc) createdUtc=$($lockState.CreatedUtc) repository=$($lockState.Repository)"
     }
-    Write-Host "Scheduled task $ScheduledTaskName`: $scheduledTaskState"
-    Write-Host "Scheduled executable: $scheduledTaskExecutable"
-    Write-Host "Scheduled arguments: $scheduledTaskArguments"
+    if ($scheduledTaskError) {
+        Write-Host "Scheduled sync tasks: not queryable ($scheduledTaskError)"
+    } elseif ($scheduledTasks.Count -eq 0) {
+        Write-Host 'Scheduled sync tasks: none found (auto-sync will never run unattended)'
+    } else {
+        Write-Host "Scheduled sync tasks: $($scheduledTasks.Count)"
+        foreach ($scheduledTask in $scheduledTasks) {
+            Write-Host ("Task: {0} state={1} enabled={2}" -f $scheduledTask.TaskPath, $scheduledTask.State, $scheduledTask.Enabled.ToString().ToLowerInvariant())
+            foreach ($action in $scheduledTask.Actions) { Write-Host "  action: $action" }
+            foreach ($runner in $scheduledTask.Runners) { Write-Host "  runner: $runner" }
+        }
+    }
     Write-Host "Last auto-sync commit: $lastCommit"
     exit 0
 } catch { Write-Error "Could not inspect StickBlade auto-sync: $($_.Exception.Message)"; exit 1 }

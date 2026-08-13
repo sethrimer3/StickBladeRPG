@@ -6,6 +6,9 @@ $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "StickBlade-autosync-tests-$PID-$([Guid]::NewGuid().ToString('N'))"
 $passed = 0
 $failed = 0
+# Scheduled-task discovery is shared with autosync-status.ps1 so the guard and
+# the status report can never disagree about which task is in scope.
+. (Join-Path $sourceRoot 'scripts\autosync-common.ps1')
 
 function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
@@ -444,41 +447,26 @@ try {
 
     Invoke-Test 'the script the scheduled task actually launches checks pause leases' {
         # The guard above watches a script at a FIXED path. That is what let the
-        # second incident through: the `\SyncGithubRepos` task launches a wrapper
-        # in a different repository entirely (DustWeaver's), whose runner still
+        # second incident through: the scheduled task launches a wrapper in a
+        # different repository entirely (DustWeaver's), whose runner still
         # selected the safe path by directory name and fell through to a generic
         # `git add -A` with no pause check. The fixed-path guard could not see it.
         #
-        # So resolve the runner the way the scheduler does — from the task's own
-        # action — and assert whatever that turns out to be honours leases.
-        $task = Get-ScheduledTask -TaskName 'SyncGithubRepos' -ErrorAction SilentlyContinue
-        if ($null -eq $task) {
-            Write-Host '  (skipped: scheduled task \SyncGithubRepos not registered)'
-            return
-        }
+        # A hard-coded TASK NAME was the same mistake one level up. This guard
+        # used to probe `\SyncGithubRepos`; the task on this machine is called
+        # `\GitHub-SyncRepos`, so the lookup returned nothing and the guard
+        # skipped itself silently for as long as that name was wrong.
+        #
+        # So discover every scheduled task that reaches a sync runner, resolve
+        # the runner the way the scheduler does, and assert whatever that turns
+        # out to be honours leases.
+        $discovered = @(Find-AutosyncScheduledTasks)
+        Assert-True ($discovered.Count -gt 0) `
+            'no scheduled task launching a sync runner was found; auto-sync either never runs unattended or the task escaped discovery — inspect Get-ScheduledTask manually'
 
-        $launched = @()
-        foreach ($action in @($task.Actions)) {
-            $command = "$($action.Execute) $($action.Arguments)"
-            foreach ($match in [regex]::Matches($command, '(?<path>[A-Za-z]:\\[^"'']+?\.(?:vbs|ps1))')) {
-                $path = $match.Groups['path'].Value
-                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-                $launched += $path
-                # A .vbs wrapper is a shim; the thing that commits is the .ps1
-                # it runs, so follow one level through it.
-                if ($path -like '*.vbs') {
-                    $wrapper = Get-Content -LiteralPath $path -Raw
-                    foreach ($inner in [regex]::Matches($wrapper, '(?<path>[A-Za-z]:\\[^"'']+?\.ps1)')) {
-                        $innerPath = $inner.Groups['path'].Value
-                        if (Test-Path -LiteralPath $innerPath -PathType Leaf) { $launched += $innerPath }
-                    }
-                }
-            }
-        }
-
-        $runners = @($launched | Where-Object { $_ -like '*.ps1' } | Sort-Object -Unique)
+        $runners = @($discovered | ForEach-Object { $_.Runners } | Sort-Object -Unique)
         Assert-True ($runners.Count -gt 0) `
-            "could not resolve any PowerShell runner from the scheduled task's action; inspect it manually"
+            "could not resolve any PowerShell runner from the scheduled tasks' actions; inspect them manually"
 
         foreach ($runner in $runners) {
             Write-Host "  resolved runner: $runner"
