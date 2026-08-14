@@ -119,11 +119,19 @@ describe('swing lifecycle', () => {
     assert.ok(Math.abs(state.aimAngleRad) < 1e-9, 'aim right should be angle 0');
   });
 
-  test('the arc spans the weapon arc, centered on the aim', () => {
+  test('a follow-up arc spans the weapon arc, centered on the aim', () => {
     const state = createWeaponSwingState();
+    // The first cut of a combo is the fixed 180° chop on a blade this length,
+    // so advance past it to reach the ordinary aim-centred arc.
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
+    state.activeFlag = 0;
+    state.cooldownRemainingTicks = 0;
+
+    startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
+    assert.equal(state.isOpeningChopFlag, 0);
     const span = Math.abs(state.endAngleRad - state.startAngleRad);
     assert.ok(Math.abs(span - (SWORD.arc as number)) < 1e-9, `span ${span}`);
+    assert.ok(Math.abs((state.startAngleRad + state.endAngleRad) * 0.5 - state.aimAngleRad) < 1e-9);
   });
 
   test('facing left mirrors the swing direction', () => {
