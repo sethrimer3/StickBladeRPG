@@ -415,12 +415,13 @@ describe('firing ranged weapons', () => {
       const result = fireRangedWeapon(pool, def, 0, 0, 100, 0, 1, rng);
       if (result.projectileCount > 0) fired++; else silent.push(id);
     }
-    assert.equal(ranged, 33, `expected 33 ranged weapons, found ${ranged}`);
+    // 33 donor + the 6 weave bows.
+    assert.equal(ranged, 39, `expected 39 ranged weapons, found ${ranged}`);
     // mirageEdge declares speed: 0 in the donor — it is a stationary beam
     // rather than a travelling projectile, so refusing to launch is correct.
     // Pinned here so a future data change makes the exception visible.
     assert.deepEqual(silent, ['mirageEdge'], `unexpected non-firing weapons: ${silent.join(', ')}`);
-    assert.equal(fired, 32);
+    assert.equal(fired, 38);
   });
 
   test('the one non-firing ranged weapon is non-firing because of its data', () => {

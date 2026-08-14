@@ -19,7 +19,11 @@ import { fireGrapple } from '../sim/clusters/grapple';
 import { GrappleInputMode } from '../sim/worldGrappleState';
 import { getWallJumpCandidate } from '../sim/clusters/playerWallJump';
 import { screenToWorld } from './gameRoom';
-import { tryStartPlayerWeaponAttack, releasePlayerWeaponAttack } from '../sim/weapons/playerWeaponState';
+import {
+  tryStartPlayerWeaponAttack,
+  releasePlayerWeaponAttack,
+  getEquippedWeaponDef,
+} from '../sim/weapons/playerWeaponState';
 import { getDoubleJumpToGrappleEnabled } from '../ui/renderSettings';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
@@ -307,9 +311,17 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
       }
     } else if (cmd.kind === CommandKind.ShieldWeaveHold) {
       const player = world.clusters[0];
-      if (!exclusiveAction.allowShieldWeave || player === undefined || player.isAliveFlag === 0) {
+      // A weapon's secondary (the right mouse button) raises the shield only
+      // when the equipped weapon grants one — the weave swords do, everything
+      // else ignores the button. The gamepad's own trigger is unconditional, so
+      // this gate applies only when the weapon secondary is the sole source.
+      const weaponGrantsShield = getEquippedWeaponDef(world.playerWeapon)?.secondaryShieldWeave === true;
+      const allowedBySource = inputState.isShieldWeaveHeldFlag === 1 || weaponGrantsShield;
+      if (!allowedBySource || !exclusiveAction.allowShieldWeave
+        || player === undefined || player.isAliveFlag === 0) {
         world.shieldWeave.isHeldRequested = false;
         world.shieldWeave.isActive = false;
+        world.shieldWeaveDustKindOverride = -1;
       } else {
         const aim = screenToWorld(cmd.aimXPx, cmd.aimYPx, offsetXPx, offsetYPx, zoom, canvas.width, canvas.height, virtualWidthPx, virtualHeightPx);
         const dx = aim.xWorld - player.positionXWorld;
@@ -320,10 +332,15 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
           world.playerWeaveAimDirYWorld = dy / length;
         }
         world.shieldWeave.isHeldRequested = true;
+        // Weave the arc from the sword's own dust while it is the source.
+        const weaveDust = getEquippedWeaponDef(world.playerWeapon)?.weaveDust;
+        world.shieldWeaveDustKindOverride =
+          inputState.isShieldWeaveHeldFlag === 0 && typeof weaveDust === 'number' ? weaveDust : -1;
       }
     } else if (cmd.kind === CommandKind.ShieldWeaveEnd) {
       world.shieldWeave.isHeldRequested = false;
       world.shieldWeave.isActive = false;
+      world.shieldWeaveDustKindOverride = -1;
     } else if (cmd.kind === CommandKind.WeaveActivateSecondary) {
       // Skip secondary Weave while grapple is active (right-click = zip in that state).
       if (!world.isGrappleActiveFlag) {

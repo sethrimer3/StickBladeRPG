@@ -26,6 +26,8 @@ import {
   getGlyphSortIndex,
   weaponSupportsGlyphSocket,
 } from '../sim/weapons/glyphDefs';
+import { WEAPON_DATA } from '../sim/weapons/weaponData';
+import { STICKBLADE_WEAPON_DATA } from '../sim/weapons/stickbladeWeapons';
 
 const VALID_KINDS: readonly WeaponKind[] = [
   'melee', 'shield', 'bow', 'gun', 'throw', 'magic', 'staff', 'summoner', 'spirit',
@@ -33,8 +35,22 @@ const VALID_KINDS: readonly WeaponKind[] = [
 const VALID_GRIPS: readonly WeaponGrip[] = ['oneHand', 'twoHand', 'dual'];
 
 describe('weapon data integrity', () => {
-  test('all 76 weapons are present', () => {
-    assert.equal(WEAPON_IDS.length, 76);
+  test('the table is the 75 donor weapons plus StickBlade\'s 13', () => {
+    // Split deliberately: `weaponData.ts` is a verbatim copy of the donor and
+    // must stay diffable against it, so anything original to StickBlade lives
+    // in `stickbladeWeapons.ts`. Pinning both halves is what keeps that true.
+    assert.equal(Object.keys(WEAPON_DATA).length, 75, 'donor weapons');
+    assert.equal(Object.keys(STICKBLADE_WEAPON_DATA).length, 13, 'Wooden Sword + 12 weave weapons');
+    assert.equal(WEAPON_IDS.length, 88);
+  });
+
+  test('no StickBlade weapon shadows a donor weapon', () => {
+    for (const id of Object.keys(STICKBLADE_WEAPON_DATA)) {
+      assert.ok(
+        !Object.prototype.hasOwnProperty.call(WEAPON_DATA, id),
+        `${id} collides with a donor weapon and would silently replace it`,
+      );
+    }
   });
 
   test('ids are unique and sorted', () => {
@@ -101,15 +117,24 @@ describe('weapon data integrity', () => {
   });
 
   test('the donor kind distribution is preserved', () => {
-    assert.equal(getWeaponIdsOfKind('melee').length, 25);
-    assert.equal(getWeaponIdsOfKind('shield').length, 1);
-    assert.equal(getWeaponIdsOfKind('staff').length, 9);
-    assert.equal(getWeaponIdsOfKind('bow').length, 6);
-    assert.equal(getWeaponIdsOfKind('throw').length, 5);
-    assert.equal(getWeaponIdsOfKind('gun').length, 7);
-    assert.equal(getWeaponIdsOfKind('summoner').length, 4);
-    assert.equal(getWeaponIdsOfKind('spirit').length, 4);
-    assert.equal(getWeaponIdsOfKind('magic').length, 15);
+    // Counted over the donor table alone so adding StickBlade weapons can never
+    // make this pass by coincidence.
+    const donorCount = (kind: WeaponKind): number =>
+      Object.values(WEAPON_DATA).filter(def => def.kind === kind).length;
+    assert.equal(donorCount('melee'), 24);
+    assert.equal(donorCount('shield'), 1);
+    assert.equal(donorCount('staff'), 9);
+    assert.equal(donorCount('bow'), 6);
+    assert.equal(donorCount('throw'), 5);
+    assert.equal(donorCount('gun'), 7);
+    assert.equal(donorCount('summoner'), 4);
+    assert.equal(donorCount('spirit'), 4);
+    assert.equal(donorCount('magic'), 15);
+  });
+
+  test('the weave weapons add six swords and six bows on top', () => {
+    assert.equal(getWeaponIdsOfKind('melee').length, 24 + 1 + 6, 'donor + Wooden Sword + weave blades');
+    assert.equal(getWeaponIdsOfKind('bow').length, 6 + 6);
   });
 
   test('the 12 unported donor callbacks are recorded, not silently dropped', () => {

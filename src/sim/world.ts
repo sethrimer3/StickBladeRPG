@@ -517,6 +517,16 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
 
   /** Currently active/selected dust kind (ParticleKind.Golden = 0 by default). */
   selectedDustKind: number;
+  /**
+   * Dust the Shield Weave is currently woven from, overriding
+   * `selectedDustKind`, or -1 when there is no override.
+   *
+   * Set while a weave sword's secondary holds the shield up, so the arc shows
+   * the sword's element rather than whatever dust the player last picked on the
+   * wheel. An override rather than writing `selectedDustKind` directly: raising
+   * a shield must not silently re-pick the player's dust.
+   */
+  shieldWeaveDustKindOverride: number;
 
   /**
    * Smoothed display radius (world units) for the grapple influence circle.
@@ -788,6 +798,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     bowArrowLatchedAimXWorld:      0,
     bowArrowLatchedAimYWorld:      0,
     selectedDustKind:              0,
+    shieldWeaveDustKindOverride:   -1,
     grappleDisplayRadiusWorld:     96.0,
     // Default: Storm Weave is the starting primary, so motes orbit from the start.
     isMoteSourceOrbitFlag:         1,

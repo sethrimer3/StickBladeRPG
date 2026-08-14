@@ -17,6 +17,7 @@
  */
 
 import { WEAPON_DATA, UNPORTED_BEHAVIOR_FIELDS } from './weaponData';
+import { STICKBLADE_WEAPON_DATA } from './stickbladeWeapons';
 
 export { UNPORTED_BEHAVIOR_FIELDS };
 
@@ -366,21 +367,29 @@ export function getWeaponThrustDurationTicks(def: WeaponDef): number {
 
 // ---- Lookup ---------------------------------------------------------------
 
-/** Every weapon, keyed by id. */
-export const WEAPONS: Readonly<Record<WeaponId, WeaponDef>> = WEAPON_DATA;
+/**
+ * Every weapon, keyed by id — the donor's table plus StickBlade's own.
+ *
+ * Merged here rather than in either source table so `weaponData.ts` stays a
+ * verbatim copy of the donor and remains diffable against it.
+ */
+export const WEAPONS: Readonly<Record<WeaponId, WeaponDef>> = Object.freeze({
+  ...WEAPON_DATA,
+  ...STICKBLADE_WEAPON_DATA,
+});
 
 /** All weapon ids, in stable alphabetical order. */
-export const WEAPON_IDS: readonly WeaponId[] = Object.freeze(Object.keys(WEAPON_DATA).sort());
+export const WEAPON_IDS: readonly WeaponId[] = Object.freeze(Object.keys(WEAPONS).sort());
 
 /** Returns the weapon with `id`, or null when no such weapon exists. */
 export function getWeaponDef(id: string | null | undefined): WeaponDef | null {
   if (typeof id !== 'string') return null;
-  return Object.prototype.hasOwnProperty.call(WEAPON_DATA, id) ? WEAPON_DATA[id] : null;
+  return Object.prototype.hasOwnProperty.call(WEAPONS, id) ? WEAPONS[id] : null;
 }
 
 /** Returns every weapon of `kind`, in stable id order. */
 export function getWeaponIdsOfKind(kind: WeaponKind): WeaponId[] {
-  return WEAPON_IDS.filter(id => WEAPON_DATA[id].kind === kind);
+  return WEAPON_IDS.filter(id => WEAPONS[id].kind === kind);
 }
 
 /** True when the weapon can appear in a player loadout (i.e. is not enemy-only). */

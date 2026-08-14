@@ -66,9 +66,21 @@ export interface InputState {
   isPrimaryWeaveHeldFlag: 0 | 1;
   /**
    * 1 while the Shield Weave input is held. Was `isRightMouseDownFlag`; the
-   * right button now only zips the grapple and drives the dust wheel.
+   * right button raises the Shield Weave only as a weapon's secondary now (see
+   * `isWeaponSecondaryHeldFlag`), and otherwise just zips the grapple and
+   * drives the dust wheel.
    */
   isShieldWeaveHeldFlag: 0 | 1;
+  /**
+   * True while the equipped weapon's secondary attack is held — the right
+   * mouse button.
+   *
+   * Whether that does anything is the weapon's business: the weave swords
+   * declare `secondaryShieldWeave` and raise a shield, everything else ignores
+   * it. The gate lives in the command processor, which is the only place that
+   * can see what is equipped.
+   */
+  isWeaponSecondaryHeldFlag: boolean;
   // ---- Second touch (mobile attack/block) ---------------------------------
   secondTouchId: number;   // -1 = no second touch
   secondTouchStartXPx: number;
@@ -166,6 +178,7 @@ export function createInputState(): InputState {
     isAttackFiredFlag: 0,
     isPrimaryWeaveHeldFlag: 0,
     isShieldWeaveHeldFlag: 0,
+    isWeaponSecondaryHeldFlag: false,
     attackDirXPx: 1,
     attackDirYPx: 0,
     isBlockingFlag: 0,
@@ -536,6 +549,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       state.isWeaponAttackHeldFlag = true;
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 1;
+      // The equipped weapon's secondary; the weave swords turn this into a
+      // raised Shield Weave, other weapons ignore it.
+      state.isWeaponSecondaryHeldFlag = true;
       // Signal a potential zip request on the right mouse press.
       // collectCommands emits GrappleZip; the command processor decides whether
       // to use it as a zip (grapple active) or ignore it (weave takes over).
@@ -554,6 +570,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       // riding on the same release.
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 0;
+      state.isWeaponSecondaryHeldFlag = false;
     }
   }
 
@@ -638,6 +655,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     state.isMouseDownFlag = 0;
     state.isPrimaryWeaveHeldFlag = 0;
     state.isShieldWeaveHeldFlag = 0;
+    state.isWeaponSecondaryHeldFlag = false;
     // A focus loss must not leave the weapon swinging (or a staff draining).
     state.isWeaponAttackHeldFlag = false;
     // Interact: the keyup may never fire across a focus loss (alt-tab) — reset
@@ -754,7 +772,8 @@ export function collectCommands(input: InputState): GameCommand[] {
     commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
   }
 
-  if (input.isPrimaryWeaveHeldFlag === 0 && input.isBlockingFlag === 1 && input.isShieldWeaveHeldFlag === 0) {
+  if (input.isPrimaryWeaveHeldFlag === 0 && input.isBlockingFlag === 1
+    && input.isShieldWeaveHeldFlag === 0 && !input.isWeaponSecondaryHeldFlag) {
     input.isBlockingFlag = 0;
     commands.push({ kind: CommandKind.WeaveEndPrimary });
   }
@@ -767,16 +786,19 @@ export function collectCommands(input: InputState): GameCommand[] {
     commands.push({ kind: CommandKind.GrappleZip });
   }
 
-  // ---- Shield Weave (gamepad secondary trigger) ---------------------------
-  // Off the right mouse button, which now only zips the grapple and drives the
-  // dust wheel.
-  if (input.isShieldWeaveHeldFlag === 0 && _shieldWeaveWasHeld) {
+  // ---- Shield Weave (gamepad secondary, or a weapon's secondary) ----------
+  // Two sources: the gamepad's secondary trigger raises it directly, and the
+  // right mouse button raises it *through the equipped weapon* — only the weave
+  // swords grant it, which the command processor decides since it is the one
+  // that can see what is equipped.
+  const shieldWeaveHeld = input.isShieldWeaveHeldFlag === 1 || input.isWeaponSecondaryHeldFlag;
+  if (!shieldWeaveHeld && _shieldWeaveWasHeld) {
     commands.push({ kind: CommandKind.ShieldWeaveEnd });
   }
-  if (input.isShieldWeaveHeldFlag === 1) {
+  if (shieldWeaveHeld) {
     commands.push({ kind: CommandKind.ShieldWeaveHold, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
   }
-  _shieldWeaveWasHeld = input.isShieldWeaveHeldFlag === 1;
+  _shieldWeaveWasHeld = shieldWeaveHeld;
 
   // ---- Grapple hook commands ----------------------------------------------
   if (input.isGrappleFireTriggeredFlag === 1) {
