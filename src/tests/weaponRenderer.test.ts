@@ -166,15 +166,27 @@ describe('melee rendering', () => {
     new WeaponRenderer().render(rest.ctx, createSnapshot(restWeapon), 0, 0, 1);
 
     const { world, player } = createWorldWithPlayer();
+    world.stickRangerBody = createStickRangerBody(0, 0);
     equipPlayerWeapon(world.playerWeapon, 'sword');
     tryStartPlayerWeaponAttack(world, player, 50, 0, world.rng);
-    for (let i = 0; i < 5; i++) tickPlayerWeapon(world, player, world.rng);
+
+    // The tip trail needs at least two sampled positions before it has any
+    // geometry, so the renderer has to see the blade actually travel — one
+    // frame of a swing looks the same as a blade held still, by design.
+    const renderer = new WeaponRenderer();
     const swinging = createRecordingContext();
-    new WeaponRenderer().render(swinging.ctx, createSnapshot(world.playerWeapon), 0, 0, 1);
+    for (let i = 0; i < 8; i++) {
+      tickPlayerWeapon(world, player, world.rng);
+      renderer.render(swinging.ctx, createSnapshot(world.playerWeapon), 0, 0, 1, 'high');
+    }
 
     assert.ok(
-      countOps(swinging.calls, 'stroke') > countOps(rest.calls, 'stroke'),
-      'a swing should add trail strokes',
+      countOps(swinging.calls, 'stroke') > countOps(rest.calls, 'stroke') * 8,
+      'a swing should add trail strokes beyond the blade drawn each frame',
+    );
+    assert.ok(
+      countOps(swinging.calls, 'quadraticCurveTo') > 0,
+      'the tip trail should be drawn as smoothed curve segments',
     );
   });
 

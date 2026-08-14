@@ -42,6 +42,8 @@ import {
   type WeaponGripAnchor,
 } from '../../sim/weapons/weaponGrip';
 import { getStickRangerRenderAlpha } from '../../sim/clusters/stickRangerBody';
+import { BladeTrail, DEFAULT_TRAIL_STYLE, type TrailStyle } from './bladeTrail';
+import type { GraphicsQuality } from '../../ui/renderSettings';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
 import { getProjectileShieldConfig } from '../../sim/weapons/projectileShield';
 import {
@@ -53,10 +55,6 @@ import {
 const BLADE_WIDTH_PX = 2;
 /** Half-size of a projectile square, in virtual pixels, when it has no radius. */
 const PROJECTILE_FALLBACK_HALF_PX = 2;
-/** Samples drawn along the swing trail behind the blade. */
-const SWING_TRAIL_SAMPLES = 6;
-/** How far behind the current angle the trail extends, in radians. */
-const SWING_TRAIL_ARC_RAD = 0.5;
 /** Fallback blade color when a weapon declares none. */
 const DEFAULT_BLADE_COLOR = '#d8d8e8';
 /** Body color of a corpse raised by the Gravebind Stave. */
@@ -95,6 +93,17 @@ function readNumber(
 export class WeaponRenderer {
   /** Reused so per-frame anchor resolution allocates nothing. */
   private readonly _anchor: WeaponGripAnchor = createWeaponGripAnchor();
+  /**
+   * Ribbon following the blade tip through a swing.
+   *
+   * Owned by the renderer rather than by the swing state: it is presentation
+   * only, and the simulation must stay free of anything the renderer's frame
+   * rate would perturb. Its samples come from `heldPose.tip*`, the same tip the
+   * simulation already resolves against the tiles each tick.
+   */
+  private readonly _bladeTrail = new BladeTrail();
+  /** Mutated in place each frame so styling a trail allocates nothing. */
+  private readonly _bladeTrailStyle: TrailStyle = { ...DEFAULT_TRAIL_STYLE };
   /** Wielder pivot (the hip), resolved once per frame. */
   private readonly _origin = { xWorld: 0, yWorld: 0 };
   /** Scratch for spirit orb positions. */
@@ -116,9 +125,13 @@ export class WeaponRenderer {
     ox: number,
     oy: number,
     zoom: number,
+    graphicsQuality: GraphicsQuality = 'med',
   ): void {
     const weapon = snapshot.playerWeapon;
-    if (weapon === null) return;
+    if (weapon === null) {
+      this._bladeTrail.clear();
+      return;
+    }
 
     // Projectiles, summoned familiars, and soul drops outlive the weapon
     // that produced them, so they draw regardless of what is currently equipped.
@@ -128,7 +141,13 @@ export class WeaponRenderer {
     this._renderExpiryFlashes(ctx, weapon, ox, oy, zoom);
 
     const def = getEquippedWeaponDef(weapon);
-    if (def === null) return;
+    if (def === null) {
+      this._bladeTrail.clear();
+      return;
+    }
+
+    // Before the blade, so the ribbon sits behind the weapon that cast it.
+    this._updateAndRenderBladeTrail(ctx, weapon, def, ox, oy, zoom, graphicsQuality);
 
     const body = snapshot.stickRangerBody;
     if (body !== null) {
@@ -509,8 +528,6 @@ export class WeaponRenderer {
     const pose = weapon.heldPose;
     computeWeaponGripAnchor(body, def, getStickRangerRenderAlpha(body), this._anchor);
 
-    const swing = weapon.swing;
-    const isSwinging = swing.activeFlag === 1;
     const angleRad = pose.angleRad;
 
     const originXPx = this._anchor.xWorld * zoom + ox;
@@ -519,7 +536,7 @@ export class WeaponRenderer {
     ctx.save();
 
     if (def.kind === 'melee' || def.kind === 'shield') {
-      this._renderHeldMelee(ctx, weapon, def, originXPx, originYPx, angleRad, isSwinging, zoom);
+      this._renderHeldMelee(ctx, weapon, def, originXPx, originYPx, angleRad, zoom);
     } else if (def.kind === 'bow') {
       this._renderHeldBow(ctx, def, originXPx, originYPx, angleRad, zoom);
     } else if (def.kind === 'gun') {
@@ -540,10 +557,8 @@ export class WeaponRenderer {
     originXPx: number,
     originYPx: number,
     angleRad: number,
-    isSwinging: boolean,
     zoom: number,
   ): void {
-    const swing = weapon.swing;
     // Already clipped to what fits: a blade wedged into a wall draws short
     // rather than through it.
     const reach = weapon.heldPose.reachWorld;
@@ -552,9 +567,6 @@ export class WeaponRenderer {
     const color = def.color ?? DEFAULT_BLADE_COLOR;
     const isSpear = def.poseStyle === 'spear' || def.spearPose !== undefined;
 
-    if (isSwinging) {
-      this._renderSwingTrail(ctx, originXPx, originYPx, angleRad, reach, zoom, color, swing.startAngleRad);
-    }
 
     if (def.spriteUrl) {
       const img = loadImg(def.spriteUrl);
@@ -802,35 +814,43 @@ export class WeaponRenderer {
   }
 
   /** Draws a short fading arc behind the blade to read the swing's direction. */
-  private _renderSwingTrail(
+  /**
+   * Samples the blade tip and draws its trail.
+   *
+   * Only contact weapons trail, and only while swinging — a bow or a held-still
+   * sword records nothing. Once the swing ends the ribbon is left to shorten
+   * away one sample per frame, which reads as a fade without needing a system
+   * that outlives the swing.
+   *
+   * The sampled point is `heldPose.tip*`, which the simulation already resolves
+   * against the tiles each tick, so a blade stopped by a wall trails from where
+   * it actually stopped rather than from where it would have reached.
+   */
+  private _updateAndRenderBladeTrail(
     ctx: CanvasRenderingContext2D,
-    originXPx: number,
-    originYPx: number,
-    angleRad: number,
-    reachWorld: number,
+    weapon: PlayerWeaponState,
+    def: WeaponDef,
+    ox: number,
+    oy: number,
     zoom: number,
-    color: string,
-    startAngleRad: number,
+    graphicsQuality: GraphicsQuality,
   ): void {
-    // Trail behind the direction of travel, so it reads correctly whichever way
-    // the swing winds.
-    const sweepSign = angleRad >= startAngleRad ? -1 : 1;
+    const pose = weapon.heldPose;
+    const isTrailingWeapon = (def.kind === 'melee' || def.kind === 'shield')
+      && def.showWeapon !== false;
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= SWING_TRAIL_SAMPLES; i++) {
-      const t = i / SWING_TRAIL_SAMPLES;
-      const sampleAngle = angleRad + sweepSign * SWING_TRAIL_ARC_RAD * t;
-      ctx.globalAlpha = 0.35 * (1 - t);
-      ctx.beginPath();
-      ctx.moveTo(originXPx, originYPx);
-      ctx.lineTo(
-        originXPx + Math.cos(sampleAngle) * reachWorld * zoom,
-        originYPx + Math.sin(sampleAngle) * reachWorld * zoom,
-      );
-      ctx.stroke();
+    if (isTrailingWeapon && weapon.swing.activeFlag === 1 && pose.reachWorld > 0) {
+      this._bladeTrail.push(pose.tipXWorld, pose.tipYWorld);
+    } else {
+      this._bladeTrail.decay();
     }
-    ctx.globalAlpha = 1;
+
+    if (!this._bladeTrail.isVisible) return;
+
+    // Restyled per frame rather than per weapon so a weapon swap, a glyph, or
+    // any future dynamic recolor lands immediately, at no allocation cost.
+    this._bladeTrailStyle.color = def.highlightColor ?? def.color ?? DEFAULT_BLADE_COLOR;
+    this._bladeTrail.render(ctx, ox, oy, zoom, this._bladeTrailStyle, graphicsQuality);
   }
 
   /** Draws every live projectile as a small square with a short motion trail. */

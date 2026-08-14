@@ -736,7 +736,7 @@ export function renderFrame(r: RenderFrameContext): void {
 
   // Equipped weapon: held blade, swing arc, and live projectiles. Drawn after
   // the dust pass so the blade reads on top of debris, and before the HUD.
-  weaponRenderer.render(ctx, snapshot, ox, oy, zoom);
+  weaponRenderer.render(ctx, snapshot, ox, oy, zoom, graphicsQuality);
 
   // Save tombs (sprite + swirling/falling dust particles)
   skillTombRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
