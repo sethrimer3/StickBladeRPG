@@ -136,7 +136,7 @@ describe('auras reaching the party', () => {
 describe('aura reduction in the damage pipeline', () => {
   function createTarget(): ClusterState {
     const target = createClusterState(1, 0, 0, 1, 100);
-    target.healthPoints = 20;
+    target.hitPoints = 20;
     return target;
   }
 
@@ -149,8 +149,8 @@ describe('aura reduction in the damage pipeline', () => {
     assert.equal(applyPlayerDamageWithKnockback(bare, 4, 500, 0), true);
 
     assert.ok(
-      covered.healthPoints > bare.healthPoints,
-      `covered ${covered.healthPoints} vs bare ${bare.healthPoints}`,
+      covered.hitPoints > bare.hitPoints,
+      `covered ${covered.hitPoints} vs bare ${bare.hitPoints}`,
     );
   });
 
@@ -158,7 +158,7 @@ describe('aura reduction in the damage pipeline', () => {
     const target = createTarget();
     assert.equal(target.auraDamageReduction, 0);
     applyPlayerDamageWithKnockback(target, 3, 500, 0);
-    assert.equal(target.healthPoints, 17);
+    assert.equal(target.hitPoints, 17);
   });
 });
 

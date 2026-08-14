@@ -122,7 +122,7 @@ describe('aegis ward runtime', () => {
 describe('ward integration with player damage', () => {
   function createTarget(): ClusterState {
     const player = createClusterState(1, 0, 0, 1, 100);
-    player.healthPoints = 10;
+    player.hitPoints = 10;
     return player;
   }
 
@@ -134,7 +134,7 @@ describe('ward integration with player damage', () => {
 
     const didDamage = applyPlayerDamageWithKnockback(player, 3, 500, 0);
     assert.equal(didDamage, false);
-    assert.equal(player.healthPoints, 10);
+    assert.equal(player.hitPoints, 10);
     assert.equal(player.invulnerabilityTicks, 0);
     assert.equal(ward.hitPoints, 37);
   });
@@ -148,14 +148,14 @@ describe('ward integration with player damage', () => {
 
     assert.equal(applyPlayerDamageWithKnockback(player, 3, 500, 0), true);
     assert.equal(ward.hitPoints, 0);
-    assert.equal(player.healthPoints, 8);
+    assert.equal(player.hitPoints, 8);
   });
 
   test('a target with no ward is damaged exactly as before the port', () => {
     const player = createTarget();
     assert.equal(player.projectileShield, null);
     assert.equal(applyPlayerDamageWithKnockback(player, 3, 500, 0), true);
-    assert.equal(player.healthPoints, 7);
+    assert.equal(player.hitPoints, 7);
   });
 });
 

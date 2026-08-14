@@ -107,9 +107,9 @@ describe('laser damage without an active shield', () => {
     const originYWorld = (10 + 0.5) * BLOCK_SIZE_MEDIUM;
     const world = setupHorizontalBeamRoom(originXWorld + 100, originYWorld);
     const player = world.clusters[0];
-    const healthBefore = player.healthPoints;
+    const healthBefore = player.hitPoints;
     applyHazards(world);
-    assert.ok(player.healthPoints < healthBefore, 'player must take laser damage when standing in the beam');
+    assert.ok(player.hitPoints < healthBefore, 'player must take laser damage when standing in the beam');
     assert.ok(world.laserInvulnTicks > 0, 'the laser cooldown must be armed after a hit');
   });
 
@@ -119,10 +119,10 @@ describe('laser damage without an active shield', () => {
     const world = setupHorizontalBeamRoom(originXWorld + 100, originYWorld);
     const player = world.clusters[0];
     applyHazards(world);
-    const healthAfterFirstHit = player.healthPoints;
+    const healthAfterFirstHit = player.hitPoints;
     player.invulnerabilityTicks = 0; // clear only the player-level i-frames to isolate the laser-specific cooldown
     applyHazards(world);
-    assert.equal(player.healthPoints, healthAfterFirstHit, 'the laser cooldown alone must prevent an immediate repeat hit');
+    assert.equal(player.hitPoints, healthAfterFirstHit, 'the laser cooldown alone must prevent an immediate repeat hit');
   });
 
   test('the canonical player invulnerability window blocks a second laser hit even after the laser cooldown expires', () => {
@@ -131,10 +131,10 @@ describe('laser damage without an active shield', () => {
     const world = setupHorizontalBeamRoom(originXWorld + 100, originYWorld);
     const player = world.clusters[0];
     applyHazards(world);
-    const healthAfterFirstHit = player.healthPoints;
+    const healthAfterFirstHit = player.hitPoints;
     world.laserInvulnTicks = 0; // clear only the laser-specific cooldown
     applyHazards(world);
-    assert.equal(player.healthPoints, healthAfterFirstHit, 'standard player invulnerability must still apply');
+    assert.equal(player.hitPoints, healthAfterFirstHit, 'standard player invulnerability must still apply');
   });
 
   test('standing outside the beam path takes no damage', () => {
@@ -142,9 +142,9 @@ describe('laser damage without an active shield', () => {
     const originYWorld = (10 + 0.5) * BLOCK_SIZE_MEDIUM;
     const world = setupHorizontalBeamRoom(originXWorld + 100, originYWorld - 500);
     const player = world.clusters[0];
-    const healthBefore = player.healthPoints;
+    const healthBefore = player.hitPoints;
     applyHazards(world);
-    assert.equal(player.healthPoints, healthBefore);
+    assert.equal(player.hitPoints, healthBefore);
   });
 });
 
@@ -179,9 +179,9 @@ describe('laser reflection off an active Shield Weave arc', () => {
     const player = world.clusters[0];
     player.positionXWorld = originXWorld + 150 - 14;
     player.positionYWorld = originYWorld + 200; // far off the horizontal beam line
-    const healthBefore = player.healthPoints;
+    const healthBefore = player.hitPoints;
     applyHazards(world);
-    assert.equal(player.healthPoints, healthBefore);
+    assert.equal(player.hitPoints, healthBefore);
   });
 
   test('active-arc contact before the player on the beam path prevents incoming-leg damage', () => {
@@ -191,9 +191,9 @@ describe('laser reflection off an active Shield Weave arc', () => {
     // unreflected beam would have hit them absent the shield.
     player.positionXWorld = originXWorld + 300;
     player.positionYWorld = originYWorld;
-    const healthBefore = player.healthPoints;
+    const healthBefore = player.hitPoints;
     applyHazards(world);
-    assert.equal(player.healthPoints, healthBefore, 'the shield must intercept the beam before it reaches the player');
+    assert.equal(player.hitPoints, healthBefore, 'the shield must intercept the beam before it reaches the player');
   });
 
   test('a wall between the emitter and the shield prevents reflection entirely', () => {

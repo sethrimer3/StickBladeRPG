@@ -27,6 +27,10 @@ import { roomJsonDefToRoomDef } from '../levels/roomJsonToRoomDef';
 function createFixture(dtMs = 1000 / 60) {
   const world = createWorldState(dtMs, 2);
   const player = createClusterState(0, 50, 20, 1, 10);
+  // Damage spends the life pool, not motes (`sim/playerHealth.ts`); size it to
+  // 10 so these cases keep exercising the numbers they always did.
+  player.hitPoints = 10;
+  player.maxHitPoints = 10;
   const urchin = createClusterState(1, 20, 20, 0, C.NEEDLE_URCHIN_HP);
   urchin.isNeedleUrchinFlag = 1;
   urchin.needleUrchinSlotIndex = 0;
@@ -252,7 +256,7 @@ test('wall collision blocks a shot that would otherwise hit the player', () => {
   armNeedle(world, 20, 20, 1000);
   tickNeedleUrchinProjectiles(world);
   assert.equal(world.needleProjectileAliveFlag[0], 0);
-  assert.equal(player.healthPoints, 10);
+  assert.equal(player.hitPoints, 10);
   assert.equal(world.needleProjectileXWorld[0], 40);
 });
 
@@ -262,7 +266,7 @@ test('a clearly earlier player collision still damages the player', () => {
   setWall(world, 80, 0, 8, 40);
   armNeedle(world, 20, 20, 1000);
   tickNeedleUrchinProjectiles(world);
-  assert.equal(player.healthPoints, 9);
+  assert.equal(player.hitPoints, 9);
 });
 
 test('player impact position uses the selected swept collision time', () => {
@@ -281,7 +285,7 @@ test('a despawned projectile cannot damage the player twice', () => {
   tickNeedleUrchinProjectiles(world);
   player.invulnerabilityTicks = 0;
   tickNeedleUrchinProjectiles(world);
-  assert.equal(player.healthPoints, 9);
+  assert.equal(player.hitPoints, 9);
 });
 
 test('equal and near-equal wall/player collisions resolve in favor of terrain', () => {
@@ -292,7 +296,7 @@ test('equal and near-equal wall/player collisions resolve in favor of terrain', 
     setWall(world, playerEntryX + wallOffset, 0, 8, 40);
     armNeedle(world, 20, 20, 1000);
     tickNeedleUrchinProjectiles(world);
-    assert.equal(player.healthPoints, 10);
+    assert.equal(player.hitPoints, 10);
     assert.equal(world.needleProjectileAliveFlag[0], 0);
   }
 });
@@ -331,18 +335,18 @@ test('needle bypasses momentum immunity but respects ordinary invulnerability', 
   player.isHighVelocityAttacking = 1;
   armNeedle(world, 20, 20, 180);
   tickNeedleUrchinProjectiles(world);
-  assert.equal(player.healthPoints, 9);
+  assert.equal(player.hitPoints, 9);
   player.invulnerabilityTicks = 10;
   armNeedle(world, 20, 20, 180);
   tickNeedleUrchinProjectiles(world);
-  assert.equal(player.healthPoints, 9);
+  assert.equal(player.hitPoints, 9);
 });
 
 test('damage helper callers retain default momentum protection', () => {
   const { player } = createFixture();
   player.isHighVelocityAttacking = 1;
   applyPlayerDamageWithKnockback(player, 1, 0, 0);
-  assert.equal(player.healthPoints, 10);
+  assert.equal(player.hitPoints, 10);
 });
 
 test('ninth urchin is rejected at runtime and editor capacity', () => {

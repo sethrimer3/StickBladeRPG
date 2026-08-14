@@ -89,10 +89,10 @@ describe('applyHazards — laser damage without shield', () => {
     const player = world.clusters[0];
     player.positionXWorld = 50;
     player.positionYWorld = 0;
-    player.healthPoints = 10;
-    const startHp = player.healthPoints;
+    player.hitPoints = 10;
+    const startHp = player.hitPoints;
     applyHazards(world);
-    assert.ok(player.healthPoints < startHp);
+    assert.ok(player.hitPoints < startHp);
     assert.ok(world.laserInvulnTicks > 0);
   });
 
@@ -101,9 +101,9 @@ describe('applyHazards — laser damage without shield', () => {
     const player = world.clusters[0];
     player.positionXWorld = 50;
     player.positionYWorld = 500;
-    player.healthPoints = 10;
+    player.hitPoints = 10;
     applyHazards(world);
-    assert.equal(player.healthPoints, 10);
+    assert.equal(player.hitPoints, 10);
   });
 
   test('invulnerability prevents a second hit on the following tick check', () => {
@@ -111,11 +111,11 @@ describe('applyHazards — laser damage without shield', () => {
     const player = world.clusters[0];
     player.positionXWorld = 50;
     player.positionYWorld = 0;
-    player.healthPoints = 10;
+    player.hitPoints = 10;
     applyHazards(world);
-    const hpAfterFirst = player.healthPoints;
+    const hpAfterFirst = player.hitPoints;
     applyHazards(world); // invuln still counting down, tick decrements it but should not double-hit same tick cadence unless it reaches 0
-    assert.ok(player.healthPoints <= hpAfterFirst);
+    assert.ok(player.hitPoints <= hpAfterFirst);
   });
 });
 
@@ -157,7 +157,7 @@ describe('applyHazards — Shield Weave reflection gating', () => {
     // Place player behind the shield, further along the beam path.
     player.positionXWorld = 100;
     player.positionYWorld = 0;
-    player.healthPoints = 10;
+    player.hitPoints = 10;
     world.shieldWeave.isActive = true;
     world.shieldWeave.moteCount = 3;
     world.shieldWeave.centerXWorld = 50;
@@ -173,7 +173,7 @@ describe('applyHazards — Shield Weave reflection gating', () => {
     assert.ok(world.laserOutgoingEndXWorld[0] < world.laserOutgoingStartXWorld[0] + 1);
     // The unshielded player behind the shield takes no damage this tick from
     // this laser (nothing else in this minimal world could hit it either).
-    assert.equal(player.healthPoints, 10);
+    assert.equal(player.hitPoints, 10);
   });
 });
 

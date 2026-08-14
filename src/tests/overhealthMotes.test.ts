@@ -9,6 +9,7 @@ import {
 } from '../sim/playerMoteLife';
 import { getStormweaveMoteCount } from '../sim/stormweave/lifeMotes';
 import { applyPlayerDamageWithKnockback } from '../sim/playerDamage';
+import { grantTemporaryHitPoints } from '../sim/playerHealth';
 import { processRoomPickups } from '../screens/gamePickups';
 import type { RoomDef } from '../levels/roomDef';
 import { createRng } from '../sim/rng';
@@ -43,17 +44,32 @@ test('overhealth: Dust Boost Jar collection grants exactly dustCount overhealth 
   assert.equal(world.particleCount, before, 'no player-owned mode-0 particles should be spawned');
 });
 
-test('overhealth: damage consumes overhealth before permanent health slots empty', () => {
+test('overhealth: temporary hit points are consumed before permanent ones', () => {
+  // Overhealth moved with life itself onto the hit-point pool
+  // (`sim/playerHealth.ts`); motes are no longer spent by damage at all.
   const player = createClusterState(1, 0, 0, 1, 10);
-  grantOverhealthMotes(player, 5); // health = 15, max = 10
-  assert.equal(player.healthPoints, 15);
+  player.hitPoints = 10;
+  player.maxHitPoints = 10;
+  grantTemporaryHitPoints(player, 5); // hitPoints = 15, max = 10
+  assert.equal(player.hitPoints, 15);
 
   applyPlayerDamageWithKnockback(player, 5, 100, 0);
-  assert.equal(player.healthPoints, 10, 'overhealth absorbed the 5 damage; permanent health untouched');
+  assert.equal(player.hitPoints, 10, 'the temporary points absorbed the 5 damage');
+  assert.equal(player.maxHitPoints, 10, 'the maximum is untouched');
 
   player.invulnerabilityTicks = 0; // clear post-hit invulnerability window for the second hit
   applyPlayerDamageWithKnockback(player, 3, 100, 0);
-  assert.equal(player.healthPoints, 7, 'further damage now eats into permanent health');
+  assert.equal(player.hitPoints, 7, 'further damage now eats into permanent hit points');
+});
+
+test('damage no longer spends dust motes — the weaves keep their length', () => {
+  const player = createClusterState(1, 0, 0, 1, 10);
+  player.hitPoints = 10;
+  player.maxHitPoints = 10;
+
+  applyPlayerDamageWithKnockback(player, 4, 100, 0);
+  assert.equal(player.hitPoints, 6, 'the hit came out of the life pool');
+  assert.equal(player.healthPoints, 10, 'motes stayed at capacity');
 });
 
 test('overhealth: ordinary healing clamps to maxHealthPoints and does not restore lost overhealth', () => {

@@ -21,14 +21,14 @@ test('melee stickman enemy pursues player and attacks within melee range', () =>
   assert.equal(enemyState.weaponDef.kind, 'melee');
   assert.equal(enemy.isStickmanEnemyFlag, 1);
 
-  const initialPlayerHp = player.healthPoints;
+  const initialPlayerHp = player.hitPoints;
 
   // Tick enemy within melee reach of player (15px away)
   for (let t = 0; t < 20; t++) {
     tickStickmanEnemy(enemy, world, 1 / 60, player.positionXWorld, player.positionYWorld, true);
   }
 
-  assert.ok(player.healthPoints < initialPlayerHp, 'player should have taken damage from stickman melee attack');
+  assert.ok(player.hitPoints < initialPlayerHp, 'player should have taken damage from stickman melee attack');
   assert.ok(enemyState.attackCooldownTicks > 0, 'enemy attack cooldown should be triggered');
 });
 

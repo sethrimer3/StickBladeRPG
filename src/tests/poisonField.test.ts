@@ -27,6 +27,10 @@ const TICK_DT = 1 / 60;
 function makeWorldWithPlayer(xWorld: number, yWorld: number): WorldState {
   const world = createWorldState(1000 / 60);
   const player = createClusterState(0, xWorld, yWorld, 1, 10);
+  // Damage spends the life pool, not motes (`sim/playerHealth.ts`). Size the
+  // pool to 10 so these cases keep exercising the same numbers they always did.
+  player.hitPoints = 10;
+  player.maxHitPoints = 10;
   world.clusters.push(player);
   return world;
 }

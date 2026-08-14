@@ -13,6 +13,9 @@ import type { RoomJsonEnemy } from '../editor/roomJsonSchema';
 function fixture() {
   const world = createWorldState(1000 / 60, 1); world.combatMode = 'momentum';
   const player = createClusterState(0, 80, 20, 1, 10);
+  // Damage spends the life pool, not motes (`sim/playerHealth.ts`).
+  player.hitPoints = 10;
+  player.maxHitPoints = 10;
   const turret = createClusterState(1, 20, 20, 0, 2);
   turret.isMomentumTurretFlag = 1; turret.momentumTurretFacingIndex = 0;
   turret.momentumTurretTargetRadiusWorld = MT_MAX_RING_RADIUS_WORLD;
@@ -44,11 +47,11 @@ test('broken sight freezes lock and reacquisition resumes', () => {
 });
 test('zero radius starts grace and safe speed cancels it', () => {
   const { world, player, turret } = fixture(); turret.momentumTurretTargetRadiusWorld = 0.01; applyMomentumTurretAI(world);
-  assert.equal(turret.momentumTurretFireGraceTicks, MT_FIRE_GRACE_TICKS); assert.equal(player.healthPoints, 10); player.velocityXWorld = MOMENTUM_COMBAT_MIN_HORIZONTAL_SPEED; applyMomentumTurretAI(world); assert.equal(turret.momentumTurretFireGraceTicks, 0); assert.ok(turret.momentumTurretTargetRadiusWorld > 0);
+  assert.equal(turret.momentumTurretFireGraceTicks, MT_FIRE_GRACE_TICKS); assert.equal(player.hitPoints, 10); player.velocityXWorld = MOMENTUM_COMBAT_MIN_HORIZONTAL_SPEED; applyMomentumTurretAI(world); assert.equal(turret.momentumTurretFireGraceTicks, 0); assert.ok(turret.momentumTurretTargetRadiusWorld > 0);
 });
 test('grace expiry damages once and cooldown prevents repeats', () => {
   const { world, player, turret } = fixture(); turret.momentumTurretTargetRadiusWorld = 0; turret.momentumTurretFireGraceTicks = 1; applyMomentumTurretAI(world);
-  assert.equal(player.healthPoints, 9); assert.equal(turret.momentumTurretCooldownTicks, MT_SHOT_COOLDOWN_TICKS); applyMomentumTurretAI(world); assert.equal(player.healthPoints, 9);
+  assert.equal(player.hitPoints, 9); assert.equal(turret.momentumTurretCooldownTicks, MT_SHOT_COOLDOWN_TICKS); applyMomentumTurretAI(world); assert.equal(player.hitPoints, 9);
 });
 test('dead turrets do not target and live turrets remain stationary', () => {
   const dead = fixture(); dead.turret.isAliveFlag = 0; applyMomentumTurretAI(dead.world); assert.equal(dead.turret.momentumTurretHasLineOfSightFlag, 0);
