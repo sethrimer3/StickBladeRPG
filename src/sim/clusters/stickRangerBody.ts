@@ -151,6 +151,13 @@ const SURFACE_TANGENT_RETENTION = 0.5;
 //   • The feet must carry most of the push. Driving the torso instead makes
 //     the figure pitch forward and fold — head-to-foot height drops from its
 //     16.5 standing value to ~11 at STEER_FOOT_PUSH 0.10 / HIP 0.30.
+//   • Exactly one foot is driven at a time — the trailing one — and it keeps
+//     the push until it is STICKMAN_STRIDE_LEAD_DISTANCE ahead of the planted
+//     foot. That handoff rule is the walk cycle's visible shape.
+//   • The cliff figures below were measured under the older fixed-interval
+//     alternation, at STEER_FOOT_PUSH 0.52. Aiming every push at the trailing
+//     foot made the same number a lot stronger, so the working value is now
+//     0.38 and the cliff sits correspondingly lower.
 //   • There is a sharp stability cliff just above STEER_FOOT_PUSH 0.55: at
 //     0.65 the gait tips into a tumble (the head passes below the feet) and
 //     speed jumps from ~18 to ~66 world units/sec. Values here are set one
@@ -208,7 +215,7 @@ export const STICKMAN_MAX_STEER_SPEED_PX_PER_SEC = 100;
  * driven until it has actually completed a stride. Kept below the 6.0 knee
  * spreader rest length so the swing ends before the legs are at full splay.
  */
-export const STICKMAN_STRIDE_LEAD_DISTANCE = 4;
+export const STICKMAN_STRIDE_LEAD_DISTANCE = 3;
 /**
  * Hard cap on how long one leg may stay the swing leg. Without it a foot that
  * cannot get ahead — jammed against a step, wedged in a corner — would be
@@ -220,8 +227,81 @@ export const STICKMAN_MAX_SWING_FRAMES = 20;
 const STEER_HIP_PUSH = 0.11;
 /** Horizontal impulse applied to the chest — smallest, so the torso only leans. */
 const STEER_CHEST_PUSH = 0.04;
-/** Horizontal impulse applied to each alternating foot. The legs do the walking. */
-const STEER_FOOT_PUSH = 0.52;
+/**
+ * Horizontal impulse applied to the swing foot. The legs do the walking.
+ *
+ * Lower than the 0.52 this used while the feet alternated on a fixed frame
+ * interval, and it has to be: driving whichever foot is *trailing* until it
+ * completes a stride aims every push usefully, where the old fixed alternation
+ * regularly spent a push on the foot that was already in front. Left at 0.52
+ * the better-aimed push overdrove the gait — walk speed rose from ~37 to ~54
+ * units/sec and the figure hunched from 14.9 to 13.2 head-to-foot. At 0.38 the
+ * walk sits at ~28 units/sec, back inside the gait's tested envelope.
+ *
+ * Response is not smooth here: the gait flips between a shuffle (~19) and a
+ * stride (~28-48) somewhere between 0.36 and 0.40, so re-tune by measuring, not
+ * by interpolating (see stickRangerBody.test.ts).
+ */
+const STEER_FOOT_PUSH = 0.38;
+
+// ── Airborne pose bias (this project's addition) ────────────────────────────
+//
+// Left to itself the rig has no idea which way is up once it leaves the
+// ground — the launch-gravity dipole only shapes the body while it is in
+// contact, so a jump preserves whatever tangle the takeoff left behind. The
+// bias below nudges the airborne figure toward the N+/Stick-Ranger jump pose:
+// torso upright, both legs beneath it, the trailing leg reaching back and
+// straight, the leading leg tucked up and bent.
+//
+// It is a BIAS, not a pose. Each rule is a fractional pull of a point toward a
+// target position, applied before the constraint pass so the solver still has
+// the final say, and applied as a bare position offset (mechanism 3) so
+// momentum survives it. Nothing is clamped or snapped: a hard collision, a
+// knockback or a ragdoll overwhelms it, which is the point.
+
+/**
+ * Fraction of the remaining error each airborne bias closes per frame.
+ * Deliberately small — at 0.5 the figure snaps to a fixed pose and stops
+ * reading as physics; at 0.05 the tangle from takeoff survives the whole jump.
+ */
+const AIR_POSE_BIAS = 0.16;
+/** Bias strength for keeping the spine vertical (head/chest over the hip). */
+const AIR_UPRIGHT_BIAS = 0.28;
+/** Airborne frames before the pose bias reaches full strength, so takeoff is not stiff. */
+const AIR_POSE_RAMP_FRAMES = 4;
+/** Horizontal reach of the trailing (extended) foot behind the hip, world units. */
+const AIR_TRAIL_FOOT_BEHIND = 4.2;
+/** How far below the hip the trailing foot is targeted — near full leg extension (9.6 rest). */
+const AIR_TRAIL_FOOT_BELOW = 8.6;
+/** Horizontal reach of the leading (tucked) foot ahead of the hip. */
+const AIR_LEAD_FOOT_AHEAD = 3.4;
+/** How far below the hip the leading foot is targeted — tucked up, so a bent knee. */
+const AIR_LEAD_FOOT_BELOW = 4.6;
+/** Leading knee target, lifted and forward of the hip: the raised bent knee. */
+const AIR_LEAD_KNEE_AHEAD = 3.2;
+const AIR_LEAD_KNEE_BELOW = 2.6;
+/** Trailing knee target, behind and low: the straight reaching leg. */
+const AIR_TRAIL_KNEE_BEHIND = 1.8;
+const AIR_TRAIL_KNEE_BELOW = 4.6;
+
+// ── Ragdoll ─────────────────────────────────────────────────────────────────
+//
+// The unbiased body — pure Stick Ranger, tumbling however the collisions take
+// it — is worth keeping for the moments it reads as a reaction rather than as
+// a loss of animation. While `ragdollFrames` is counting down the airborne
+// pose bias is skipped entirely and the figure is left to flail.
+
+/** Ragdoll duration for a hard landing or a heavy hit, in body frames. */
+export const STICKMAN_RAGDOLL_FRAMES = 45;
+/**
+ * Downward hip speed, in world units per frame, above which a touchdown counts
+ * as a hard landing and knocks the pose bias out.
+ *
+ * Measured on a flat floor: an ordinary jump lands at 1.3, a 5-block drop at
+ * 1.5, a 10-block drop at 1.9, and terminal velocity is about 2.8. 2.1 puts the
+ * cutoff at roughly a 12-block fall — a drop the player has to go looking for.
+ */
+const RAGDOLL_LANDING_SPEED = 2.1;
 
 /** Rest lengths and solver weights, from Stick Ranger's `Eg.prototype.qa`. */
 const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, number]> = [
@@ -285,6 +365,12 @@ export interface StickRangerBody {
   swingFoot: number;
   /** Frames the current swing foot has been the driven one. */
   swingFrames: number;
+  /**
+   * Frames of ragdoll left. While > 0 the airborne pose bias is skipped and the
+   * body tumbles on raw Stick Ranger physics. Set by a hard landing or by
+   * `triggerStickRangerRagdoll` (heavy damage).
+   */
+  ragdollFrames: number;
 }
 
 /** Allocates a body with its hip at (hipX, hipY), in its rest pose. */
@@ -305,6 +391,7 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     walkStepCounter: 0,
     swingFoot: SR_FOOT_L,
     swingFrames: 0,
+    ragdollFrames: 0,
   };
   resetStickRangerBody(body, hipX, hipY);
   return body;
@@ -333,6 +420,7 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.walkStepCounter = 0;
   body.swingFoot = SR_FOOT_L;
   body.swingFrames = 0;
+  body.ragdollFrames = 0;
 }
 
 /**
@@ -343,6 +431,75 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
  */
 export function requestStickRangerJump(body: StickRangerBody): void {
   body.jumpBufferFrames = JUMP_BUFFER_FRAMES;
+}
+
+/**
+ * Drops the airborne pose bias for `frames` body frames, leaving the figure to
+ * tumble on raw physics. Called for a heavy hit (see `stickRangerPlayer.ts`);
+ * hard landings arm it from inside the step. Extends rather than shortens an
+ * ongoing ragdoll, so a second hit mid-flail cannot cut the reaction short.
+ */
+export function triggerStickRangerRagdoll(body: StickRangerBody, frames = STICKMAN_RAGDOLL_FRAMES): void {
+  if (frames > body.ragdollFrames) body.ragdollFrames = frames;
+}
+
+/** True while the figure is tumbling on raw physics with the pose bias off. */
+export function isStickRangerRagdolling(body: StickRangerBody): boolean {
+  return body.ragdollFrames > 0;
+}
+
+/**
+ * Nudges `index` a fraction of the way toward (targetX, targetY).
+ *
+ * A bare position offset, so Verlet keeps reading the point's existing velocity
+ * (mechanism 3) — the bias adds a lean toward the pose, it does not replace the
+ * motion with one.
+ */
+function biasPointToward(
+  body: StickRangerBody,
+  index: number,
+  targetX: number,
+  targetY: number,
+  strength: number,
+): void {
+  body.x[index] += (targetX - body.x[index]) * strength;
+  body.y[index] += (targetY - body.y[index]) * strength;
+}
+
+/**
+ * Biases the airborne figure toward the running-jump pose: upright torso, legs
+ * beneath the hip, trailing leg extended back, leading leg raised and bent.
+ *
+ * `poseDirection` is the direction the pose faces — the held input while there
+ * is one, otherwise the last facing, so letting go mid-jump does not flip the
+ * legs. Everything here is relative to the hip, so the bias follows the body
+ * wherever the jump carries it and never fights the trajectory.
+ */
+function applyAirbornePoseBias(body: StickRangerBody, poseDirection: number, strength: number): void {
+  const hipX = body.x[SR_HIP];
+  const hipY = body.y[SR_HIP];
+
+  // Upright: pull the spine toward vertical above the hip. Only the horizontal
+  // component is biased — the vertical spacing is the constraints' business, and
+  // pulling on it too would fight gravity and float the figure.
+  const uprightStrength = AIR_UPRIGHT_BIAS * (strength / AIR_POSE_BIAS);
+  body.x[SR_HEAD] += (hipX - body.x[SR_HEAD]) * uprightStrength;
+  body.x[SR_CHEST] += (hipX - body.x[SR_CHEST]) * uprightStrength;
+
+  // Legs: the trailing leg is the one behind the direction of travel.
+  const leftIsTrailing = (body.x[SR_FOOT_L] - body.x[SR_FOOT_R]) * poseDirection < 0;
+  const trailKnee = leftIsTrailing ? SR_KNEE_L : SR_KNEE_R;
+  const trailFoot = leftIsTrailing ? SR_FOOT_L : SR_FOOT_R;
+  const leadKnee = leftIsTrailing ? SR_KNEE_R : SR_KNEE_L;
+  const leadFoot = leftIsTrailing ? SR_FOOT_R : SR_FOOT_L;
+
+  // Trailing leg: reaching back and nearly straight (foot far below the hip).
+  biasPointToward(body, trailKnee, hipX - poseDirection * AIR_TRAIL_KNEE_BEHIND, hipY + AIR_TRAIL_KNEE_BELOW, strength);
+  biasPointToward(body, trailFoot, hipX - poseDirection * AIR_TRAIL_FOOT_BEHIND, hipY + AIR_TRAIL_FOOT_BELOW, strength);
+
+  // Leading leg: knee up and forward, foot tucked under it — a folded knee.
+  biasPointToward(body, leadKnee, hipX + poseDirection * AIR_LEAD_KNEE_AHEAD, hipY + AIR_LEAD_KNEE_BELOW, strength);
+  biasPointToward(body, leadFoot, hipX + poseDirection * AIR_LEAD_FOOT_AHEAD, hipY + AIR_LEAD_FOOT_BELOW, strength);
 }
 
 /**
@@ -623,6 +780,19 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     body.swingFrames = 0;
   }
 
+  // ── 2b. Airborne pose bias ──────────────────────────────────────────────
+  // Only once the figure is genuinely off the ground (past the launch window,
+  // which a walking body never leaves), and only while not ragdolling. Ramped
+  // in over the first frames so takeoff itself stays loose.
+  if (body.ragdollFrames > 0) {
+    body.ragdollFrames -= 1;
+  } else if (!inLaunchWindow) {
+    const airFrames = body.framesSinceGroundContact - LAUNCH_FRAMES;
+    const ramp = Math.min(1, (airFrames + 1) / AIR_POSE_RAMP_FRAMES);
+    const poseDirection = moveDirection !== 0 ? (moveDirection < 0 ? -1 : 1) : body.facingDirection;
+    applyAirbornePoseBias(body, poseDirection, AIR_POSE_BIAS * ramp);
+  }
+
   // ── 3. Constraints — TWO passes, soft weights ───────────────────────────
   for (let pass = 0; pass < 2; pass++) {
     for (let c = 0; c < CONSTRAINTS.length; c++) {
@@ -632,6 +802,8 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   }
 
   // ── 4. Elastic collision ────────────────────────────────────────────────
+  // Impact speed has to be read before the collision pass reflects it.
+  const impactSpeed = body.y[SR_HIP] - body.prevY[SR_HIP];
   let contact = false;
   for (let i = 0; i < SR_POINT_COUNT; i++) {
     if (collidePoint(body, i, solid)) contact = true;
@@ -644,6 +816,11 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     // Absorb a real landing (see LANDING_ABSORB). Verlet velocity is
     // `current - previous`, so moving `previous` toward `current` scales the
     // velocity down without moving the point itself.
+    // A genuinely hard landing hands the figure back to raw physics for a
+    // moment — the tumble is the reaction, and the pose bias would hide it.
+    if (wasAirborne >= LANDING_ABSORB_MIN_AIR_FRAMES && impactSpeed >= RAGDOLL_LANDING_SPEED) {
+      triggerStickRangerRagdoll(body);
+    }
     if (wasAirborne >= LANDING_ABSORB_MIN_AIR_FRAMES) {
       for (let i = 0; i < SR_POINT_COUNT; i++) {
         const vy = body.y[i] - body.prevY[i];

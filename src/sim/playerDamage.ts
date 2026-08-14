@@ -41,6 +41,20 @@ export interface PlayerDamageTarget {
   invulnerabilityTicks: number;
   hurtTicks: number;
   isHighVelocityAttacking?: 0 | 1;
+  /**
+   * Mote capacity, used only to decide whether a hit counts as heavy (see
+   * `HEAVY_HIT_HEALTH_FRACTION`). Absent targets never flag a heavy hit.
+   */
+  maxHealthPoints?: number;
+  /**
+   * Set to 1 by this pipeline when a hit costs more than
+   * `HEAVY_HIT_HEALTH_FRACTION` of capacity. Consumed and cleared by whoever
+   * reacts to it — for the stickman that is `tickStickRangerPlayer`, which
+   * turns it into a ragdoll. A flag rather than a callback so the damage
+   * pipeline keeps knowing nothing about the softbody, and so cluster state
+   * stays plain data.
+   */
+  heavyHitFlag?: 0 | 1;
   halfWidthWorld?: number;
   halfHeightWorld?: number;
   challengeMode?: ChallengeModeState | null;
@@ -170,6 +184,19 @@ export function absorbWithWard(ward: DamageAbsorbingWard | null | undefined, dam
   return damagePoints - absorbed;
 }
 
+/**
+ * Share of mote capacity a single hit must cost to count as heavy. Heavy hits
+ * are what ragdoll the stickman; anything lighter is just a hit.
+ */
+export const HEAVY_HIT_HEALTH_FRACTION = 0.2;
+
+/** True when `damageToApply` exceeds `HEAVY_HIT_HEALTH_FRACTION` of capacity. */
+function isHeavyHit(player: PlayerDamageTarget, damageToApply: number): boolean {
+  const capacity = normalizeMoteCount(player.maxHealthPoints ?? 0);
+  if (capacity <= 0) return false;
+  return damageToApply > capacity * HEAVY_HIT_HEALTH_FRACTION;
+}
+
 export function applyPlayerDamageWithKnockback(
   player: PlayerDamageTarget,
   damagePoints: number,
@@ -238,6 +265,7 @@ export function applyPlayerDamageWithKnockback(
 
   player.invulnerabilityTicks = INVULNERABILITY_DURATION_TICKS;
   player.hurtTicks = HURT_VISUAL_DURATION_TICKS;
+  if (isHeavyHit(player, damageToApply)) player.heavyHitFlag = 1;
   return true;
 }
 
