@@ -151,7 +151,7 @@ const SURFACE_TANGENT_RETENTION = 0.5;
  * contact resolver handles every point and a hand brushing a wall should not
  * grip differently from a foot.
  */
-const SURFACE_TANGENT_RETENTION_MOVING = 0.82;
+const SURFACE_TANGENT_RETENTION_MOVING = 0.6;
 
 // ── Steering (this project's addition) ──────────────────────────────────────
 //

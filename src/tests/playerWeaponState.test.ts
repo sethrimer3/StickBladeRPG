@@ -279,6 +279,15 @@ describe('input binding', () => {
     assert.equal(KEYBOARD_ACTION_META.weaponAttack.label, 'Weapon Attack');
   });
 
+  test('grapple keeps a binding of its own now that the left mouse button swings', () => {
+    // The left mouse button used to fire the grapple. It swings the weapon
+    // instead, so without this action the grapple would be unreachable on
+    // keyboard and mouse — the capability was meant to be kept, not removed.
+    assert.ok(KB_ACTIONS.includes('grappleFire'));
+    assert.equal(DEFAULT_KEYBOARD_BINDINGS.grappleFire, 'g');
+    assert.equal(KEYBOARD_ACTION_META.grappleFire.label, 'Grapple');
+  });
+
   test('the default attack key does not collide with another action', () => {
     const bindings = Object.values(DEFAULT_KEYBOARD_BINDINGS);
     const unique = new Set(bindings);

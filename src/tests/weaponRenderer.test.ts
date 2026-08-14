@@ -383,6 +383,44 @@ describe('held weapon poses', () => {
     assert.equal(countOps(calls, 'stroke'), 0);
   });
 
+  test('the drawn blade starts at the drawn hand, at an off-origin camera', () => {
+    // The end-to-end check the other cases could not make: draw the body and
+    // the weapon through their real entry points with the same camera, then
+    // compare pixels. If the two renderers disagree about the transform, the
+    // sword leaves the hand — which is exactly what shipped.
+    const OX = 137;
+    const OY = -84;
+    const ZOOM = 3;
+
+    const body = createStickRangerBody(220, 160);
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'woodenSword'); // two-handed, so the body draws a grip
+    const snapshot = { playerWeapon: weapon, stickRangerBody: body } as unknown as WorldSnapshot;
+
+    const bodyCtx = createRecordingContext();
+    renderStickRangerBody(bodyCtx.ctx, body, OX, OY, ZOOM, /* isTwoHandGrip */ true);
+
+    const weaponCtx = createRecordingContext();
+    new WeaponRenderer().render(weaponCtx.ctx, snapshot, OX, OY, ZOOM);
+
+    // The body's two-hand branch ends each forearm at the grip, so the grip is
+    // the destination of its forearm lineTo calls.
+    const bodyLineTos = bodyCtx.calls.filter(c => c.op === 'lineTo');
+    const gripX = bodyLineTos[bodyLineTos.length - 1].args[0] as number;
+    const gripY = bodyLineTos[bodyLineTos.length - 1].args[1] as number;
+
+    // The weapon sprite is unavailable in Node, so the blade falls back to a
+    // stroked line whose first moveTo is the grip end.
+    const bladeStart = weaponCtx.calls.find(c => c.op === 'moveTo');
+    assert.ok(bladeStart !== undefined, 'the blade should have been stroked');
+
+    assert.ok(
+      Math.abs((bladeStart.args[0] as number) - gripX) < 1e-6
+      && Math.abs((bladeStart.args[1] as number) - gripY) < 1e-6,
+      `blade starts at ${bladeStart.args[0]},${bladeStart.args[1]} but the hand is at ${gripX},${gripY}`,
+    );
+  });
+
   test('renderStickRangerBody renders both hands joined at grip for two-handed weapons', () => {
     const body = createStickRangerBody(100, 100);
     const standardCtx = createRecordingContext();

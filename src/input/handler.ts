@@ -54,6 +54,21 @@ export interface InputState {
   attackDirYPx: number;
   /** 1 while the player is in block mode (mouse held > threshold or second touch held). */
   isBlockingFlag: 0 | 1;
+  /**
+   * 1 while the primary Weave input is held.
+   *
+   * Was `isMouseDownFlag`: the left mouse button drove the primary Weave. That
+   * button swings the equipped weapon now, so the Weave reads its own flag and
+   * only the gamepad's primary trigger sets it. Keeping the emission path alive
+   * on its own flag means rebinding the Weave later is a one-line change rather
+   * than a resurrection.
+   */
+  isPrimaryWeaveHeldFlag: 0 | 1;
+  /**
+   * 1 while the Shield Weave input is held. Was `isRightMouseDownFlag`; the
+   * right button now only zips the grapple and drives the dust wheel.
+   */
+  isShieldWeaveHeldFlag: 0 | 1;
   // ---- Second touch (mobile attack/block) ---------------------------------
   secondTouchId: number;   // -1 = no second touch
   secondTouchStartXPx: number;
@@ -149,6 +164,8 @@ export function createInputState(): InputState {
     mouseDownXPx: 0,
     mouseDownYPx: 0,
     isAttackFiredFlag: 0,
+    isPrimaryWeaveHeldFlag: 0,
+    isShieldWeaveHeldFlag: 0,
     attackDirXPx: 1,
     attackDirYPx: 0,
     isBlockingFlag: 0,
@@ -290,6 +307,10 @@ export function applyGamepadInputSnapshot(
 
   if (primary && !gamepadPreviousState.primary) {
     state.isMouseDownFlag = 1;
+    // The Weaves are controller-only now that the mouse buttons carry the
+    // weapon and the grapple zip; the gamepad is the one device that still
+    // starts them.
+    state.isPrimaryWeaveHeldFlag = 1;
     state.mouseDownTimeMs = nowMs;
     state.isGrappleHeldFlag = 1;
     state.isGrappleFireTriggeredFlag = 1;
@@ -297,6 +318,7 @@ export function applyGamepadInputSnapshot(
     state.grappleAimYPx = state.mouseYPx;
   } else if (!primary && gamepadPreviousState.primary) {
     state.isMouseDownFlag = 0;
+    state.isPrimaryWeaveHeldFlag = 0;
     state.isGrappleHeldFlag = 0;
     state.isGrappleReleaseTriggeredFlag = 1;
     if (state.isBlockingFlag === 0 && nowMs - state.mouseDownTimeMs < ATTACK_HOLD_THRESHOLD_MS) {
@@ -308,6 +330,7 @@ export function applyGamepadInputSnapshot(
 
   if (secondary && !gamepadPreviousState.secondary) state.isGrappleZipRequestedFlag = 1;
   state.isRightMouseDownFlag = secondary ? 1 : 0;
+  state.isShieldWeaveHeldFlag = secondary ? 1 : 0;
 
   if (pause && !gamepadPreviousState.pause) {
     let handledByOpenMenu = false;
@@ -526,17 +549,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       // Releasing stops a held swing (staves channel while held); the grapple
       // is no longer on this button, so nothing is released for it here.
       state.isWeaponAttackHeldFlag = false;
-      const holdMs = performance.now() - state.mouseDownTimeMs;
-      if (state.isBlockingFlag === 1) {
-        // Was blocking — collectCommands will emit BlockEnd on next frame
-        // (isMouseDownFlag=0 && isBlockingFlag=1 triggers the BlockEnd path)
-      } else if (holdMs < ATTACK_HOLD_THRESHOLD_MS) {
-        // Quick click — attack toward current mouse cursor position (gameScreen converts to direction)
-        const mouse = clientToCanvasPx(e.clientX, e.clientY);
-        state.isAttackFiredFlag = 1;
-        state.attackDirXPx = mouse.xPx;
-        state.attackDirYPx = mouse.yPx;
-      }
+      // A quick click used to also fire the primary Weave. It does not any
+      // more — the button belongs to the weapon, so there is no second attack
+      // riding on the same release.
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 0;
     }
@@ -621,6 +636,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     state.isBlockingFlag = 0;
     state.isRightMouseDownFlag = 0;
     state.isMouseDownFlag = 0;
+    state.isPrimaryWeaveHeldFlag = 0;
+    state.isShieldWeaveHeldFlag = 0;
+    // A focus loss must not leave the weapon swinging (or a staff draining).
+    state.isWeaponAttackHeldFlag = false;
     // Interact: the keyup may never fire across a focus loss (alt-tab) — reset
     // the held/edge state directly rather than emitting a release edge, since
     // the dust wheel is force-closed separately on blur (gameScreen.ts).
@@ -683,7 +702,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
 
 // Allocates in input layer — acceptable outside sim hot-path
 // Right-click sustained Weave hold state (persists across frames within collectCommands)
-let _rightMouseWasDown = false;
+let _shieldWeaveWasHeld = false;
 
 export function collectCommands(input: InputState): GameCommand[] {
   const commands: GameCommand[] = [];
@@ -711,15 +730,18 @@ export function collectCommands(input: InputState): GameCommand[] {
   // The legacy command types are still generated but will be ignored by
   // the game screen for the player; enemy AI still produces them internally.
 
-  // ---- Primary Weave (left click) -----------------------------------------
+  // ---- Primary Weave (gamepad primary trigger) ----------------------------
+  // No longer the left mouse button: that swings the equipped weapon. Every
+  // condition below reads `isPrimaryWeaveHeldFlag`, which only the gamepad
+  // sets, so the mouse cannot start, sustain, or end a Weave.
   if (input.isAttackFiredFlag === 1) {
     input.isAttackFiredFlag = 0;
-    // Quick left click → burst activation of primary Weave
+    // Quick press → burst activation of primary Weave
     commands.push({ kind: CommandKind.WeaveActivatePrimary, aimXPx: input.attackDirXPx, aimYPx: input.attackDirYPx });
   }
 
-  // Transition from left mouse-down to sustained primary Weave when hold threshold exceeded
-  if (input.isMouseDownFlag === 1 && input.isBlockingFlag === 0) {
+  // Transition from press to sustained primary Weave when hold threshold exceeded
+  if (input.isPrimaryWeaveHeldFlag === 1 && input.isBlockingFlag === 0) {
     const holdMs = performance.now() - input.mouseDownTimeMs;
     if (holdMs >= ATTACK_HOLD_THRESHOLD_MS) {
       input.isBlockingFlag = 1;
@@ -727,12 +749,12 @@ export function collectCommands(input: InputState): GameCommand[] {
     }
   }
 
-  if (input.isBlockingFlag === 1 && input.isMouseDownFlag === 1) {
+  if (input.isBlockingFlag === 1 && input.isPrimaryWeaveHeldFlag === 1) {
     // Continuously update aim direction while sustaining primary Weave
     commands.push({ kind: CommandKind.WeaveHoldPrimary, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
   }
 
-  if (input.isMouseDownFlag === 0 && input.isBlockingFlag === 1 && input.isRightMouseDownFlag === 0) {
+  if (input.isPrimaryWeaveHeldFlag === 0 && input.isBlockingFlag === 1 && input.isShieldWeaveHeldFlag === 0) {
     input.isBlockingFlag = 0;
     commands.push({ kind: CommandKind.WeaveEndPrimary });
   }
@@ -745,14 +767,16 @@ export function collectCommands(input: InputState): GameCommand[] {
     commands.push({ kind: CommandKind.GrappleZip });
   }
 
-  // ---- Shield Weave (right click) -----------------------------------------
-  if (input.isRightMouseDownFlag === 0 && _rightMouseWasDown) {
+  // ---- Shield Weave (gamepad secondary trigger) ---------------------------
+  // Off the right mouse button, which now only zips the grapple and drives the
+  // dust wheel.
+  if (input.isShieldWeaveHeldFlag === 0 && _shieldWeaveWasHeld) {
     commands.push({ kind: CommandKind.ShieldWeaveEnd });
   }
-  if (input.isRightMouseDownFlag === 1) {
+  if (input.isShieldWeaveHeldFlag === 1) {
     commands.push({ kind: CommandKind.ShieldWeaveHold, aimXPx: input.mouseXPx, aimYPx: input.mouseYPx });
   }
-  _rightMouseWasDown = input.isRightMouseDownFlag === 1;
+  _shieldWeaveWasHeld = input.isShieldWeaveHeldFlag === 1;
 
   // ---- Grapple hook commands ----------------------------------------------
   if (input.isGrappleFireTriggeredFlag === 1) {

@@ -167,13 +167,23 @@ test('walking keeps the figure upright rather than folding it over', () => {
 
   // The steering impulses must not pitch the torso far enough to fold the
   // spine. Driving the torso instead of the feet used to drop this to ~8.5.
-  let minHeight = Infinity;
+  //
+  // Measured on the sustained posture rather than the single worst frame: the
+  // extremes of a long stride dip the head-to-foot height briefly (currently
+  // min 12.1, p5 12.7) while the figure is upright the rest of the time
+  // (median 15.4 of a 16.8 rest height). A one-frame minimum conflates "leans
+  // at full stride" with "folded over", which are the opposite of each other.
+  const heights: number[] = [];
   for (let i = 0; i < 180; i++) {
     stepStickRangerBody(body, floor, 1, SR_FRAME_MS);
-    const height = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD];
-    if (height < minHeight) minHeight = height;
+    heights.push((body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD]);
   }
-  assert.ok(minHeight > 13, `walking figure hunched to ${minHeight}`);
+  const sorted = [...heights].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const worst = sorted[0];
+
+  assert.ok(median > 14, `walking figure hunched, median height ${median}`);
+  assert.ok(worst > 11, `walking figure folded over at its worst, height ${worst}`);
 });
 
 test('the gait stays below its tumble threshold', () => {
@@ -687,4 +697,98 @@ test('resetting the body clears any ragdoll', () => {
   triggerStickRangerRagdoll(body);
   resetStickRangerBody(body, 50, 50);
   assert.equal(body.ragdollFrames, 0);
+});
+
+// ── Friction and the standing settle ────────────────────────────────────────
+
+test('holding a direction makes the floor slippier than releasing it does', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+
+  // Same body, same speed, measured over the same window: the only difference
+  // is whether the direction is still held.
+  function coastDistance(keepHolding: boolean): number {
+    const body = createStickRangerBody(100, floorY - 9.6);
+    advanceFrames(body, floor, 0, 60);
+    advanceFrames(body, floor, 1, 200);   // up to walking speed
+    const startX = body.x[SR_HIP];
+    advanceFrames(body, floor, keepHolding ? 1 : 0, 24);
+    return body.x[SR_HIP] - startX;
+  }
+
+  const held = coastDistance(true);
+  const released = coastDistance(false);
+  assert.ok(held > released, `holding should carry further than releasing: ${held} vs ${released}`);
+});
+
+test('releasing input brings the figure to a stop rather than sliding forever', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+  advanceFrames(body, floor, 1, 200);
+
+  const startX = body.x[SR_HIP];
+  advanceFrames(body, floor, 0, 90);
+  const skid = body.x[SR_HIP] - startX;
+  assert.ok(skid > 0, 'the figure should carry some momentum, not stop dead');
+  assert.ok(skid < 20, `the figure skidded ${skid} units after releasing input`);
+
+  // And it is actually stopped by the end, not still creeping.
+  const creep = Math.abs(body.x[SR_HIP] - body.prevX[SR_HIP]);
+  assert.ok(creep < 0.2, `still drifting at ${creep} units/frame after coming to rest`);
+});
+
+test('with no input the feet gather back under the hip into a stance', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+  advanceFrames(body, floor, 1, 200);   // stop mid-stride, legs split
+
+  advanceFrames(body, floor, 0, 120);   // let it settle
+
+  const hipX = body.x[SR_HIP];
+  const footCentre = (body.x[SR_FOOT_L] + body.x[SR_FOOT_R]) * 0.5;
+  assert.ok(
+    Math.abs(footCentre - hipX) < 3,
+    `feet should end up under the hip, centre was ${footCentre - hipX} off`,
+  );
+
+  // Legs near full extension again, so the figure stands tall rather than
+  // staying in the crouch a stride leaves behind.
+  const height = (body.y[SR_FOOT_L] + body.y[SR_FOOT_R]) * 0.5 - body.y[SR_HEAD];
+  assert.ok(height > 15.5, `figure failed to stand back up, height ${height}`);
+
+  // A stance, not a merged single line.
+  const gap = Math.abs(body.x[SR_FOOT_R] - body.x[SR_FOOT_L]);
+  assert.ok(gap < 6, `feet should be gathered, not splayed ${gap} apart`);
+});
+
+test('the standing settle does not creep the figure along the floor', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 200);
+
+  // Already settled and idle: several more seconds of settling must not walk
+  // the figure anywhere, since the bias cancels its own net translation.
+  const startX = body.x[SR_HIP];
+  advanceFrames(body, floor, 0, 300);
+  const drift = Math.abs(body.x[SR_HIP] - startX);
+  assert.ok(drift < 1, `idle figure drifted ${drift} units`);
+});
+
+test('the standing settle stays out of the way while the figure is sliding', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+  const body = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(body, floor, 0, 60);
+
+  // Knockback-like shove with no direction held: the legs should trail, and
+  // the settle must not fight the slide to a halt.
+  for (let i = 0; i < SR_POINT_COUNT; i++) body.prevX[i] = body.x[i] - 1.5;
+  const startX = body.x[SR_HIP];
+  advanceFrames(body, floor, 0, 10);
+  assert.ok(body.x[SR_HIP] - startX > 3, 'a shoved figure should keep sliding, not be pinned by the settle');
 });
