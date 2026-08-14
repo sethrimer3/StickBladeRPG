@@ -304,22 +304,31 @@ test('hip velocity stays stable when the host clock does not divide the body clo
   const perSecond = 1000 / SR_FRAME_MS;
   const hostTickMs = 1000 / 60;
   const samples: number[] = [];
-  for (let t = 0; t < 120; t++) {
+  const startX = body.x[SR_HIP];
+  const TICKS = 120;
+  for (let t = 0; t < TICKS; t++) {
     stepStickRangerBody(body, floor, 1, hostTickMs);
     samples.push((body.x[SR_HIP] - body.prevX[SR_HIP]) * perSecond);
   }
 
   const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
   const peak = Math.max(...samples.map(Math.abs));
-  // Walking is ~16 world units/sec per unit of time scale.
-  const expected = 16 * STICKMAN_TIME_SCALE;
+  // Compare against the walk speed actually observed over the same window
+  // rather than a hard-coded figure: what is being guarded here is that the
+  // reported velocity tracks the real one, not how fast the gait happens to be.
+  const expected = (body.x[SR_HIP] - startX) / (TICKS * hostTickMs / 1000);
+  assert.ok(expected > 0, 'test setup: the body should have walked forward');
   assert.ok(
     Math.abs(mean - expected) < expected * 0.35,
-    `mean reported velocity ${mean} is far from the true walk speed ~${expected}`,
+    `mean reported velocity ${mean} is far from the true walk speed ${expected}`,
   );
   // Per-tick differencing peaked at 2.7x the true speed here; Verlet velocity
   // should stay within a modest factor accounted for by the gait's own bob.
-  assert.ok(peak < expected * 1.8, `velocity spiked to ${peak}, expected under ${expected * 1.8}`);
+  // The margin is 2.2 rather than the original 1.8 because the stride is now
+  // ~7 units long instead of ~3, and a longer stride swings the hip faster
+  // within each step (measured 1.87x). It stays well clear of the 2.7x that
+  // signals the aliasing this guards against.
+  assert.ok(peak < expected * 2.2, `velocity spiked to ${peak}, expected under ${expected * 2.2}`);
 });
 
 test('body never produces NaN, even when crushed between solids', () => {

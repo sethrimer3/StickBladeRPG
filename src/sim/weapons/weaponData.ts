@@ -1528,7 +1528,9 @@ export const WEAPON_DATA: Readonly<Record<WeaponId, WeaponDef>> = {
   woodenSword: {
     name: "Wooden Sword",
     kind: "melee",
-    range: 42,
+    // Half the donor's 42. At 42 the drawn blade was nearly three times the
+    // stickman's 16.5-unit standing height; 21 is roughly torso-to-tip.
+    range: 21,
     arc: 1.1,
     dmg: 2,
     cooldown: 550,

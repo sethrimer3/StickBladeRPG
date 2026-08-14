@@ -491,14 +491,17 @@ export class WeaponRenderer {
     const body = snapshot.stickRangerBody;
     if (body === null) return;
 
-    computeWeaponGripAnchor(body, def, 1, this._anchor);
+    // The pose (grip, angle, and tile-clipped length) is resolved once per tick
+    // in `tickHeldWeaponPose`; re-deriving it here could disagree with it.
+    const pose = weapon.heldPose;
+    if (pose.reachWorld <= 0) return;
 
     const swing = weapon.swing;
     const isSwinging = swing.activeFlag === 1;
-    const angleRad = isSwinging ? swing.currentAngleRad : this._anchor.angleRad;
+    const angleRad = pose.angleRad;
 
-    const originXPx = (this._anchor.xWorld - ox) * zoom;
-    const originYPx = (this._anchor.yWorld - oy) * zoom;
+    const originXPx = (pose.gripXWorld - ox) * zoom;
+    const originYPx = (pose.gripYWorld - oy) * zoom;
 
     ctx.save();
 
@@ -528,9 +531,9 @@ export class WeaponRenderer {
     zoom: number,
   ): void {
     const swing = weapon.swing;
-    const reach = isSwinging && swing.reachWorld > 0
-      ? swing.reachWorld
-      : (def.range ?? 24);
+    // Already clipped to what fits: a blade wedged into a wall draws short
+    // rather than through it.
+    const reach = weapon.heldPose.reachWorld;
     if (reach <= 0) return;
 
     const color = def.color ?? DEFAULT_BLADE_COLOR;
@@ -545,7 +548,9 @@ export class WeaponRenderer {
       if (isSpriteReady(img)) {
         const gripRatioX = def.spriteGripRatioX ?? 0.5;
         const gripRatioY = def.spriteGripRatioY ?? 0.9;
-        const drawHWorld = reach / gripRatioY;
+        // Sized from the weapon's true length, never from the clipped one: a
+        // blade pressed into a wall must lose its tip, not shrink whole.
+        const drawHWorld = weapon.heldPose.requestedReachWorld / gripRatioY;
         const drawWWorld = drawHWorld * (img.naturalWidth / img.naturalHeight);
         const drawHPx = drawHWorld * zoom;
         const drawWPx = drawWWorld * zoom;
@@ -555,6 +560,12 @@ export class WeaponRenderer {
         // Sprite has tip at top (pointing along -Y in unrotated space).
         // Rotate by (angleRad + Math.PI / 2) so the tip points along angleRad.
         ctx.rotate(angleRad + Math.PI / 2);
+        if (weapon.heldPose.tipContactFlag === 1) {
+          // Blade runs along -Y here, so keep only the span the tip reached.
+          ctx.beginPath();
+          ctx.rect(-drawWPx, -reach * zoom, drawWPx * 2, drawHPx + reach * zoom);
+          ctx.clip();
+        }
         ctx.drawImage(img, -drawWPx * gripRatioX, -drawHPx * gripRatioY, drawWPx, drawHPx);
         ctx.restore();
         return;

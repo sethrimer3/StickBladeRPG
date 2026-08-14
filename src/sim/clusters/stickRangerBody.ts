@@ -154,20 +154,18 @@ const SURFACE_TANGENT_RETENTION = 0.5;
 //   • Exactly one foot is driven at a time — the trailing one — and it keeps
 //     the push until it is STICKMAN_STRIDE_LEAD_DISTANCE ahead of the planted
 //     foot. That handoff rule is the walk cycle's visible shape.
-//   • The cliff figures below were measured under the older fixed-interval
-//     alternation, at STEER_FOOT_PUSH 0.52. Aiming every push at the trailing
-//     foot made the same number a lot stronger, so the working value is now
-//     0.38 and the cliff sits correspondingly lower.
-//   • There is a sharp stability cliff just above STEER_FOOT_PUSH 0.55: at
-//     0.65 the gait tips into a tumble (the head passes below the feet) and
-//     speed jumps from ~18 to ~66 world units/sec. Values here are set one
-//     step below that edge, which is the natural top speed of this gait at
-//     Stick Ranger's gravity constants.
-//   • That top speed (~16 world units/sec) is deliberately Stick-Ranger-slow
-//     and is about a sixth of this project's MAX_RUN_SPEED_WORLD_PER_SEC of
-//     105. Making the stickman traverse rooms at StickBlade pace needs the
-//     whole simulation scaled — GRAVITY and LAUNCH_GRAVITY together with
-//     these — not a larger push here, which only tips it past the cliff.
+//   • What used to be documented here as "a sharp stability cliff just above
+//     STEER_FOOT_PUSH 0.55" was the knee spreader, not the push. Stick Ranger's
+//     two-way knee spring held the legs in a permanent 5.5-unit straddle and
+//     hauled them back together whenever a stride opened them, so a harder push
+//     buckled the figure instead of lengthening the step. That constraint is now
+//     one-way (KNEE_SPREAD_MIN) and the cliff is gone: the stride went from 2.8
+//     units to 7, and the walk from 28 to 54 world units/sec.
+//   • The earlier note that this gait tops out near Stick Ranger's ~16
+//     units/sec, and that reaching StickBlade pace would need the whole
+//     simulation rescaled, was wrong for the same reason. 54 is roughly half of
+//     this project's MAX_RUN_SPEED_WORLD_PER_SEC of 105, at Stick Ranger's
+//     gravity constants and with no rescaling at all.
 
 // ── Jump ────────────────────────────────────────────────────────────────────
 //
@@ -212,10 +210,14 @@ export const STICKMAN_MAX_STEER_SPEED_PX_PER_SEC = 100;
  *
  * This is what makes the gait read as *walking* rather than as both legs
  * shuffling together: exactly one foot is ever driven, and it keeps being
- * driven until it has actually completed a stride. Kept below the 6.0 knee
- * spreader rest length so the swing ends before the legs are at full splay.
+ * driven until it has actually completed a stride.
+ *
+ * Was 3 while the knee spreader was still a two-way spring, because a longer
+ * target was unreachable anyway — the spring hauled the knees back together and
+ * the stride topped out at 2.8 units. With the spreader one-way (see
+ * KNEE_SPREAD_MIN) the legs can pass each other, and 6 buys a 7-unit stride.
  */
-export const STICKMAN_STRIDE_LEAD_DISTANCE = 3;
+export const STICKMAN_STRIDE_LEAD_DISTANCE = 6;
 /**
  * Hard cap on how long one leg may stay the swing leg. Without it a foot that
  * cannot get ahead — jammed against a step, wedged in a corner — would be
@@ -230,19 +232,19 @@ const STEER_CHEST_PUSH = 0.04;
 /**
  * Horizontal impulse applied to the swing foot. The legs do the walking.
  *
- * Lower than the 0.52 this used while the feet alternated on a fixed frame
- * interval, and it has to be: driving whichever foot is *trailing* until it
- * completes a stride aims every push usefully, where the old fixed alternation
- * regularly spent a push on the foot that was already in front. Left at 0.52
- * the better-aimed push overdrove the gait — walk speed rose from ~37 to ~54
- * units/sec and the figure hunched from 14.9 to 13.2 head-to-foot. At 0.38 the
- * walk sits at ~28 units/sec, back inside the gait's tested envelope.
+ * The old "sharp stability cliff just above 0.55" was not a property of the
+ * push at all — it was the knee spreader (see KNEE_SPREAD_MIN). A two-way
+ * spring holding the knees 6 units apart cannot be pushed through without the
+ * figure buckling, so harder pushes tumbled it instead of lengthening the step.
+ * With the spreader one-way, 0.65 and 0.8 are both stable; the walk is no
+ * longer pushing against its own standing pose.
  *
- * Response is not smooth here: the gait flips between a shuffle (~19) and a
- * stride (~28-48) somewhere between 0.36 and 0.40, so re-tune by measuring, not
- * by interpolating (see stickRangerBody.test.ts).
+ * 0.5 with a stride lead of 6 gives 54 units/sec and a 7-unit stride at a
+ * head-to-foot height of 13.9. Harder is available and still stable — 0.6
+ * reaches 63 — but costs posture (11.8 at 0.6/7), and this is the best speed
+ * available while the figure still walks upright.
  */
-const STEER_FOOT_PUSH = 0.38;
+const STEER_FOOT_PUSH = 0.5;
 
 // ── Airborne pose bias (this project's addition) ────────────────────────────
 //
@@ -334,9 +336,26 @@ const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, numbe
   [SR_HIP, SR_KNEE_R, 4.8, 0.5, 0.5],
   [SR_KNEE_L, SR_FOOT_L, 4.8, 0.5, 0.5],
   [SR_KNEE_R, SR_FOOT_R, 4.8, 0.5, 0.5],
-  // Knee spreader: very loose (0.1) so the legs splay rather than lock.
-  [SR_KNEE_L, SR_KNEE_R, 6.0, 0.1, 0.1],
 ];
+
+/**
+ * Minimum knee separation, enforced one-way: the knees are pushed apart when
+ * they are closer than this and left alone when they are further.
+ *
+ * Stick Ranger had this as an ordinary two-way spring at rest length 6.0, which
+ * works there because its party never walks on command — the spring is what
+ * props a passive figure into a standing A-frame. Here it was a stride limiter.
+ * Measured while walking, the knee gap moved only between 4.1 and 6.2: the
+ * spring hauled the knees back together the moment a stride opened them, so the
+ * legs could never pass each other and the whole step happened below the knee.
+ * That is the "fighting the walk" the standing pose was doing.
+ *
+ * One-way keeps the half that earns its place (legs cannot merge into one line)
+ * and drops the half that fought the gait.
+ */
+const KNEE_SPREAD_MIN = 2.4;
+/** Solver weight for the knee spreader — very loose, so legs splay rather than lock. */
+const KNEE_SPREAD_WEIGHT = 0.1;
 
 /**
  * Spawn offsets from the hip, chosen so the body starts in its constrained
@@ -881,6 +900,12 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     for (let c = 0; c < CONSTRAINTS.length; c++) {
       const [ia, ib, rest, wa, wb] = CONSTRAINTS[c];
       constrain(body, ia, ib, rest, wa, wb);
+    }
+    // The knees are only ever pushed apart, never pulled together (see
+    // KNEE_SPREAD_MIN) — an open stride is exactly what this must not undo.
+    const kneeGap = Math.hypot(body.x[SR_KNEE_L] - body.x[SR_KNEE_R], body.y[SR_KNEE_L] - body.y[SR_KNEE_R]);
+    if (kneeGap < KNEE_SPREAD_MIN) {
+      constrain(body, SR_KNEE_L, SR_KNEE_R, KNEE_SPREAD_MIN, KNEE_SPREAD_WEIGHT, KNEE_SPREAD_WEIGHT);
     }
   }
 

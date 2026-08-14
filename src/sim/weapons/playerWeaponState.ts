@@ -87,6 +87,12 @@ import {
   tickSoulOrbs,
   type SoulOrbPool,
 } from './soulOrbs';
+import {
+  computeHeldWeaponPose,
+  createHeldWeaponPose,
+  resolveHeldRestAngleRad,
+  type HeldWeaponPose,
+} from './weaponHeldPose';
 
 /** Ticks between the shots of a burst-fire weapon. */
 const BURST_SHOT_INTERVAL_TICKS = 4;
@@ -131,6 +137,12 @@ export interface PlayerWeaponState {
   projectileShield: ProjectileShieldState;
   /** Purely visual rings marking where on-expiry effects landed. */
   expiryFlashes: ExpiryFlashPool;
+  /**
+   * Where the held weapon actually sits this tick, tip resolved against solid
+   * geometry. Renderers read this instead of re-deriving a pose, so what is
+   * drawn and what the simulation believes is held can never disagree.
+   */
+  heldPose: HeldWeaponPose;
 }
 
 /** Allocates idle, unarmed weapon state. */
@@ -151,6 +163,7 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     soulsCollected: 0,
     projectileShield: createProjectileShieldState(),
     expiryFlashes: createExpiryFlashPool(),
+    heldPose: createHeldWeaponPose(),
   };
 }
 
@@ -393,6 +406,58 @@ function tickPlayerProjectileShield(
   }
 }
 
+/**
+ * Reach a held weapon occupies: the swing's own reach mid-arc, otherwise the
+ * weapon's declared range.
+ */
+function resolveHeldReachWorld(state: PlayerWeaponState, def: WeaponDef): number {
+  const swing = state.swing;
+  if (swing.activeFlag === 1 && swing.reachWorld > 0) return swing.reachWorld;
+  return def.range ?? DEFAULT_HELD_REACH_WORLD;
+}
+
+/** Reach assumed for a weapon that declares no range — matches the renderer's fallback. */
+const DEFAULT_HELD_REACH_WORLD = 24;
+
+/**
+ * Recomputes where the held weapon sits.
+ *
+ * Runs every tick rather than on demand from the renderer so the pose is part
+ * of simulation state: it is the same number for every consumer, and it is
+ * resolved once regardless of how many passes want to know where the tip is.
+ */
+function tickHeldWeaponPose(
+  world: WorldState,
+  state: PlayerWeaponState,
+  def: WeaponDef | null,
+): void {
+  const pose = state.heldPose;
+  const body = world.stickRangerBody;
+  if (def === null || body === null || def.showWeapon === false) {
+    pose.reachWorld = 0;
+    pose.requestedReachWorld = 0;
+    pose.tipContactFlag = 0;
+    return;
+  }
+
+  const swing = state.swing;
+  const isSwinging = swing.activeFlag === 1;
+  const preferredAngleRad = isSwinging
+    ? swing.currentAngleRad
+    : resolveHeldRestAngleRad(def, body.facingDirection);
+
+  computeHeldWeaponPose(
+    world,
+    body,
+    def,
+    resolveHeldReachWorld(state, def),
+    preferredAngleRad,
+    // A swing keeps the arc the damage pass swept; only its drawn length yields.
+    !isSwinging,
+    pose,
+  );
+}
+
 /** Cooldown in ticks for a ranged weapon, floored at 1 so it cannot fire every tick. */
 function getRangedCooldownTicks(def: WeaponDef): number {
   const ms = def.cooldown ?? 0;
@@ -434,6 +499,8 @@ export function tickPlayerWeapon(
   }
 
   tickPlayerProjectileShield(world, state, def, player);
+
+  tickHeldWeaponPose(world, state, def);
 
   tickSpiritOrbs(state.spiritOrbs, def, world.dtMs);
   tickExpiryFlashes(state.expiryFlashes);
