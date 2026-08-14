@@ -20,6 +20,8 @@ import { buildMapTab } from './skillTombWorldMap';
 
 export interface SkillTombMenuCallbacks {
   onClose: (updatedLoadout: ParticleKind[], updatedWeaveLoadout: PlayerWeaveLoadout) => void;
+  /** Called when the player clicks a save tomb on the map to teleport there. */
+  onTeleport?: (roomId: string, xBlock: number, yBlock: number) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -245,7 +247,15 @@ export function showSkillTombMenu(
         playerMaxHp,
       );
     } else {
-      mapCleanup = buildMapTab(contentArea, currentRoomId, progress.exploredRoomIds, playerXWorld, playerYWorld);
+      mapCleanup = buildMapTab(
+        contentArea, currentRoomId, progress.exploredRoomIds,
+        playerXWorld, playerYWorld,
+        true, // isTeleportEnabled — opened from a save tomb
+        callbacks.onTeleport ? (roomId, xBlock, yBlock) => {
+          destroy();
+          callbacks.onTeleport!(roomId, xBlock, yBlock);
+        } : undefined,
+      );
     }
   }
 

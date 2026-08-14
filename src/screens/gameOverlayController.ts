@@ -155,6 +155,19 @@ export function createGameOverlayController(
           onResetFrameClock();
           if (onSave) onSave();
         },
+        onTeleport: (roomId, xBlock, yBlock) => {
+          state.isSkillTombMenuOpen = false;
+          skillTombMenuCleanup = null;
+          const targetRoom = roomRegistry.get(roomId);
+          if (!targetRoom) return;
+          // Update last save point to the teleport destination
+          progress.lastSaveRoomId = roomId;
+          progress.lastSaveSpawnBlock = [xBlock, yBlock];
+          loadRoom(targetRoom, xBlock, yBlock);
+          onResetTransitionReveal();
+          onResetFrameClock();
+          if (onSave) onSave();
+        },
       },
     );
   }

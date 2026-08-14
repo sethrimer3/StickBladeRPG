@@ -5,6 +5,9 @@
  * stored in each RoomDef (set via the visual map editor), zoom / pan,
  * and mouse interaction.  Returns a cleanup function that removes
  * window-level event listeners.
+ *
+ * When `isTeleportEnabled` is true (map opened from a save tomb), save tomb
+ * markers slowly pulse and become clickable for fast-travel teleportation.
  */
 
 import { ROOM_REGISTRY } from '../levels/rooms';
@@ -30,6 +33,16 @@ interface RoomPlacement {
   mapYBlock: number;
 }
 
+/** Describes a save tomb target for teleportation hit-testing. */
+interface TombHitTarget {
+  roomId: string;
+  xBlock: number;
+  yBlock: number;
+  screenCenterX: number;
+  screenCenterY: number;
+  hitRadius: number;
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function buildMapTab(
@@ -38,6 +51,8 @@ export function buildMapTab(
   exploredRoomIds: ReadonlyArray<string>,
   playerXWorld?: number,
   playerYWorld?: number,
+  isTeleportEnabled = false,
+  onTeleportToSaveTomb?: (roomId: string, xBlock: number, yBlock: number) => void,
 ): () => void {
   const mapContainer = document.createElement('div');
   mapContainer.style.cssText = `
@@ -108,6 +123,14 @@ export function buildMapTab(
   let dragStartPanXPx = 0;
   let dragStartPanYPx = 0;
 
+  // ── Teleport / pulse state ──────────────────────────────────────────────
+  /** Accumulated time for the pulse animation (seconds). */
+  let pulseTimeSec = 0;
+  let lastAnimTimestampMs = 0;
+  let animFrameId = 0;
+  /** Hit targets rebuilt every render pass for click/hover detection. */
+  let tombHitTargets: TombHitTarget[] = [];
+
   function resizeMapCanvas(): void {
     const rect = mapContainer.getBoundingClientRect();
     mapCanvas.width = rect.width;
@@ -116,6 +139,8 @@ export function buildMapTab(
   }
 
   function renderMap(): void {
+    // Reset hit targets each frame — rebuilt during tomb marker rendering.
+    tombHitTargets = [];
     const cw = mapCanvas.width;
     const ch = mapCanvas.height;
     mapCtx.clearRect(0, 0, cw, ch);
@@ -210,24 +235,71 @@ export function buildMapTab(
       }
 
       // Save tombs — diamond markers remain crisp at all zoom levels.
+      // When teleport is enabled, markers pulse with a slow sinusoidal glow.
       for (const tomb of room.saveTombs) {
         const screenX = centerX + (mapXBlock + tomb.xBlock) * cellSize;
         const screenY = centerY + (mapYBlock + tomb.yBlock) * cellSize;
-        mapCtx.fillStyle = '#d4a84b';
+
+        // Diamond center and half-size
+        const mx = screenX + cellSize * 0.5;
+        const my = screenY + cellSize * 0.5;
+        const ms = cellSize * 1.2;
+
+        // Compute pulse alpha: slowly oscillate between 0.4 and 1.0
+        const baseBgAlpha = 1.0;
+        const baseDiamondAlpha = 0.8;
+        let bgAlpha = baseBgAlpha;
+        let diamondAlpha = baseDiamondAlpha;
+        let glowRadius = 0;
+        if (isTeleportEnabled) {
+          // ~2 second cycle
+          const pulse = 0.5 + 0.5 * Math.sin(pulseTimeSec * Math.PI);
+          bgAlpha = 0.4 + 0.6 * pulse;
+          diamondAlpha = 0.4 + 0.6 * pulse;
+          glowRadius = ms * 1.5 * pulse;
+        }
+
+        // Outer glow when pulsing
+        if (isTeleportEnabled && glowRadius > 0) {
+          mapCtx.save();
+          mapCtx.shadowColor = 'rgba(212,168,75,0.6)';
+          mapCtx.shadowBlur = glowRadius;
+          mapCtx.fillStyle = `rgba(212,168,75,${diamondAlpha * 0.3})`;
+          mapCtx.beginPath();
+          mapCtx.moveTo(mx, my - ms);
+          mapCtx.lineTo(mx + ms, my);
+          mapCtx.lineTo(mx, my + ms);
+          mapCtx.lineTo(mx - ms, my);
+          mapCtx.closePath();
+          mapCtx.fill();
+          mapCtx.restore();
+        }
+
+        // Gold background square
+        mapCtx.fillStyle = `rgba(212,168,75,${bgAlpha})`;
         mapCtx.fillRect(screenX - cellSize * 0.5, screenY - cellSize * 0.5, cellSize * 2, cellSize * 2);
 
         // Small diamond marker
         mapCtx.beginPath();
-        const mx = screenX + cellSize * 0.5;
-        const my = screenY + cellSize * 0.5;
-        const ms = cellSize * 1.2;
         mapCtx.moveTo(mx, my - ms);
         mapCtx.lineTo(mx + ms, my);
         mapCtx.lineTo(mx, my + ms);
         mapCtx.lineTo(mx - ms, my);
         mapCtx.closePath();
-        mapCtx.fillStyle = 'rgba(212,168,75,0.8)';
+        mapCtx.fillStyle = `rgba(212,168,75,${diamondAlpha})`;
         mapCtx.fill();
+
+        // Record hit target for click/hover detection
+        if (isTeleportEnabled) {
+          tombHitTargets.push({
+            roomId: room.id,
+            xBlock: tomb.xBlock,
+            yBlock: tomb.yBlock,
+            screenCenterX: mx,
+            screenCenterY: my,
+            hitRadius: Math.max(ms * 1.5, 10),
+          });
+        }
       }
 
       // Room name label.
@@ -316,7 +388,7 @@ export function buildMapTab(
     mapCtx.fillStyle = 'rgba(212,168,75,0.8)';
     mapCtx.fillRect(legendX, legendY + 36, 10, 10);
     mapCtx.fillStyle = '#aaa';
-    mapCtx.fillText('= Skill Tomb', legendX + 16, legendY + 45);
+    mapCtx.fillText(isTeleportEnabled ? '= Save Tomb (click to teleport)' : '= Skill Tomb', legendX + 16, legendY + 45);
 
     mapCtx.fillStyle = '#00ffcc';
     mapCtx.beginPath();
@@ -350,8 +422,11 @@ export function buildMapTab(
   }
 
   // ── Pan (mouse drag) ────────────────────────────────────────────────────
+  let dragTotalDistSq = 0;
+
   function onMouseDown(e: MouseEvent): void {
     isDragging = true;
+    dragTotalDistSq = 0;
     dragStartXPx = e.clientX;
     dragStartYPx = e.clientY;
     dragStartPanXPx = panXPx;
@@ -360,15 +435,68 @@ export function buildMapTab(
   }
 
   function onMouseMove(e: MouseEvent): void {
-    if (!isDragging) return;
-    panXPx = dragStartPanXPx + (e.clientX - dragStartXPx);
-    panYPx = dragStartPanYPx + (e.clientY - dragStartYPx);
-    renderMap();
+    if (isDragging) {
+      const movedX = e.clientX - dragStartXPx;
+      const movedY = e.clientY - dragStartYPx;
+      dragTotalDistSq = movedX * movedX + movedY * movedY;
+      panXPx = dragStartPanXPx + movedX;
+      panYPx = dragStartPanYPx + movedY;
+      renderMap();
+      return;
+    }
+    // Hover cursor: pointer when over a clickable save tomb
+    if (isTeleportEnabled) {
+      const rect = mapCanvas.getBoundingClientRect();
+      const hx = e.clientX - rect.left;
+      const hy = e.clientY - rect.top;
+      const hit = findTombHit(hx, hy);
+      mapCanvas.style.cursor = hit ? 'pointer' : 'grab';
+    }
   }
 
-  function onMouseUp(): void {
+  function onMouseUp(e: MouseEvent): void {
+    const wasDragging = isDragging;
     isDragging = false;
+    // Only treat as a click if the mouse barely moved (not a drag)
+    const wasClick = wasDragging && dragTotalDistSq < 25; // 5px threshold
+    if (wasClick && isTeleportEnabled && onTeleportToSaveTomb) {
+      const rect = mapCanvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const hit = findTombHit(cx, cy);
+      if (hit) {
+        onTeleportToSaveTomb(hit.roomId, hit.xBlock, hit.yBlock);
+        return;
+      }
+    }
     mapCanvas.style.cursor = 'grab';
+  }
+
+  /** Find the tomb hit target closest to screen coordinates, or null. */
+  function findTombHit(sx: number, sy: number): TombHitTarget | null {
+    let bestDist = Infinity;
+    let best: TombHitTarget | null = null;
+    for (const target of tombHitTargets) {
+      const dx = sx - target.screenCenterX;
+      const dy = sy - target.screenCenterY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < target.hitRadius && dist < bestDist) {
+        bestDist = dist;
+        best = target;
+      }
+    }
+    return best;
+  }
+
+  // ── Pulse animation loop (only when teleport is enabled) ────────────────
+  function animatePulse(timestampMs: number): void {
+    if (lastAnimTimestampMs > 0) {
+      const dtSec = Math.min((timestampMs - lastAnimTimestampMs) / 1000, 0.1);
+      pulseTimeSec += dtSec;
+    }
+    lastAnimTimestampMs = timestampMs;
+    renderMap();
+    animFrameId = requestAnimationFrame(animatePulse);
   }
 
   mapCanvas.addEventListener('wheel', onWheel, { passive: false });
@@ -387,8 +515,14 @@ export function buildMapTab(
 
   resizeMapCanvas();
 
-  // Return cleanup that removes window-level listeners
+  // Start pulse animation if teleport is enabled
+  if (isTeleportEnabled) {
+    animFrameId = requestAnimationFrame(animatePulse);
+  }
+
+  // Return cleanup that removes window-level listeners and stops animation
   return () => {
+    if (animFrameId) cancelAnimationFrame(animFrameId);
     mapCanvas.removeEventListener('wheel', onWheel);
     mapCanvas.removeEventListener('mousedown', onMouseDown);
     window.removeEventListener('mousemove', onMouseMove);
