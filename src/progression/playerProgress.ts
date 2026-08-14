@@ -26,7 +26,9 @@ import {
 } from '../sim/party/partyState';
 import {
   type PlayerInventory,
+  PLAYTEST_GRANT_ALL_WEAPONS,
   createDefaultInventory,
+  grantAllWeaponsForPlaytest,
   reconcileStarterEquipment,
   sanitizeInventory,
 } from '../sim/party/inventory';
@@ -286,6 +288,11 @@ export function sanitizePlayerInventory(progress: PlayerProgress): void {
   progress.inventory = sanitizeInventory(progress.inventory);
   if (progress.party) {
     reconcileStarterEquipment(progress.inventory, progress.party);
+    // Playtest build: everything is unlocked from the start. See the flag's doc
+    // comment for how to turn this back off.
+    if (PLAYTEST_GRANT_ALL_WEAPONS) {
+      grantAllWeaponsForPlaytest(progress.inventory, progress.party);
+    }
   }
 }
 

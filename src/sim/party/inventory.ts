@@ -16,7 +16,12 @@
  * opaque strings exactly as `sanitizePartyState` already treats them.
  */
 
-import { getWeaponDef } from '../weapons/weaponDefs';
+import {
+  WEAPONS,
+  WEAPON_IDS,
+  getWeaponDef,
+  isPlayerEquippableWeapon,
+} from '../weapons/weaponDefs';
 import {
   EQUIPMENT_SUBSLOTS,
   applyMainHandConstraints,
@@ -30,8 +35,13 @@ import {
 /** Most copies of one item a single stack holds. */
 export const MAX_STACK_COUNT = 99;
 
-/** Most distinct stacks the inventory holds. */
-export const MAX_INVENTORY_SLOTS = 60;
+/**
+ * Most distinct stacks the inventory holds.
+ *
+ * Sized to fit every player-equippable weapon at once, which is what
+ * `PLAYTEST_GRANT_ALL_WEAPONS` currently hands out.
+ */
+export const MAX_INVENTORY_SLOTS = 160;
 
 /**
  * The item the player starts with.
@@ -272,6 +282,43 @@ export function reconcileStarterEquipment(
   }
   leader.equipment.mainHand = STARTER_ITEM_ID;
   applyMainHandConstraints(leader.equipment);
+}
+
+/**
+ * PLAYTEST ONLY — every weapon is unlocked from the first frame.
+ *
+ * Flip to false (or delete the flag and its call site in
+ * `sanitizePlayerInventory`) to go back to earning weapons through play. Kept as
+ * a named constant rather than a commented-out call so the search for "what
+ * gives me all the weapons" lands in one place.
+ */
+export const PLAYTEST_GRANT_ALL_WEAPONS = true;
+
+/**
+ * Tops the inventory up with one of every player-equippable weapon.
+ *
+ * Skips anything already carried *or* already worn by a member, so the
+ * "equipped items are not in the inventory" invariant survives, and so
+ * equipping a sword does not silently duplicate it on the next load. Idempotent
+ * — safe to run on every load, which is exactly what it does.
+ */
+export function grantAllWeaponsForPlaytest(
+  inventory: PlayerInventory,
+  party: PartyState,
+): void {
+  const equipped = new Set<string>();
+  for (const member of party.members) {
+    for (const subslot of EQUIPMENT_SUBSLOTS) {
+      const itemId = member.equipment[subslot];
+      if (itemId !== null) equipped.add(itemId);
+    }
+  }
+
+  for (const id of WEAPON_IDS) {
+    if (!isPlayerEquippableWeapon(WEAPONS[id])) continue;
+    if (equipped.has(id) || hasInventoryItem(inventory, id)) continue;
+    addInventoryItem(inventory, id, 1);
+  }
 }
 
 // ---- Persistence ----------------------------------------------------------

@@ -17,6 +17,7 @@ import {
   equipFromInventory,
   getInventoryCount,
   getItemDisplayName,
+  grantAllWeaponsForPlaytest,
   hasInventoryItem,
   reconcileStarterEquipment,
   removeInventoryItem,
@@ -26,7 +27,12 @@ import {
 } from '../sim/party/inventory';
 import { createDefaultParty, createEmptyEquipment } from '../sim/party/partyState';
 import { DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
-import { WEAPON_IDS, getWeaponDef } from '../sim/weapons/weaponDefs';
+import {
+  WEAPONS,
+  WEAPON_IDS,
+  getWeaponDef,
+  isPlayerEquippableWeapon,
+} from '../sim/weapons/weaponDefs';
 import {
   createDefaultProgress,
   sanitizePlayerInventory,
@@ -277,6 +283,37 @@ describe('inventory — starter reconciliation', () => {
     equipFromInventory(inventory, party.members[0].equipment, 'mainHand', TWO_HAND_ID);
     reconcileStarterEquipment(inventory, party);
     assert.equal(party.members[0].equipment.mainHand, TWO_HAND_ID);
+  });
+});
+
+describe('inventory — playtest weapon grant', () => {
+  test('hands out every player-equippable weapon and no enemy-only one', () => {
+    const inventory = createEmptyInventory();
+    const party = createDefaultParty();
+    grantAllWeaponsForPlaytest(inventory, party);
+
+    for (const id of WEAPON_IDS) {
+      const expected = isPlayerEquippableWeapon(WEAPONS[id]) ? 1 : 0;
+      assert.equal(getInventoryCount(inventory, id), expected, id);
+    }
+  });
+
+  test('never duplicates a weapon that is carried or worn', () => {
+    const inventory = createEmptyInventory();
+    const party = createDefaultParty();
+    grantAllWeaponsForPlaytest(inventory, party);
+    // Wear one, then re-run as a fresh load would.
+    assert.ok(equipFromInventory(inventory, party.members[0].equipment, 'mainHand', TWO_HAND_ID));
+    grantAllWeaponsForPlaytest(inventory, party);
+
+    assert.equal(getInventoryCount(inventory, TWO_HAND_ID), 0);
+    assert.equal(getInventoryCount(inventory, ONE_HAND_ID), 1);
+  });
+
+  test('the grant fits inside the slot cap', () => {
+    const inventory = createEmptyInventory();
+    grantAllWeaponsForPlaytest(inventory, createDefaultParty());
+    assert.ok(inventory.stacks.length <= MAX_INVENTORY_SLOTS);
   });
 });
 

@@ -72,6 +72,21 @@ export function showInventoryPanel(
   const { inventory, party } = inputs;
   let selectedMemberIndex = party.activeIndex;
 
+  /**
+   * What is currently under the cursor mid-drag.
+   *
+   * Held here rather than read from `DataTransfer`, because `dragover` — where
+   * a slot decides whether it will accept the drop — is forbidden from reading
+   * transfer data. The payload is still written to `DataTransfer` as well so the
+   * browser treats the gesture as a real drag.
+   */
+  type DragPayload =
+    | { from: 'inventory'; itemId: string }
+    | { from: 'slot'; itemId: string; subslot: EquipmentSubslot };
+  let dragPayload: DragPayload | null = null;
+  /** Text filter over the carried-item grid. */
+  let itemFilter = '';
+
   const el = document.createElement('div');
   el.id = 'inventory-panel-screen';
   el.style.cssText = `
@@ -176,6 +191,48 @@ export function showInventoryPanel(
     return chip;
   }
 
+  /**
+   * Resolves a drop onto `subslot`, returning true when anything moved.
+   *
+   * A slot-to-slot drag unequips the source first: a two-hander in the main
+   * hand blocks the off hand while it is still worn, so asking
+   * `equipFromInventory` before releasing it would always be refused. If the
+   * equip then fails anyway, the source is put back, leaving the drag a no-op
+   * rather than dumping the item on the floor.
+   */
+  function applyDropOnSlot(
+    member: PartyMember,
+    subslot: EquipmentSubslot,
+    payload: DragPayload,
+  ): boolean {
+    if (payload.from === 'slot') {
+      if (payload.subslot === subslot) return false;
+      if (unequipToInventory(inventory, member.equipment, payload.subslot) === null) return false;
+      if (!equipFromInventory(inventory, member.equipment, subslot, payload.itemId)) {
+        equipFromInventory(inventory, member.equipment, payload.subslot, payload.itemId);
+        return false;
+      }
+      return true;
+    }
+    return equipFromInventory(inventory, member.equipment, subslot, payload.itemId);
+  }
+
+  /** True when a drop of `payload` onto `subslot` would be accepted. */
+  function canDropOnSlot(
+    member: PartyMember,
+    subslot: EquipmentSubslot,
+    payload: DragPayload,
+  ): boolean {
+    if (payload.from === 'slot' && payload.subslot === subslot) return false;
+    if (payload.from === 'slot' && payload.subslot === 'mainHand' && subslot === 'offHand') {
+      // The main hand is about to be emptied by the move, so judge the off hand
+      // against the equipment it will actually see.
+      const preview = { ...member.equipment, mainHand: null };
+      return canEquipInSubslot(preview, subslot, payload.itemId);
+    }
+    return canEquipInSubslot(member.equipment, subslot, payload.itemId);
+  }
+
   function equipmentSlotChip(member: PartyMember, subslot: EquipmentSubslot): HTMLElement {
     const itemId = member.equipment[subslot];
     const isBlockedByTwoHander = subslot === 'offHand'
@@ -199,13 +256,50 @@ export function showInventoryPanel(
     `;
 
     if (itemId !== null) {
-      chip.title = 'Click to unequip';
+      chip.title = 'Click to unequip · drag to another slot or back to the grid';
       chip.addEventListener('click', () => {
         unequipToInventory(inventory, member.equipment, subslot);
         notifyEquipmentChanged();
         render();
       });
+      chip.draggable = true;
+      chip.addEventListener('dragstart', e => {
+        dragPayload = { from: 'slot', itemId, subslot };
+        e.dataTransfer?.setData('text/plain', itemId);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        chip.style.opacity = '0.5';
+      });
+      chip.addEventListener('dragend', () => {
+        dragPayload = null;
+        chip.style.opacity = '1';
+      });
     }
+
+    // Drop target — the whole point of the screen's drag gesture.
+    chip.addEventListener('dragover', e => {
+      if (dragPayload === null || !canDropOnSlot(member, subslot, dragPayload)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      chip.style.background = 'rgba(255,215,0,0.28)';
+      chip.style.borderColor = GOLD;
+    });
+    chip.addEventListener('dragleave', () => {
+      chip.style.background = itemId === null ? 'rgba(25,25,35,0.85)' : 'rgba(212,168,75,0.12)';
+      chip.style.borderColor = itemId === null ? 'rgba(212,168,75,0.3)' : GOLD;
+    });
+    chip.addEventListener('drop', e => {
+      e.preventDefault();
+      const payload = dragPayload;
+      dragPayload = null;
+      if (payload === null) return;
+      if (!applyDropOnSlot(member, subslot, payload)) {
+        render();
+        return;
+      }
+      notifyEquipmentChanged();
+      render();
+    });
+
     return chip;
   }
 
@@ -251,7 +345,7 @@ export function showInventoryPanel(
 
     const heading = document.createElement('div');
     heading.style.cssText = `
-      display:flex; justify-content:space-between; align-items:baseline;
+      display:flex; justify-content:space-between; align-items:baseline; gap:12px;
       border-bottom:1px solid rgba(212,168,75,0.3); padding-bottom:6px; margin-bottom:12px;
     `;
     heading.innerHTML = `
@@ -259,6 +353,34 @@ export function showInventoryPanel(
       <span style="color:#888; font-size:0.75rem;">${inventory.stacks.length} stack(s)</span>
     `;
     itemsSection.appendChild(heading);
+
+    // With every weapon unlocked the grid runs to dozens of cards, so a filter
+    // is the difference between "pick a weapon" and "scroll for a while".
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Filter items…';
+    search.value = itemFilter;
+    search.style.cssText = `
+      width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 6px 10px;
+      font-family: 'Cinzel', serif; font-size: 0.8rem;
+      background: rgba(25,25,35,0.85); color: #eee;
+      border: 1px solid rgba(212,168,75,0.3); border-radius: 4px;
+    `;
+    search.addEventListener('input', () => {
+      itemFilter = search.value;
+      renderItems();
+      // Re-rendering replaces the input, so focus and caret must be restored.
+      const next = itemsSection.querySelector('input');
+      if (next instanceof HTMLInputElement) {
+        next.focus();
+        next.setSelectionRange(next.value.length, next.value.length);
+      }
+    });
+    // The panel's global handler closes on `i`; typing one here must not.
+    search.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') e.stopPropagation();
+    });
+    itemsSection.appendChild(search);
 
     if (inventory.stacks.length === 0) {
       const empty = document.createElement('p');
@@ -271,12 +393,46 @@ export function showInventoryPanel(
     const grid = document.createElement('div');
     grid.style.cssText = `
       display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px;
+      min-height: 80px;
     `;
     itemsSection.appendChild(grid);
 
-    inventory.stacks.forEach((stack, stackIndex) => {
-      grid.appendChild(itemCard(member, stack.id, stack.count, stackIndex));
+    // Dropping a worn item back on the grid unequips it — the inverse gesture.
+    grid.addEventListener('dragover', e => {
+      if (dragPayload === null || dragPayload.from !== 'slot') return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      grid.style.outline = `1px dashed ${GOLD_DIM}`;
     });
+    grid.addEventListener('dragleave', () => { grid.style.outline = 'none'; });
+    grid.addEventListener('drop', e => {
+      e.preventDefault();
+      const payload = dragPayload;
+      dragPayload = null;
+      grid.style.outline = 'none';
+      if (payload === null || payload.from !== 'slot') return;
+      if (unequipToInventory(inventory, member.equipment, payload.subslot) === null) return;
+      notifyEquipmentChanged();
+      render();
+    });
+
+    const needle = itemFilter.trim().toLowerCase();
+    let shown = 0;
+    inventory.stacks.forEach((stack, stackIndex) => {
+      if (needle !== '' && !getItemDisplayName(stack.id).toLowerCase().includes(needle)
+        && !stack.id.toLowerCase().includes(needle)) {
+        return;
+      }
+      grid.appendChild(itemCard(member, stack.id, stack.count, stackIndex));
+      shown++;
+    });
+
+    if (shown === 0) {
+      const none = document.createElement('p');
+      none.style.cssText = 'color:#777; font-size:0.85rem; text-align:center; margin:24px 0;';
+      none.textContent = `No carried item matches “${itemFilter.trim()}”.`;
+      itemsSection.appendChild(none);
+    }
   }
 
   function itemCard(
@@ -292,8 +448,22 @@ export function showInventoryPanel(
     card.style.cssText = `
       background: rgba(25,25,35,0.85); border: 1px solid rgba(212,168,75,0.3);
       border-radius: 6px; padding: 10px; box-sizing: border-box;
-      display: flex; flex-direction: column; gap: 6px;
+      display: flex; flex-direction: column; gap: 6px; cursor: grab;
     `;
+
+    // Drag source. The equip buttons below stay as the keyboard/click path;
+    // dragging is the shortcut, not the only way in.
+    card.draggable = true;
+    card.addEventListener('dragstart', e => {
+      dragPayload = { from: 'inventory', itemId };
+      e.dataTransfer?.setData('text/plain', itemId);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      card.style.opacity = '0.5';
+    });
+    card.addEventListener('dragend', () => {
+      dragPayload = null;
+      card.style.opacity = '1';
+    });
 
     const title = document.createElement('div');
     title.style.cssText = 'display:flex; justify-content:space-between; align-items:baseline; gap:8px;';
@@ -377,7 +547,7 @@ export function showInventoryPanel(
 
   const hint = document.createElement('span');
   hint.style.cssText = 'color:#777; font-size:0.75rem;';
-  hint.textContent = 'Click a slot to unequip · I or Esc to close';
+  hint.textContent = 'Drag an item onto a slot to equip · drag it back to unequip · I or Esc to close';
   actionBar.appendChild(hint);
 
   const closeBtn = document.createElement('button');
