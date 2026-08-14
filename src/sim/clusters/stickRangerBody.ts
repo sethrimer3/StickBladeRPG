@@ -199,8 +199,22 @@ const JUMP_BUFFER_FRAMES = 6;
 
 /** Maximum lateral speed in pixels per second above which lateral steering force is suppressed until speed dips below 100 px/s. */
 export const STICKMAN_MAX_STEER_SPEED_PX_PER_SEC = 100;
-/** Body frames per alternating foot stride step. */
-export const STICKMAN_WALK_STEP_FRAMES = 5;
+/**
+ * How far, in world units, the swinging foot must get ahead of the planted one
+ * (measured along the direction being held) before the other leg takes over.
+ *
+ * This is what makes the gait read as *walking* rather than as both legs
+ * shuffling together: exactly one foot is ever driven, and it keeps being
+ * driven until it has actually completed a stride. Kept below the 6.0 knee
+ * spreader rest length so the swing ends before the legs are at full splay.
+ */
+export const STICKMAN_STRIDE_LEAD_DISTANCE = 4;
+/**
+ * Hard cap on how long one leg may stay the swing leg. Without it a foot that
+ * cannot get ahead — jammed against a step, wedged in a corner — would be
+ * driven forever while the other leg never moves.
+ */
+export const STICKMAN_MAX_SWING_FRAMES = 20;
 
 /** Horizontal impulse applied to the hip while a direction is held. */
 const STEER_HIP_PUSH = 0.11;
@@ -265,8 +279,12 @@ export interface StickRangerBody {
   jumpFiredFlag: 0 | 1;
   /** Facing, for renderers that need it: -1 left, 1 right. */
   facingDirection: -1 | 1;
-  /** Counter tracking walking frames for alternating foot pushes. */
+  /** Frames the current walk has been held; 0 while no direction is pressed. */
   walkStepCounter: number;
+  /** Point index of the foot currently being driven — SR_FOOT_L or SR_FOOT_R. */
+  swingFoot: number;
+  /** Frames the current swing foot has been the driven one. */
+  swingFrames: number;
 }
 
 /** Allocates a body with its hip at (hipX, hipY), in its rest pose. */
@@ -285,6 +303,8 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     jumpFiredFlag: 0,
     facingDirection: 1,
     walkStepCounter: 0,
+    swingFoot: SR_FOOT_L,
+    swingFrames: 0,
   };
   resetStickRangerBody(body, hipX, hipY);
   return body;
@@ -311,6 +331,8 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.jumpBufferFrames = 0;
   body.jumpFiredFlag = 0;
   body.walkStepCounter = 0;
+  body.swingFoot = SR_FOOT_L;
+  body.swingFrames = 0;
 }
 
 /**
@@ -547,15 +569,28 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   // window, so the character can push off the ground but cannot free-fly.
   //
   // Gait mechanism:
-  // 1. Applies lateral movement force to ONE foot at a time, alternating between
-  //    left and right feet every STICKMAN_WALK_STEP_FRAMES body frames to produce
-  //    a natural walking gait.
+  // 1. Applies lateral movement force to ONE foot at a time — the swing foot —
+  //    and keeps driving that same foot until it has pulled
+  //    STICKMAN_STRIDE_LEAD_DISTANCE ahead of the planted foot along the held
+  //    direction, at which point the other leg takes over. That completed-stride
+  //    handoff (rather than a fixed frame interval) is what reads as walking:
+  //    each leg visibly swings through, plants, and waits its turn.
   // 2. Checks lateral speed in pixels per second before applying force; forces
   //    are not applied once speed reaches or exceeds STICKMAN_MAX_STEER_SPEED_PX_PER_SEC
   //    (100 px/s) until speed dips back below 100 px/s.
   if (moveDirection !== 0 && inLaunchWindow) {
+    const turned = body.facingDirection !== (moveDirection < 0 ? -1 : 1);
     body.facingDirection = moveDirection < 0 ? -1 : 1;
+
+    // Starting a walk, or reversing into one, begins the stride on the trailing
+    // foot — the one already behind — so the first step goes somewhere.
+    if (body.walkStepCounter === 0 || turned) {
+      const leftLead = (body.x[SR_FOOT_L] - body.x[SR_FOOT_R]) * moveDirection;
+      body.swingFoot = leftLead < 0 ? SR_FOOT_L : SR_FOOT_R;
+      body.swingFrames = 0;
+    }
     body.walkStepCounter += 1;
+    body.swingFrames += 1;
 
     const framesPerSecond = 1000 / SR_FRAME_MS;
 
@@ -566,18 +601,26 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
       body.x[SR_CHEST] += moveDirection * STEER_CHEST_PUSH;
     }
 
-    // Alternate lateral push between left foot and right foot for a natural stride (trailing foot steps first)
-    const stepIdx = Math.floor((body.walkStepCounter - 1) / STICKMAN_WALK_STEP_FRAMES);
-    const isLeftFootStep = (stepIdx + (moveDirection < 0 ? 1 : 0)) % 2 === 0;
-    const activeFoot = isLeftFootStep ? SR_FOOT_L : SR_FOOT_R;
+    // Exactly one foot is driven per frame: the current swing foot.
+    const activeFoot = body.swingFoot;
+    const plantedFoot = activeFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
 
     // Foot lateral movement force applied ONLY when foot speed in movement direction dips below 100 px/s
     const footSpeedPxSec = (body.x[activeFoot] - body.prevX[activeFoot]) * moveDirection * framesPerSecond;
     if (footSpeedPxSec < STICKMAN_MAX_STEER_SPEED_PX_PER_SEC) {
       body.x[activeFoot] += moveDirection * STEER_FOOT_PUSH;
     }
+
+    // Hand the stride to the other leg once this one is far enough in front —
+    // or once it has clearly failed to get there (blocked foot).
+    const strideLead = (body.x[activeFoot] - body.x[plantedFoot]) * moveDirection;
+    if (strideLead >= STICKMAN_STRIDE_LEAD_DISTANCE || body.swingFrames >= STICKMAN_MAX_SWING_FRAMES) {
+      body.swingFoot = plantedFoot;
+      body.swingFrames = 0;
+    }
   } else {
     body.walkStepCounter = 0;
+    body.swingFrames = 0;
   }
 
   // ── 3. Constraints — TWO passes, soft weights ───────────────────────────

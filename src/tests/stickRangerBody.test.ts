@@ -11,7 +11,8 @@ import {
   SR_FRAME_MS,
   STICKMAN_TIME_SCALE,
   STICKMAN_MAX_STEER_SPEED_PX_PER_SEC,
-  STICKMAN_WALK_STEP_FRAMES,
+  STICKMAN_STRIDE_LEAD_DISTANCE,
+  STICKMAN_MAX_SWING_FRAMES,
   SR_HIP,
   SR_HEAD,
   SR_FOOT_L,
@@ -358,7 +359,7 @@ test('a long host stall does not spiral or teleport the body', () => {
   assert.ok(body.accumulatorMs < SR_FRAME_MS, 'backlog should be cleared, not carried forward');
 });
 
-test('walking alternates foot impulses across step intervals', () => {
+test('walking drives one foot at a time and hands off after a full stride', () => {
   const floor = flatFloor(140);
   const body = createStickRangerBody(100, 130);
   advanceFrames(body, floor, 0, 30); // settle
@@ -367,13 +368,37 @@ test('walking alternates foot impulses across step intervals', () => {
   advanceFrames(body, floor, 1, 1);
   assert.equal(body.walkStepCounter, 1, 'walkStepCounter increments when walking');
 
-  // Step for STICKMAN_WALK_STEP_FRAMES and verify counter advances and body travels right
-  advanceFrames(body, floor, 1, STICKMAN_WALK_STEP_FRAMES * 2);
-  assert.equal(body.walkStepCounter, 1 + STICKMAN_WALK_STEP_FRAMES * 2);
+  // The stride starts on whichever foot is trailing, and stays there.
+  const firstSwing = body.swingFoot;
+  assert.ok(firstSwing === SR_FOOT_L || firstSwing === SR_FOOT_R);
+
+  // Walk long enough for several strides; the swing foot must hand off, and
+  // every handoff must happen with the swing foot actually out in front.
+  let handoffs = 0;
+  let previousSwing = body.swingFoot;
+  let sawBothFeet = false;
+  let maxSeparation = 0;
+  for (let i = 0; i < 200; i++) {
+    advanceFrames(body, floor, 1, 1);
+    maxSeparation = Math.max(maxSeparation, Math.abs(body.x[SR_FOOT_L] - body.x[SR_FOOT_R]));
+    if (body.swingFoot !== previousSwing) {
+      handoffs += 1;
+      sawBothFeet = true;
+      previousSwing = body.swingFoot;
+    }
+    assert.ok(body.swingFrames <= STICKMAN_MAX_SWING_FRAMES, 'swing foot cannot be driven forever');
+  }
+  assert.ok(handoffs >= 2, `expected the legs to alternate while walking, got ${handoffs} handoffs`);
+  assert.ok(sawBothFeet);
+  assert.ok(
+    maxSeparation >= STICKMAN_STRIDE_LEAD_DISTANCE * 0.5,
+    `legs should open into a real stride, max separation was ${maxSeparation.toFixed(2)}`,
+  );
 
   // Stopping resets the walk counter
   advanceFrames(body, floor, 0, 1);
   assert.equal(body.walkStepCounter, 0, 'releasing move input resets walkStepCounter');
+  assert.equal(body.swingFrames, 0, 'releasing move input resets the swing');
 });
 
 test('lateral steering force does not accelerate foot beyond 100 px/s cap', () => {
