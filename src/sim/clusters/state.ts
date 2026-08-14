@@ -582,6 +582,12 @@ export interface ClusterState {
    * While > 0 the player sprite shows a damage tint / flash.
    */
   hurtTicks: number;
+  /**
+   * Set to 1 by `applyPlayerDamageWithKnockback` when a hit costs more than
+   * `HEAVY_HIT_HEALTH_FRACTION` of capacity, and cleared by whoever reacts to
+   * it. Drives the stickman's ragdoll (`tickStickRangerPlayer`).
+   */
+  heavyHitFlag: 0 | 1;
 
   // ---- Slime enemy (populated only when isSlimeFlag === 1) ----------------
   /** 1 if this cluster is a slime — hops toward player each interval. */
@@ -1302,6 +1308,7 @@ export function createClusterState(
     momentumHitCooldownTicks: 0,
     invulnerabilityTicks: 0,
     hurtTicks: 0,
+    heavyHitFlag: 0,
     isSlimeFlag: 0,
     slimeHopTimerTicks: 0,
     isLargeSlimeFlag: 0,

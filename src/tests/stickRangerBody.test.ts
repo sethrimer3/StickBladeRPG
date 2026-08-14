@@ -2,8 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createStickRangerBody,
+  resetStickRangerBody,
   stepStickRangerBody,
   requestStickRangerJump,
+  triggerStickRangerRagdoll,
+  isStickRangerRagdolling,
+  STICKMAN_RAGDOLL_FRAMES,
   canStickmanJump,
   canFootJump,
   getStickRangerRenderAlpha,
@@ -537,3 +541,141 @@ test('repeated jump spam under a thin 8-pixel ceiling never tunnels limbs upward
   }
 });
 
+
+// ── Airborne pose bias ──────────────────────────────────────────────────────
+
+/**
+ * Runs a rightward running jump and returns the body mid-flight, sampled a few
+ * frames after takeoff so the pose bias has ramped in.
+ */
+function runningJump(floor: SolidMask, airFrames: number, direction: 1 | -1 = 1): StickRangerBody {
+  const body = createStickRangerBody(100, 130);
+  advanceFrames(body, floor, 0, 60);      // settle
+  advanceFrames(body, floor, direction, 20); // get walking
+  requestStickRangerJump(body);
+  advanceFrames(body, floor, direction, airFrames);
+  return body;
+}
+
+test('a jumping figure is biased upright, not folded over', () => {
+  const floor = flatFloor(140);
+  const body = runningJump(floor, 14);
+
+  assert.ok(body.y[SR_HEAD] < body.y[SR_HIP], 'head should stay above the hip in flight');
+  // "Upright" is a bias, not a lock, so this only asks that the spine has not
+  // pitched further than about one head-height off vertical.
+  const leanX = Math.abs(body.x[SR_HEAD] - body.x[SR_HIP]);
+  assert.ok(leanX < 4, `airborne spine leaned ${leanX.toFixed(1)} off vertical`);
+});
+
+test('a jumping figure keeps both legs below the hip', () => {
+  const floor = flatFloor(140);
+  const body = runningJump(floor, 14);
+
+  assert.ok(body.y[SR_FOOT_L] > body.y[SR_HIP], 'left foot should stay below the hip');
+  assert.ok(body.y[SR_FOOT_R] > body.y[SR_HIP], 'right foot should stay below the hip');
+});
+
+test('the jump pose reaches the trailing leg back and tucks the leading one up', () => {
+  const floor = flatFloor(140);
+
+  for (const direction of [1, -1] as const) {
+    const body = runningJump(floor, 14, direction);
+    const hipX = body.x[SR_HIP];
+    const hipY = body.y[SR_HIP];
+
+    // Trailing = behind the direction of travel.
+    const leftIsTrailing = (body.x[SR_FOOT_L] - body.x[SR_FOOT_R]) * direction < 0;
+    const trailFoot = leftIsTrailing ? SR_FOOT_L : SR_FOOT_R;
+    const leadFoot = leftIsTrailing ? SR_FOOT_R : SR_FOOT_L;
+
+    const trailReach = (hipX - body.x[trailFoot]) * direction;
+    const leadReach = (body.x[leadFoot] - hipX) * direction;
+    assert.ok(trailReach > 0.5, `${direction > 0 ? 'right' : 'left'}ward jump: trailing foot should be behind the hip, was ${trailReach.toFixed(1)}`);
+    assert.ok(leadReach > 0.5, `leading foot should be ahead of the hip, was ${leadReach.toFixed(1)}`);
+
+    // The trailing leg is the extended one, so its foot hangs lower.
+    const trailDrop = body.y[trailFoot] - hipY;
+    const leadDrop = body.y[leadFoot] - hipY;
+    assert.ok(
+      trailDrop > leadDrop + 1,
+      `trailing foot should hang below the tucked leading one (${trailDrop.toFixed(1)} vs ${leadDrop.toFixed(1)})`,
+    );
+  }
+});
+
+test('the pose bias is a bias — it does not pin the figure or add height', () => {
+  const floor = flatFloor(140);
+  const withBias = runningJump(floor, 12);
+  // Two jumps from the same state must not converge on an identical pose the
+  // way a keyframed animation would; the trajectory still owns the motion.
+  const later = runningJump(floor, 22);
+  assert.notEqual(withBias.y[SR_FOOT_L] - withBias.y[SR_HIP], later.y[SR_FOOT_L] - later.y[SR_HIP]);
+
+  // And the bias must not act as lift: the hip still follows a ballistic arc.
+  const body = createStickRangerBody(100, 130);
+  advanceFrames(body, floor, 0, 60);
+  requestStickRangerJump(body);
+  let apex = Infinity;
+  for (let i = 0; i < 200; i++) {
+    advanceFrames(body, floor, 1, 1);
+    apex = Math.min(apex, body.y[SR_HIP]);
+    if (i > 10 && body.groundContactFlag === 1) break;
+  }
+  assert.ok(body.groundContactFlag === 1, 'the figure must come back down');
+  assert.ok(apex < body.y[SR_HIP], 'the jump should have risen before landing');
+});
+
+// ── Ragdoll ─────────────────────────────────────────────────────────────────
+
+test('a heavy hit ragdolls the figure, suspending the pose bias', () => {
+  const floor = flatFloor(140);
+  const body = runningJump(floor, 6);
+  triggerStickRangerRagdoll(body);
+  assert.ok(isStickRangerRagdolling(body));
+
+  // While ragdolling the legs are not driven toward the pose at all.
+  advanceFrames(body, floor, 1, 4);
+  assert.ok(body.ragdollFrames > 0, 'the ragdoll should still be running');
+
+  // And it expires on its own.
+  advanceFrames(body, floor, 0, STICKMAN_RAGDOLL_FRAMES + 2);
+  assert.equal(body.ragdollFrames, 0, 'the ragdoll should lapse back to the pose bias');
+  assert.ok(!isStickRangerRagdolling(body));
+});
+
+test('a second hit extends an ongoing ragdoll rather than cutting it short', () => {
+  const body = createStickRangerBody(100, 100);
+  triggerStickRangerRagdoll(body, 40);
+  triggerStickRangerRagdoll(body, 5);
+  assert.equal(body.ragdollFrames, 40);
+});
+
+test('an ordinary jump lands cleanly but a long fall ragdolls', () => {
+  const floorY = 140;
+  const floor = flatFloor(floorY);
+
+  const jumper = createStickRangerBody(100, floorY - 9.6);
+  advanceFrames(jumper, floor, 0, 60);
+  requestStickRangerJump(jumper);
+  for (let i = 0; i < 200; i++) {
+    advanceFrames(jumper, floor, 0, 1);
+    if (i > 10 && jumper.groundContactFlag === 1) break;
+  }
+  assert.equal(jumper.ragdollFrames, 0, 'a plain jump landing should not ragdoll');
+
+  // A drop of ~15 blocks is a different matter.
+  const faller = createStickRangerBody(100, floorY - 120);
+  for (let i = 0; i < 400; i++) {
+    advanceFrames(faller, floor, 0, 1);
+    if (faller.groundContactFlag === 1) break;
+  }
+  assert.ok(faller.ragdollFrames > 0, 'a long fall should ragdoll on impact');
+});
+
+test('resetting the body clears any ragdoll', () => {
+  const body = createStickRangerBody(100, 100);
+  triggerStickRangerRagdoll(body);
+  resetStickRangerBody(body, 50, 50);
+  assert.equal(body.ragdollFrames, 0);
+});

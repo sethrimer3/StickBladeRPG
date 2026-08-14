@@ -20,6 +20,7 @@ import {
   resetStickRangerBody,
   stepStickRangerBody,
   requestStickRangerJump,
+  triggerStickRangerRagdoll,
   canStickmanJump,
   SR_HIP,
   SR_HEAD,
@@ -67,6 +68,15 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     if (driftX * driftX + driftY * driftY > TELEPORT_RESYNC_DISTANCE * TELEPORT_RESYNC_DISTANCE) {
       resetStickRangerBody(body, cluster.positionXWorld, cluster.positionYWorld);
     }
+  }
+
+  // A hit worth more than a fifth of the player's motes drops the airborne pose
+  // bias and lets the figure tumble — the ragdoll IS the damage reaction. Hard
+  // landings arm the same thing from inside the body. Consumed here so the flag
+  // fires once per hit.
+  if (cluster.heavyHitFlag === 1) {
+    cluster.heavyHitFlag = 0;
+    triggerStickRangerRagdoll(body);
   }
 
   // ── Auto-Move / Mobile Navigation ───────────────────────────────────────

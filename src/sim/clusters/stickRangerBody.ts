@@ -255,34 +255,51 @@ const STEER_FOOT_PUSH = 0.38;
 //
 // It is a BIAS, not a pose. Each rule is a fractional pull of a point toward a
 // target position, applied before the constraint pass so the solver still has
-// the final say, and applied as a bare position offset (mechanism 3) so
-// momentum survives it. Nothing is clamped or snapped: a hard collision, a
-// knockback or a ragdoll overwhelms it, which is the point.
+// the final say. Nothing is clamped or snapped: a hard collision, a knockback
+// or a ragdoll overwhelms it, which is the point.
+//
+// Unlike steering, the pose deliberately does NOT use mechanism 3. It carries
+// `prev` along with each point and then cancels its own net translation, so it
+// changes the figure's shape without adding momentum or thrust — see
+// `biasPointToward` and `cancelNetTranslation` for what went wrong when it did
+// both of those things.
 
 /**
  * Fraction of the remaining error each airborne bias closes per frame.
  * Deliberately small — at 0.5 the figure snaps to a fixed pose and stops
  * reading as physics; at 0.05 the tangle from takeoff survives the whole jump.
  */
-const AIR_POSE_BIAS = 0.16;
+const AIR_POSE_BIAS = 0.26;
 /** Bias strength for keeping the spine vertical (head/chest over the hip). */
 const AIR_UPRIGHT_BIAS = 0.28;
 /** Airborne frames before the pose bias reaches full strength, so takeoff is not stiff. */
-const AIR_POSE_RAMP_FRAMES = 4;
+const AIR_POSE_RAMP_FRAMES = 8;
 /** Horizontal reach of the trailing (extended) foot behind the hip, world units. */
-const AIR_TRAIL_FOOT_BEHIND = 4.2;
+const AIR_TRAIL_FOOT_BEHIND = 5.0;
 /** How far below the hip the trailing foot is targeted — near full leg extension (9.6 rest). */
-const AIR_TRAIL_FOOT_BELOW = 8.6;
+const AIR_TRAIL_FOOT_BELOW = 8.4;
 /** Horizontal reach of the leading (tucked) foot ahead of the hip. */
-const AIR_LEAD_FOOT_AHEAD = 3.4;
+const AIR_LEAD_FOOT_AHEAD = 2.6;
 /** How far below the hip the leading foot is targeted — tucked up, so a bent knee. */
-const AIR_LEAD_FOOT_BELOW = 4.6;
+const AIR_LEAD_FOOT_BELOW = 5.0;
 /** Leading knee target, lifted and forward of the hip: the raised bent knee. */
-const AIR_LEAD_KNEE_AHEAD = 3.2;
-const AIR_LEAD_KNEE_BELOW = 2.6;
+const AIR_LEAD_KNEE_AHEAD = 4.2;
+const AIR_LEAD_KNEE_BELOW = 2.2;
 /** Trailing knee target, behind and low: the straight reaching leg. */
-const AIR_TRAIL_KNEE_BEHIND = 1.8;
+const AIR_TRAIL_KNEE_BEHIND = 2.6;
 const AIR_TRAIL_KNEE_BELOW = 4.6;
+/**
+ * Downward hip speed at which the tucked leading leg has fully extended again.
+ *
+ * The N+ pose is a *rising* pose. Holding the tuck all the way down means
+ * landing on a folded leg, which crumples the figure on touchdown (head-to-foot
+ * height bottomed out at 4.3 of a 16.5 standing height with the tuck held). So
+ * the leading leg reaches back down as the descent builds, and the figure meets
+ * the ground on two legs. The fore/aft split is kept the whole way.
+ */
+const AIR_DESCENT_EXTEND_SPEED = 1.4;
+/** Cap on the forward lag compensation applied to the pose anchor, world units. */
+const AIR_POSE_LAG_LIMIT = 3;
 
 // ── Ragdoll ─────────────────────────────────────────────────────────────────
 //
@@ -449,11 +466,16 @@ export function isStickRangerRagdolling(body: StickRangerBody): boolean {
 }
 
 /**
- * Nudges `index` a fraction of the way toward (targetX, targetY).
+ * Nudges `index` a fraction of the way toward (targetX, targetY), carrying
+ * `prev` along with it so the move adds no velocity.
  *
- * A bare position offset, so Verlet keeps reading the point's existing velocity
- * (mechanism 3) — the bias adds a lean toward the pose, it does not replace the
- * motion with one.
+ * This is the one place that deliberately does NOT use mechanism 3. A bare
+ * offset here would be read as an impulse, and a pose held for a whole jump is
+ * dozens of them in the same direction: the figure accumulated real momentum
+ * from its own animation, landed leaning, and slowly toppled (head-to-foot
+ * height decayed to 3.2 over the second after touchdown). Moving position and
+ * previous together reshapes the pose while leaving the trajectory alone —
+ * which is what "a bias, not a force" has to mean for a Verlet rig.
  */
 function biasPointToward(
   body: StickRangerBody,
@@ -461,9 +483,38 @@ function biasPointToward(
   targetX: number,
   targetY: number,
   strength: number,
+  applied: { x: number; y: number },
 ): void {
-  body.x[index] += (targetX - body.x[index]) * strength;
-  body.y[index] += (targetY - body.y[index]) * strength;
+  const dx = (targetX - body.x[index]) * strength;
+  const dy = (targetY - body.y[index]) * strength;
+  body.x[index] += dx;
+  body.y[index] += dy;
+  body.prevX[index] += dx;
+  body.prevY[index] += dy;
+  applied.x += dx;
+  applied.y += dy;
+}
+
+/**
+ * Cancels the net translation a set of pose offsets would impart, by shifting
+ * every point back by the average of what was applied.
+ *
+ * An animation is supposed to be internal — a change of shape, not a shove.
+ * Without this the pose is a slow thruster: shaping the legs forward each frame
+ * makes the constraints answer by pushing the torso the other way, and a bot
+ * jumping repeatedly across a flat floor walked *backwards* 8 units instead of
+ * forwards. Removing the mean leaves the body's centre exactly where the
+ * trajectory put it, and only the shape changes.
+ */
+function cancelNetTranslation(body: StickRangerBody, applied: { x: number; y: number }): void {
+  const dx = applied.x / SR_POINT_COUNT;
+  const dy = applied.y / SR_POINT_COUNT;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    body.x[i] -= dx;
+    body.y[i] -= dy;
+    body.prevX[i] -= dx;
+    body.prevY[i] -= dy;
+  }
 }
 
 /**
@@ -475,16 +526,27 @@ function biasPointToward(
  * legs. Everything here is relative to the hip, so the bias follows the body
  * wherever the jump carries it and never fights the trajectory.
  */
-function applyAirbornePoseBias(body: StickRangerBody, poseDirection: number, strength: number): void {
-  const hipX = body.x[SR_HIP];
+function applyAirbornePoseBias(body: StickRangerBody, poseDirection: number, ramp: number): void {
   const hipY = body.y[SR_HIP];
+  const applied = { x: 0, y: 0 };
+  const strength = AIR_POSE_BIAS * ramp;
+
+  // Anchor the pose slightly ahead of the hip, by exactly the amount a
+  // first-order pull lags a moving target (v(1-s)/s for pull strength s).
+  // Without it the whole pose trails the running hip — at 30 units/sec the lag
+  // was 1.5 units, enough to leave the "leading" foot level with the hip
+  // instead of in front of it. Capped so the ramp-in frames, where `strength`
+  // is small, cannot throw the anchor across the room.
+  const hipVelX = body.x[SR_HIP] - body.prevX[SR_HIP];
+  const lag = hipVelX * (1 - strength) / Math.max(strength, 0.02);
+  const hipX = body.x[SR_HIP] + Math.max(-AIR_POSE_LAG_LIMIT, Math.min(AIR_POSE_LAG_LIMIT, lag));
 
   // Upright: pull the spine toward vertical above the hip. Only the horizontal
   // component is biased — the vertical spacing is the constraints' business, and
   // pulling on it too would fight gravity and float the figure.
-  const uprightStrength = AIR_UPRIGHT_BIAS * (strength / AIR_POSE_BIAS);
-  body.x[SR_HEAD] += (hipX - body.x[SR_HEAD]) * uprightStrength;
-  body.x[SR_CHEST] += (hipX - body.x[SR_CHEST]) * uprightStrength;
+  const uprightStrength = AIR_UPRIGHT_BIAS * ramp;
+  biasPointToward(body, SR_HEAD, hipX, body.y[SR_HEAD], uprightStrength, applied);
+  biasPointToward(body, SR_CHEST, hipX, body.y[SR_CHEST], uprightStrength, applied);
 
   // Legs: the trailing leg is the one behind the direction of travel.
   const leftIsTrailing = (body.x[SR_FOOT_L] - body.x[SR_FOOT_R]) * poseDirection < 0;
@@ -493,13 +555,34 @@ function applyAirbornePoseBias(body: StickRangerBody, poseDirection: number, str
   const leadKnee = leftIsTrailing ? SR_KNEE_R : SR_KNEE_L;
   const leadFoot = leftIsTrailing ? SR_FOOT_R : SR_FOOT_L;
 
-  // Trailing leg: reaching back and nearly straight (foot far below the hip).
-  biasPointToward(body, trailKnee, hipX - poseDirection * AIR_TRAIL_KNEE_BEHIND, hipY + AIR_TRAIL_KNEE_BELOW, strength);
-  biasPointToward(body, trailFoot, hipX - poseDirection * AIR_TRAIL_FOOT_BEHIND, hipY + AIR_TRAIL_FOOT_BELOW, strength);
+  // The leading leg's tuck unfolds again as the descent builds, so the figure
+  // meets the ground on two legs rather than on a folded one.
+  const descent = body.y[SR_HIP] - body.prevY[SR_HIP];
+  const extend = Math.min(1, Math.max(0, descent / AIR_DESCENT_EXTEND_SPEED));
+  const leadKneeBelow = AIR_LEAD_KNEE_BELOW + (AIR_TRAIL_KNEE_BELOW - AIR_LEAD_KNEE_BELOW) * extend;
+  const leadFootBelow = AIR_LEAD_FOOT_BELOW + (AIR_TRAIL_FOOT_BELOW - AIR_LEAD_FOOT_BELOW) * extend;
 
-  // Leading leg: knee up and forward, foot tucked under it — a folded knee.
-  biasPointToward(body, leadKnee, hipX + poseDirection * AIR_LEAD_KNEE_AHEAD, hipY + AIR_LEAD_KNEE_BELOW, strength);
-  biasPointToward(body, leadFoot, hipX + poseDirection * AIR_LEAD_FOOT_AHEAD, hipY + AIR_LEAD_FOOT_BELOW, strength);
+  // Horizontal targets are re-centred on their own mean before use. Written
+  // straight, the pose asks for more reach behind the hip than in front of it,
+  // and since the hip is not itself pinned the constraints answer by sliding
+  // the whole leg pair backwards — the fore/aft split collapsed to 0.2 units
+  // and the leading foot ended up *behind* the hip. Removing the mean asks only
+  // for the split, and leaves where the legs sit as a whole to the physics.
+  const trailKneeX = -poseDirection * AIR_TRAIL_KNEE_BEHIND;
+  const trailFootX = -poseDirection * AIR_TRAIL_FOOT_BEHIND;
+  const leadKneeX = poseDirection * AIR_LEAD_KNEE_AHEAD;
+  const leadFootX = poseDirection * AIR_LEAD_FOOT_AHEAD;
+  const centre = (trailKneeX + trailFootX + leadKneeX + leadFootX) * 0.25;
+
+  // Trailing leg: reaching back and nearly straight (foot far below the hip).
+  biasPointToward(body, trailKnee, hipX + trailKneeX - centre, hipY + AIR_TRAIL_KNEE_BELOW, strength, applied);
+  biasPointToward(body, trailFoot, hipX + trailFootX - centre, hipY + AIR_TRAIL_FOOT_BELOW, strength, applied);
+
+  // Leading leg: knee up and forward, foot hanging below it — a folded knee.
+  biasPointToward(body, leadKnee, hipX + leadKneeX - centre, hipY + leadKneeBelow, strength, applied);
+  biasPointToward(body, leadFoot, hipX + leadFootX - centre, hipY + leadFootBelow, strength, applied);
+
+  cancelNetTranslation(body, applied);
 }
 
 /**
@@ -790,7 +873,7 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     const airFrames = body.framesSinceGroundContact - LAUNCH_FRAMES;
     const ramp = Math.min(1, (airFrames + 1) / AIR_POSE_RAMP_FRAMES);
     const poseDirection = moveDirection !== 0 ? (moveDirection < 0 ? -1 : 1) : body.facingDirection;
-    applyAirbornePoseBias(body, poseDirection, AIR_POSE_BIAS * ramp);
+    applyAirbornePoseBias(body, poseDirection, ramp);
   }
 
   // ── 3. Constraints — TWO passes, soft weights ───────────────────────────
