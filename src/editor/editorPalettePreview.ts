@@ -327,6 +327,11 @@ const ITEM_VISUAL: Readonly<Record<string, ProceduralVisual>> = Object.freeze({
     extraCss: `border-radius: 8px 8px 0 0; border: 1px solid rgba(40,200,40,0.5); box-sizing: border-box;`,
     glyph: '🌿',
   },
+  decoration_tallgrass: {
+    bg: '#031804',
+    extraCss: `border-radius: 8px 8px 0 0; border: 1px solid rgba(60,180,60,0.6); box-sizing: border-box;`,
+    glyph: '🌾',
+  },
   decoration_vine: {
     bg: '#021408',
     extraCss: `border-radius: 3px; border: 1px solid rgba(30,160,60,0.5); box-sizing: border-box;`,

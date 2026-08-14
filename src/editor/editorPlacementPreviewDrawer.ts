@@ -336,14 +336,14 @@ export function drawPlacementPreview(
 
   const item = state.selectedPaletteItem;
 
-  if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_vine') {
+  if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_tallgrass' || item.id === 'decoration_vine') {
     // Decoration preview: snap to terrain surface
     const isVine = item.id === 'decoration_vine';
     const targetRow = isVine
       ? findCeilingBlockRow(room, state.cursorBlockX, state.cursorBlockY)
       : findFloorBlockRow(room, state.cursorBlockX, state.cursorBlockY);
     if (targetRow !== null) {
-      const emoji = item.id === 'decoration_mushroom' ? '🍄' : item.id === 'decoration_glowgrass' ? '🌿' : '🌱';
+      const emoji = item.id === 'decoration_mushroom' ? '🍄' : item.id === 'decoration_glowgrass' ? '🌿' : item.id === 'decoration_tallgrass' ? '🌾' : '🌱';
       drawBlockRect(ctx, state.cursorBlockX, targetRow, 1, 1, offsetXPx, offsetYPx, zoom, 'rgba(80,220,130,0.2)', 1);
       drawMarker(ctx, state.cursorBlockX, targetRow, offsetXPx, offsetYPx, zoom, 'rgba(80,220,130,0.5)', emoji);
     } else {

@@ -485,9 +485,10 @@ export interface RoomDustPileDef {
  * Visual kind for an editor-placed decoration.
  * - 'mushroom'  — glowing mushroom, sits on the TOP surface of a floor block.
  * - 'glowGrass' — glowing grass tuft, sits on the TOP surface of a floor block.
+ * - 'tallGrass' — tall waving grass, sits on the TOP surface of a floor block.
  * - 'vine'      — glowing vine, hangs from the BOTTOM surface of a ceiling block.
  */
-export type DecorationKind = 'mushroom' | 'glowGrass' | 'vine';
+export type DecorationKind = 'mushroom' | 'glowGrass' | 'vine' | 'tallGrass';
 
 /** An editor-placed decoration anchored to a specific block surface. */
 export interface RoomDecorationDef {

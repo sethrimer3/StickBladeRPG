@@ -717,7 +717,7 @@ export function drawEditorEnvironmentItems(
     if (!isElementInViewport(viewport, d.xBlock, d.yBlock, 1, 1)) continue;
     editorPerfCounters.overlayElementsDrawn++;
     const sel = isSelected('decoration', d.uid);
-    const emoji = d.kind === 'mushroom' ? '🍄' : d.kind === 'glowGrass' ? '🌿' : '🌱';
+    const emoji = d.kind === 'mushroom' ? '🍄' : d.kind === 'glowGrass' ? '🌿' : d.kind === 'tallGrass' ? '🌾' : '🌱';
     const color = sel ? 'rgba(80,220,130,0.9)' : 'rgba(60,170,90,0.55)';
     drawMarker(ctx, d.xBlock, d.yBlock, offsetXPx, offsetYPx, zoom, color, emoji);
   }

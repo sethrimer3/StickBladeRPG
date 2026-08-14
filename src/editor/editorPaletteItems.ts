@@ -268,6 +268,7 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'firefly_area',         label: 'Firefly Area',     category: 'environment' },
   { id: 'decoration_mushroom',  label: 'Glow Mushroom',    category: 'environment' },
   { id: 'decoration_glowgrass', label: 'Glow Grass',       category: 'environment' },
+  { id: 'decoration_tallgrass', label: 'Tall Grass',       category: 'environment' },
   { id: 'decoration_vine',      label: 'Glow Vine',        category: 'environment' },
   // Objects (interactive world objects)
   { id: 'lambda_anchor', label: 'Lambda Anchor', category: 'objects', isLambdaAnchorItem: 1 },

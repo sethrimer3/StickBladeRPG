@@ -201,7 +201,7 @@ export function buildRoomDecorations(
   const result: WallDecoration[] = [];
   for (let i = 0; i < decorations.length; i++) {
     const d = decorations[i];
-    const kindCode = d.kind === 'mushroom' ? 1 : d.kind === 'glowGrass' ? 2 : 3;
+    const kindCode = d.kind === 'mushroom' ? 1 : d.kind === 'glowGrass' ? 2 : d.kind === 'tallGrass' ? 4 : 3;
     const seed = _hash(d.xBlock, d.yBlock, kindCode);
 
     const worldLeftPx = d.xBlock * blockSizePx;

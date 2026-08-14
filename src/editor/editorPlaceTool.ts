@@ -517,13 +517,13 @@ export function wouldPlacementSucceedAt(
     return true;
   }
 
-  if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_vine') {
+  if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_tallgrass' || item.id === 'decoration_vine') {
     const isVine = item.id === 'decoration_vine';
     const targetRow = isVine
       ? findCeilingBlockRow(room, bx, by)
       : findFloorBlockRow(room, bx, by);
     if (targetRow === null) return false;
-    const kind = item.id === 'decoration_mushroom' ? 'mushroom' : item.id === 'decoration_glowgrass' ? 'glowGrass' : 'vine';
+    const kind = item.id === 'decoration_mushroom' ? 'mushroom' : item.id === 'decoration_glowgrass' ? 'glowGrass' : item.id === 'decoration_tallgrass' ? 'tallGrass' : 'vine';
     const alreadyPlaced = (room.decorations ?? []).some(d => d.xBlock === bx && d.yBlock === targetRow && d.kind === kind);
     return alreadyPlaced ? 'occupied' : true;
   }
@@ -1285,10 +1285,11 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       yBlock: by,
       dustCount,
     });
-  } else if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_vine') {
+  } else if (item.id === 'decoration_mushroom' || item.id === 'decoration_glowgrass' || item.id === 'decoration_tallgrass' || item.id === 'decoration_vine') {
     const kind: DecorationKind =
       item.id === 'decoration_mushroom'  ? 'mushroom'  :
-      item.id === 'decoration_glowgrass' ? 'glowGrass' : 'vine';
+      item.id === 'decoration_glowgrass' ? 'glowGrass' :
+      item.id === 'decoration_tallgrass' ? 'tallGrass' : 'vine';
 
     let targetRow: number | null;
     if (kind === 'vine') {

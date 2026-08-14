@@ -75,6 +75,60 @@ function _drawGlowGrass(
 }
 
 /**
+ * Draws tall waving grass at screen position (sx, sy).
+ * sy is the floor surface; the grass grows UPWARD from sy (toward smaller Y).
+ * Renders multiple tall blade strands (12–24px tall) with natural curve and sway.
+ */
+function _drawTallGrass(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  blockSizePx: number,
+  scalePx: number,
+  seed: number,
+  swayOffsetPx = 0,
+): void {
+  const px = Math.max(1, Math.round(scalePx));
+  const bw = Math.round(blockSizePx * scalePx);
+  // 6 to 9 blades per block
+  const count = 6 + (seed & 3);
+  const maxBladeH = 14 + ((seed >> 3) & 7) * 2; // ~14 to 28 px tall
+
+  for (let i = 0; i < count; i++) {
+    const h2 = _hash(seed, i, 0x7a1194a5);
+    const offX = Math.floor(((h2 & 0xff) / 255.0) * Math.max(0, bw - px));
+    // Blade height variation
+    const bladeH = 9 + ((h2 >> 8) % Math.max(1, maxBladeH - 9 + 1));
+    const bladeW = (h2 & 0x40) !== 0 ? Math.max(1, Math.round(px * 1.25)) : px;
+
+    // Natural rest lean for variety (-2 to +2 px)
+    const naturalLeanPx = (((h2 >> 16) & 7) - 3) * px * 0.4;
+
+    // Tips sway with moving entities, scaling with height
+    const tipSway = Math.round((swayOffsetPx + naturalLeanPx) * (bladeH / maxBladeH));
+    const midSway = Math.round(tipSway * 0.45);
+    const midH = Math.floor(bladeH * 0.5);
+
+    // Root/lower stem (dark forest shadow green)
+    ctx.fillStyle = '#123315';
+    ctx.fillRect(sx + offX, sy - midH * px, bladeW, midH * px);
+
+    // Mid blade (lush vibrant green)
+    ctx.fillStyle = '#1e5e26';
+    ctx.fillRect(sx + offX + midSway, sy - bladeH * px, bladeW, (bladeH - midH) * px);
+
+    // Upper blade highlight (bright fresh green)
+    const highlightH = Math.max(1, Math.round(bladeH * 0.35));
+    ctx.fillStyle = '#3eb54d';
+    ctx.fillRect(sx + offX + tipSway, sy - bladeH * px, bladeW, highlightH * px);
+
+    // Tip apex (sunlit pixel)
+    ctx.fillStyle = '#68d474';
+    ctx.fillRect(sx + offX + tipSway, sy - bladeH * px, bladeW, px);
+  }
+}
+
+/**
  * Draws a tiny pixelated mushroom at screen position (sx, sy).
  * sy is the floor surface; the mushroom grows UPWARD from sy.
  * swayOffsetPx shifts the cap horizontally to simulate lean.
@@ -177,9 +231,8 @@ export function renderDecorationSprites(
   vpW = 480,
   vpH = 270,
 ): void {
-  // Margin in screen pixels: enough to avoid popping for the tallest glow-grass
-  // or mushroom (approximately blockSizePx in height).
-  const marginPx = blockSizePx * scalePx * 1.5;
+  // Margin in screen pixels: enough to avoid popping for tall grass (up to ~3-4 blocks high)
+  const marginPx = blockSizePx * scalePx * 3.5;
 
   for (let i = 0; i < decorations.length; i++) {
     const d  = decorations[i];
@@ -191,14 +244,16 @@ export function renderDecorationSprites(
     if (sy + marginPx < 0 || sy - marginPx > vpH) continue;
 
     // Sway: angle (rad) → pixel offset at the tip.
-    // A stem of approximately half-a-block height at typical scale leans by round(angle * height).
+    // Tall grass has higher effective stem height for more pronounced lean.
     const swayAngle = waveState !== undefined ? waveState.getSway(i) : 0;
-    // Stem height heuristic: half the block size in virtual pixels.
-    const stemHeightPx = blockSizePx * 0.5 * scalePx;
+    const isTall = d.kind === 'tallGrass';
+    const stemHeightPx = blockSizePx * (isTall ? 2.2 : 0.5) * scalePx;
     const swayOffsetPx = Math.round(swayAngle * stemHeightPx);
 
     if (d.kind === 'glowGrass') {
       _drawGlowGrass(ctx, sx, sy, blockSizePx, scalePx, d.seed, swayOffsetPx);
+    } else if (d.kind === 'tallGrass') {
+      _drawTallGrass(ctx, sx, sy, blockSizePx, scalePx, d.seed, swayOffsetPx);
     } else if (d.kind === 'mushroom') {
       _drawMushroom(ctx, sx, sy, blockSizePx, scalePx, d.seed, swayOffsetPx);
     } else {
@@ -243,6 +298,14 @@ export function addDecorationBloom(
       if (!isScreenCircleVisible(centerXPx, centerYPx, glowR, vpW, vpH)) continue;
       const pulse     = 0.8 + 0.2 * Math.sin(nowMs * 0.0011 + d.seed * 0.013);
       bloomSystem.glowPass.drawCircleDirect(centerXPx, centerYPx, glowR, 0.22 * pulse, '#22aa44');
+      submitted++;
+    } else if (d.kind === 'tallGrass') {
+      const centerXPx = sx + Math.round(blockSizePx * scalePx * 0.5);
+      const centerYPx = sy - Math.round(6 * scalePx);
+      const glowR     = 6 * scalePx;
+      if (!isScreenCircleVisible(centerXPx, centerYPx, glowR, vpW, vpH)) continue;
+      const pulse     = 0.85 + 0.15 * Math.sin(nowMs * 0.0010 + d.seed * 0.011);
+      bloomSystem.glowPass.drawCircleDirect(centerXPx, centerYPx, glowR, 0.12 * pulse, '#258a36');
       submitted++;
     } else if (d.kind === 'mushroom') {
       const h2       = _hash(d.seed, 0, 0xf00dface);
@@ -320,6 +383,20 @@ export function collectDecorationLights(
       out[base + 1] = ly;
       out[base + 2] = lr;
       out[base + 3] = 0.1;
+      out[base + 4] = 255;
+      out[base + 5] = 255;
+      out[base + 6] = 255;
+      count++;
+    } else if (d.kind === 'tallGrass') {
+      const lx = sx + Math.round(blockSizePx * scalePx * 0.5);
+      const ly = sy - Math.round(6 * scalePx);
+      const lr = 16 * scalePx;
+      if (!isScreenCircleVisible(lx, ly, lr, vpW, vpH)) continue;
+      const base = count * LIGHT_BUFFER_STRIDE;
+      out[base + 0] = lx;
+      out[base + 1] = ly;
+      out[base + 2] = lr;
+      out[base + 3] = 0.06;
       out[base + 4] = 255;
       out[base + 5] = 255;
       out[base + 6] = 255;

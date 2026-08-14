@@ -91,6 +91,7 @@ export function buildElementTypeName(
     if (d) {
       if (d.kind === 'mushroom')  return 'Glow Mushroom';
       if (d.kind === 'glowGrass') return 'Glow Grass';
+      if (d.kind === 'tallGrass') return 'Tall Grass';
       if (d.kind === 'vine')      return 'Glow Vine';
     }
     return 'Decoration';
