@@ -214,8 +214,8 @@ export const EN_CATALOG = {
 
   // ── HUD / gameplay prompts (canvas-rendered) ──────────────────────────────
   'hud.controlHintKeyboard':
-    'A/D=walk  |  W/Space/↑=jump  |  Click=attack  |  Hold=block  |  '
-    + 'Hold Left Click=grapple  |  ESC=menu',
+    'A/D=walk  |  W/Space/↑=jump  |  Left Click=swing weapon  |  '
+    + 'G=grapple  |  ESC=menu',
   'hud.controlHintTouch':
     'L.thumb L/R=walk  |  L.thumb up=jump  |  2nd finger tap=attack  |  '
     + '2nd finger hold=block  |  TAP MENU to return',

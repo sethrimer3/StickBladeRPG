@@ -17,6 +17,7 @@ export const KB_ACTIONS = [
   'jump',
   'interact',
   'weaponAttack',
+  'grappleFire',
   'openInventory',
   'toggleFullscreen',
 ] as const;
@@ -35,9 +36,13 @@ export const KEYBOARD_ACTION_META: Record<KeyboardAction, KeyboardActionMeta> = 
   moveDown:         { label: 'Move Down',          alwaysAlternates: ['ArrowDown'] },
   jump:             { label: 'Jump',               alwaysAlternates: [' ', 'ArrowUp'] },
   interact:         { label: 'Interact',           alwaysAlternates: [] },
-  // The mouse buttons are owned by the Weave system, so the STICK-RPG weapon
-  // attack gets its own rebindable key rather than displacing a weave.
+  // The weapon attack is on the left mouse button as well as this key; the key
+  // stays so the action is rebindable and reachable without a mouse.
   weaponAttack:     { label: 'Weapon Attack',      alwaysAlternates: [] },
+  // The grapple used to be the left mouse button. That button now swings the
+  // weapon, so the grapple needs a binding of its own or it becomes
+  // unreachable on keyboard and mouse.
+  grappleFire:      { label: 'Grapple',            alwaysAlternates: [] },
   openInventory:    { label: 'Inventory',          alwaysAlternates: [] },
   toggleFullscreen: { label: 'Toggle Fullscreen',  alwaysAlternates: [] },
 };
@@ -49,6 +54,7 @@ export const DEFAULT_KEYBOARD_BINDINGS: Record<KeyboardAction, string> = {
   jump:             'w',
   interact:         'f',
   weaponAttack:     'q',
+  grappleFire:      'g',
   openInventory:    'i',
   toggleFullscreen: 'p',
 };

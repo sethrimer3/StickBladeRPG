@@ -109,6 +109,47 @@ describe('weapon renderer safety', () => {
   });
 });
 
+describe('camera transform', () => {
+  /** First moveTo the renderer emits — the grip end of the blade. */
+  function firstMoveTo(calls: DrawCall[]): [number, number] {
+    const call = calls.find(c => c.op === 'moveTo');
+    assert.ok(call !== undefined, 'expected the blade to be stroked from the grip');
+    return [call.args[0] as number, call.args[1] as number];
+  }
+
+  function renderAt(ox: number, oy: number, zoom: number): [number, number] {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'sword');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), ox, oy, zoom);
+    return firstMoveTo(calls);
+  }
+
+  // `ox`/`oy` are pixel offsets — `world * zoom + ox`, the convention every
+  // other renderer uses. This file used `(world - ox) * zoom`, which agrees
+  // only at the origin, so the whole suite missed it: every case above renders
+  // at 0,0. Off the origin the weapon flew away from the player.
+  test('a camera offset shifts the drawing by exactly that many pixels', () => {
+    const [baseX, baseY] = renderAt(0, 0, 1);
+    const [shiftedX, shiftedY] = renderAt(100, 50, 1);
+    assert.equal(shiftedX - baseX, 100);
+    assert.equal(shiftedY - baseY, 50);
+  });
+
+  test('the offset is in pixels, so zoom does not scale it', () => {
+    const [baseX, baseY] = renderAt(0, 0, 3);
+    const [shiftedX, shiftedY] = renderAt(100, 50, 3);
+    assert.equal(shiftedX - baseX, 100, 'the offset must not be multiplied by zoom');
+    assert.equal(shiftedY - baseY, 50);
+  });
+
+  test('zoom scales the world position, not the offset', () => {
+    const [x1] = renderAt(0, 0, 1);
+    const [x2] = renderAt(0, 0, 2);
+    assert.equal(x2, x1 * 2);
+  });
+});
+
 describe('melee rendering', () => {
   test('an equipped blade is drawn', () => {
     const weapon = createPlayerWeaponState();

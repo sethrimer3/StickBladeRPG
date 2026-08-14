@@ -448,6 +448,15 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (keyMatches(e.key, b.weaponAttack)) {
       state.isWeaponAttackHeldFlag = true;
     }
+    // Grapple, moved off the left mouse button. Edge-triggered on press so a
+    // held key fires one hook and keeps it attached, exactly as holding the
+    // mouse button used to; the rope is aimed with the cursor.
+    if (keyMatches(e.key, b.grappleFire) && !e.repeat) {
+      state.isGrappleHeldFlag = 1;
+      state.isGrappleFireTriggeredFlag = 1;
+      state.grappleAimXPx = state.mouseXPx;
+      state.grappleAimYPx = state.mouseYPx;
+    }
     if (keyMatches(e.key, b.toggleFullscreen) && !e.repeat) {
       state.isFullscreenToggleTriggeredFlag = true;
     }
@@ -475,6 +484,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (keyMatches(e.key, b.weaponAttack)) {
       state.isWeaponAttackHeldFlag = false;
     }
+    if (keyMatches(e.key, b.grappleFire) && state.isGrappleHeldFlag === 1) {
+      state.isGrappleHeldFlag = 0;
+      state.isGrappleReleaseTriggeredFlag = 1;
+    }
     if (keyMatches(e.key, b.interact)) {
       if (state.isInteractDownFlag) {
         state.isInteractReleaseEdgeFlag = true;
@@ -494,10 +507,10 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       state.mouseDownTimeMs = performance.now();
       state.mouseDownXPx = mouse.xPx;
       state.mouseDownYPx = mouse.yPx;
-      state.isGrappleHeldFlag = 1;
-      state.isGrappleFireTriggeredFlag = 1;
-      state.grappleAimXPx = mouse.xPx;
-      state.grappleAimYPx = mouse.yPx;
+      // The left button swings the equipped weapon. It no longer fires the
+      // grapple — that moved to its own rebindable key (`grappleFire`,
+      // default G) so the capability is kept, just not on this button.
+      state.isWeaponAttackHeldFlag = true;
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 1;
       // Signal a potential zip request on the right mouse press.
@@ -510,8 +523,9 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
     if (e.button === 0) {
       if (state.isMouseDownFlag === 0) return;
       state.isMouseDownFlag = 0;
-      state.isGrappleHeldFlag = 0;
-      state.isGrappleReleaseTriggeredFlag = 1;
+      // Releasing stops a held swing (staves channel while held); the grapple
+      // is no longer on this button, so nothing is released for it here.
+      state.isWeaponAttackHeldFlag = false;
       const holdMs = performance.now() - state.mouseDownTimeMs;
       if (state.isBlockingFlag === 1) {
         // Was blocking — collectCommands will emit BlockEnd on next frame

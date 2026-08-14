@@ -100,6 +100,16 @@ export class WeaponRenderer {
   /** Scratch for spirit orb positions. */
   private readonly _orbPosition = { xWorld: 0, yWorld: 0 };
 
+  /**
+   * Draws every weapon visual for one frame.
+   *
+   * `ox`/`oy` are the camera's **pixel** offsets, not world coordinates — the
+   * whole codebase converts with `worldValue * zoom + ox`, and `gameRender.ts`
+   * passes the same pair to `renderClusters`, which names them `offsetXPx`.
+   * This file originally used `(worldValue - ox) * zoom`, which happens to look
+   * right only while the camera sits at the origin and throws everything it
+   * draws off-screen the moment the camera moves.
+   */
   render(
     ctx: CanvasRenderingContext2D,
     snapshot: WorldSnapshot,
@@ -158,8 +168,8 @@ export class WeaponRenderer {
     const config = getProjectileShieldConfig(def);
     if (config === null) return;
 
-    const xPx = (this._origin.xWorld - ox) * zoom;
-    const yPx = (this._origin.yWorld - oy) * zoom;
+    const xPx = this._origin.xWorld * zoom + ox;
+    const yPx = this._origin.yWorld * zoom + oy;
     const radiusPx = shield.radiusWorld * zoom;
     const fill = shield.maxHitPoints > 0
       ? Math.max(0, Math.min(1, shield.hitPoints / shield.maxHitPoints))
@@ -202,10 +212,10 @@ export class WeaponRenderer {
     const glowColor = readString(config, 'beamGlow') ?? coreColor;
     const width = readNumber(config, 'beamWidth') ?? 8;
 
-    const startXPx = (this._origin.xWorld - ox) * zoom;
-    const startYPx = (this._origin.yWorld - oy) * zoom;
-    const endXPx = (staff.beamEndXWorld - ox) * zoom;
-    const endYPx = (staff.beamEndYWorld - oy) * zoom;
+    const startXPx = this._origin.xWorld * zoom + ox;
+    const startYPx = this._origin.yWorld * zoom + oy;
+    const endXPx = staff.beamEndXWorld * zoom + ox;
+    const endYPx = staff.beamEndYWorld * zoom + oy;
 
     ctx.save();
     ctx.lineCap = 'round';
@@ -254,8 +264,8 @@ export class WeaponRenderer {
 
     const widthPx = CHARGE_METER_WIDTH_PX * zoom;
     const heightPx = CHARGE_METER_HEIGHT_PX * zoom;
-    const xPx = (this._origin.xWorld - ox) * zoom - widthPx * 0.5;
-    const yPx = (this._origin.yWorld - oy) * zoom - CHARGE_METER_OFFSET_Y_PX * zoom;
+    const xPx = this._origin.xWorld * zoom + ox - widthPx * 0.5;
+    const yPx = this._origin.yWorld * zoom + oy - CHARGE_METER_OFFSET_Y_PX * zoom;
 
     ctx.save();
     ctx.globalAlpha = 0.5;
@@ -294,8 +304,8 @@ export class WeaponRenderer {
       if (orbs.isPresent[i] === 0) continue;
 
       getSpiritOrbPosition(orbs, def, i, this._origin.xWorld, this._origin.yWorld, this._orbPosition);
-      const xPx = (this._orbPosition.xWorld - ox) * zoom;
-      const yPx = (this._orbPosition.yWorld - oy) * zoom;
+      const xPx = this._orbPosition.xWorld * zoom + ox;
+      const yPx = this._orbPosition.yWorld * zoom + oy;
 
       ctx.globalAlpha = 0.4;
       ctx.fillStyle = haloColor;
@@ -342,8 +352,8 @@ export class WeaponRenderer {
       if (pool.isLive[i] === 0) continue;
 
       const isGuardian = pool.isGuardian[i] === 1;
-      const xPx = (pool.xWorld[i] - ox) * zoom;
-      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const xPx = pool.xWorld[i] * zoom + ox;
+      const yPx = pool.yWorld[i] * zoom + oy;
       const radiusPx = Math.max(1, pool.radiusWorld[i] * zoom * 0.5);
 
       // Fade the last half-second of life so a familiar's expiry reads as
@@ -417,8 +427,8 @@ export class WeaponRenderer {
 
       // 0 at spawn, 1 at expiry.
       const progress = 1 - pool.ticksRemaining[i] / EXPIRY_FLASH_TICKS;
-      const xPx = (pool.xWorld[i] - ox) * zoom;
-      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const xPx = pool.xWorld[i] * zoom + ox;
+      const yPx = pool.yWorld[i] * zoom + oy;
       // Starts at 35% and opens to the full radius, so the burst reads as
       // outward motion rather than as a circle appearing.
       const radiusPx = pool.radiusWorld[i] * zoom * (0.35 + 0.65 * progress);
@@ -456,8 +466,8 @@ export class WeaponRenderer {
     for (let i = 0; i < MAX_SOUL_ORBS; i++) {
       if (pool.isLive[i] === 0) continue;
 
-      const xPx = (pool.xWorld[i] - ox) * zoom;
-      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const xPx = pool.xWorld[i] * zoom + ox;
+      const yPx = pool.yWorld[i] * zoom + oy;
       const radiusPx = Math.max(2, 4.5 * zoom);
       const color = pool.color[i];
 
@@ -503,8 +513,8 @@ export class WeaponRenderer {
     const isSwinging = swing.activeFlag === 1;
     const angleRad = pose.angleRad;
 
-    const originXPx = (this._anchor.xWorld - ox) * zoom;
-    const originYPx = (this._anchor.yWorld - oy) * zoom;
+    const originXPx = this._anchor.xWorld * zoom + ox;
+    const originYPx = this._anchor.yWorld * zoom + oy;
 
     ctx.save();
 
@@ -843,8 +853,8 @@ export class WeaponRenderer {
     for (let i = 0; i < MAX_WEAPON_PROJECTILES; i++) {
       if (pool.isLive[i] === 0) continue;
 
-      const xPx = (pool.xWorld[i] - ox) * zoom;
-      const yPx = (pool.yWorld[i] - oy) * zoom;
+      const xPx = pool.xWorld[i] * zoom + ox;
+      const yPx = pool.yWorld[i] * zoom + oy;
       const halfPx = Math.max(1, (pool.radiusWorld[i] || PROJECTILE_FALLBACK_HALF_PX) * zoom);
 
       // Trail drawn along the reverse of this projectile's own velocity, so it

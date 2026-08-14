@@ -135,8 +135,23 @@ const LAUNCH_GRAVITY = [
   0.3,   // footL     — 6x baseline
   0.3,   // footR     — 6x baseline
 ];
-/** Tangential velocity retained when a point strikes solid geometry. */
+/**
+ * Tangential velocity retained when a point strikes solid geometry — i.e. the
+ * inverse of ground friction. Stick Ranger's value, used whenever no direction
+ * is held: the feet grip, and a figure that stops, stops.
+ */
 const SURFACE_TANGENT_RETENTION = 0.5;
+/**
+ * Tangential retention while a direction IS held.
+ *
+ * At the standing value the walk had to drag its feet across a surface that was
+ * eating half their sideways speed on every contact, which reads as the feet
+ * sticking. Holding a direction is the player saying "slide"; letting go says
+ * "grip". Applied to the whole body rather than just the feet, since the same
+ * contact resolver handles every point and a hand brushing a wall should not
+ * grip differently from a foot.
+ */
+const SURFACE_TANGENT_RETENTION_MOVING = 0.82;
 
 // ── Steering (this project's addition) ──────────────────────────────────────
 //
@@ -302,6 +317,42 @@ const AIR_TRAIL_KNEE_BELOW = 4.6;
 const AIR_DESCENT_EXTEND_SPEED = 1.4;
 /** Cap on the forward lag compensation applied to the pose anchor, world units. */
 const AIR_POSE_LAG_LIMIT = 3;
+
+// ── Standing settle (this project's addition) ───────────────────────────────
+//
+// A gait that ends wherever the last stride left it looks like a figure that
+// stopped mid-step, because that is what it is. With no input held the feet are
+// drawn slowly back under the hip into a stance: both legs near full extension,
+// a small symmetric gap, knees barely bent.
+//
+// Uses the same momentum- and translation-neutral machinery as the airborne
+// pose (`biasPointToward` + `cancelNetTranslation`), so settling never nudges
+// the figure sideways — it would otherwise creep along the floor while idle.
+
+/**
+ * Fraction of the remaining error the standing settle closes per frame.
+ *
+ * Much weaker than the airborne pose: this one has a full second of contact to
+ * work with and should be invisible as an animation. At 0.05 the stance is
+ * reached in roughly 25 frames (a third of a second at the current time scale),
+ * which reads as the figure gathering itself rather than snapping to an idle.
+ */
+const STAND_POSE_BIAS = 0.05;
+/** Half the standing foot gap — each foot is targeted this far to its own side. */
+const STAND_FOOT_SPREAD = 1.4;
+/** Standing foot depth below the hip — near the 9.6 full leg extension. */
+const STAND_FOOT_BELOW = 9.2;
+/** Standing knee offsets: barely bent, tracking just inside the feet. */
+const STAND_KNEE_SPREAD = 1.2;
+const STAND_KNEE_BELOW = 4.7;
+/**
+ * Hip speed, world units per frame, above which the settle is suppressed.
+ *
+ * Without this the stance fights knockback and momentum: the player is sliding
+ * with no key held, which is exactly when the legs should be trailing, not
+ * tidying themselves up.
+ */
+const STAND_SETTLE_MAX_SPEED = 0.35;
 
 // ── Ragdoll ─────────────────────────────────────────────────────────────────
 //
@@ -610,6 +661,33 @@ function applyAirbornePoseBias(body: StickRangerBody, poseDirection: number, ram
 }
 
 /**
+ * Draws the feet and knees slowly back under the hip into a standing stance.
+ *
+ * Whichever foot is currently on the left keeps the left side, so a figure that
+ * stopped mid-stride uncrosses by the shortest route instead of swapping its
+ * legs over. Vertical targets pull the legs toward full extension, which is
+ * what makes the figure rise back to its standing height after a walk.
+ */
+function applyStandingPoseBias(body: StickRangerBody): void {
+  const hipX = body.x[SR_HIP];
+  const hipY = body.y[SR_HIP];
+  const applied = { x: 0, y: 0 };
+
+  const leftFootIsLeft = body.x[SR_FOOT_L] <= body.x[SR_FOOT_R];
+  const leftFoot = leftFootIsLeft ? SR_FOOT_L : SR_FOOT_R;
+  const rightFoot = leftFootIsLeft ? SR_FOOT_R : SR_FOOT_L;
+  const leftKnee = leftFootIsLeft ? SR_KNEE_L : SR_KNEE_R;
+  const rightKnee = leftFootIsLeft ? SR_KNEE_R : SR_KNEE_L;
+
+  biasPointToward(body, leftFoot, hipX - STAND_FOOT_SPREAD, hipY + STAND_FOOT_BELOW, STAND_POSE_BIAS, applied);
+  biasPointToward(body, rightFoot, hipX + STAND_FOOT_SPREAD, hipY + STAND_FOOT_BELOW, STAND_POSE_BIAS, applied);
+  biasPointToward(body, leftKnee, hipX - STAND_KNEE_SPREAD, hipY + STAND_KNEE_BELOW, STAND_POSE_BIAS, applied);
+  biasPointToward(body, rightKnee, hipX + STAND_KNEE_SPREAD, hipY + STAND_KNEE_BELOW, STAND_POSE_BIAS, applied);
+
+  cancelNetTranslation(body, applied);
+}
+
+/**
  * Checks whether a specific foot of the stickman is in a valid grounded
  * position for jumping:
  *   1. The foot itself must NOT be inside a solid block ("Inside a block does not count").
@@ -722,7 +800,7 @@ function resolveOverlap(solid: SolidMask, x: number, y: number): { x: number; y:
  * bounces elastically with SURFACE_TANGENT_RETENTION, and prevents any overlap
  * or tunneling into blocks upward, downward, or laterally.
  */
-function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null): boolean {
+function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null, tangentRetention: number): boolean {
   if (solid === null) return false;
 
   let dx = body.x[i] - body.prevX[i];
@@ -752,7 +830,7 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null)
     // Y axis first (1-pixel sweep), then X
     const nextY = body.y[i] + dy;
     if (isSolidAt(solid, body.x[i], nextY)) {
-      dx *= SURFACE_TANGENT_RETENTION;
+      dx *= tangentRetention;
       dy = -dy;
       hit = true;
     } else {
@@ -761,7 +839,7 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null)
 
     const nextX = body.x[i] + dx;
     if (isSolidAt(solid, nextX, body.y[i])) {
-      dy *= SURFACE_TANGENT_RETENTION;
+      dy *= tangentRetention;
       dx = -dx;
       hit = true;
     } else {
@@ -887,6 +965,20 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     body.swingFrames = 0;
   }
 
+  // ── 2a. Standing settle ─────────────────────────────────────────────────
+  // With no input and both feet down, the figure gathers itself into a stance
+  // instead of keeping whatever splay the last stride left. Deliberately weak
+  // (see STAND_POSE_BIAS): this should read as settling, not as snapping to an
+  // idle pose. Suppressed while ragdolling, while still sliding, and in the air.
+  const isSettling =
+    moveDirection === 0 &&
+    body.ragdollFrames === 0 &&
+    inLaunchWindow &&
+    Math.abs(body.x[SR_HIP] - body.prevX[SR_HIP]) < STAND_SETTLE_MAX_SPEED;
+  if (isSettling) {
+    applyStandingPoseBias(body);
+  }
+
   // ── 2b. Airborne pose bias ──────────────────────────────────────────────
   // Only once the figure is genuinely off the ground (past the launch window,
   // which a walking body never leaves), and only while not ragdolling. Ramped
@@ -915,11 +1007,16 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   }
 
   // ── 4. Elastic collision ────────────────────────────────────────────────
+  // Friction is the inverse of tangential retention: holding a direction makes
+  // the surface slippery so the stride is not fighting the floor, releasing it
+  // restores Stick Ranger's grip so the figure actually stops.
+  const tangentRetention =
+    moveDirection !== 0 ? SURFACE_TANGENT_RETENTION_MOVING : SURFACE_TANGENT_RETENTION;
   // Impact speed has to be read before the collision pass reflects it.
   const impactSpeed = body.y[SR_HIP] - body.prevY[SR_HIP];
   let contact = false;
   for (let i = 0; i < SR_POINT_COUNT; i++) {
-    if (collidePoint(body, i, solid)) contact = true;
+    if (collidePoint(body, i, solid, tangentRetention)) contact = true;
   }
 
   // ── 5. Ground contact resets the gait window ────────────────────────────
