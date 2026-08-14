@@ -55,14 +55,25 @@ describe('Shield Weave activation and geometry', () => {
     assert.equal(activate(4).moteCount, 4);
   });
 
-  test('right mouse produces the central Shield Weave hold/end actions immediately', () => {
+  test('the right mouse button no longer raises the Shield Weave', () => {
+    // The button was taken off the Shield Weave deliberately; it still drives
+    // the grapple zip and the dust wheel, which read their own flags.
     const input = createInputState();
     input.mouseXPx = 120;
     input.mouseYPx = 40;
     input.isRightMouseDownFlag = 1;
     const held = collectCommands(input);
+    assert.ok(!held.some(command => command.kind === CommandKind.ShieldWeaveHold));
+  });
+
+  test('the Shield Weave input produces the central hold/end actions immediately', () => {
+    const input = createInputState();
+    input.mouseXPx = 120;
+    input.mouseYPx = 40;
+    input.isShieldWeaveHeldFlag = 1;
+    const held = collectCommands(input);
     assert.ok(held.some(command => command.kind === CommandKind.ShieldWeaveHold));
-    input.isRightMouseDownFlag = 0;
+    input.isShieldWeaveHeldFlag = 0;
     const released = collectCommands(input);
     assert.ok(released.some(command => command.kind === CommandKind.ShieldWeaveEnd));
   });

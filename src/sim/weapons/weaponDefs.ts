@@ -89,6 +89,26 @@ export interface WeaponDef {
   /** False hides the weapon model while equipped. */
   showWeapon?: boolean;
 
+  // ---- Weave-forged weapons (StickBlade, not from the donor) --------------
+  /**
+   * The dust this weapon is woven from, as a `ParticleKind` value.
+   *
+   * Present only on the StickBlade weave weapons — one sword and one bow per
+   * dust type. It is the numeric enum value rather than the enum itself so this
+   * table keeps no dependency on the particle system, matching how every other
+   * field here travels as plain data.
+   */
+  weaveDust?: number;
+  /**
+   * The weapon's secondary attack raises the Shield Weave, woven from
+   * `weaveDust`.
+   *
+   * Only the weave swords declare it. The Shield Weave is an existing complete
+   * system (`sim/stormweave/shieldWeave.ts`); this flag is what lets a weapon
+   * ask for it, rather than the weapon carrying a second shield of its own.
+   */
+  secondaryShieldWeave?: boolean;
+
   // ---- Core combat ----
   /** Base damage before attack-stat scaling (see `sim/stats/characterStats.ts`). */
   dmg?: number;

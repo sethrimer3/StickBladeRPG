@@ -19,6 +19,10 @@
  * Regenerating: this file was produced mechanically from the donor once. It is
  * now normal source — edit it directly rather than re-running a generator.
  *
+ * Weapons original to StickBlade do NOT belong here — they live in
+ * `stickbladeWeapons.ts` and are merged in by `weaponDefs.ts`. Keeping this
+ * table donor-only is what makes the diff above actually runnable.
+ *
  * See `docs/decisions/STICK_RPG_PORT_PLAN.md`.
  */
 
@@ -1523,23 +1527,6 @@ export const WEAPON_DATA: Readonly<Record<WeaponId, WeaponDef>> = {
     knock: 160,
     color: "#d0f",
     grip: "oneHand"
-  },
-
-  woodenSword: {
-    name: "Wooden Sword",
-    kind: "melee",
-    // Half the donor's 42. At 42 the drawn blade was nearly three times the
-    // stickman's 16.5-unit standing height; 21 is roughly torso-to-tip.
-    range: 21,
-    arc: 1.1,
-    dmg: 2,
-    cooldown: 550,
-    knock: 160,
-    color: "#c89d66",
-    grip: "twoHand",
-    spriteUrl: "SPRITES/Weapons/WoodenSword.png",
-    spriteGripRatioX: 0.5,
-    spriteGripRatioY: 0.9
   },
 
   tempestBow: {

@@ -15,6 +15,8 @@ import { createWorldState, type WorldState } from '../sim/world';
 import { createClusterState, type ClusterState } from '../sim/clusters/state';
 import { createDefaultCharacterStats } from '../sim/stats/characterStats';
 import { KB_ACTIONS, DEFAULT_KEYBOARD_BINDINGS, KEYBOARD_ACTION_META } from '../input/keybindings';
+import { createInputState, collectCommands } from '../input/handler';
+import { CommandKind } from '../input/commands';
 
 const DT_MS = 1000 / 60;
 
@@ -286,6 +288,25 @@ describe('input binding', () => {
     assert.ok(KB_ACTIONS.includes('grappleFire'));
     assert.equal(DEFAULT_KEYBOARD_BINDINGS.grappleFire, 'g');
     assert.equal(KEYBOARD_ACTION_META.grappleFire.label, 'Grapple');
+  });
+
+  test('a left-button press and release swings the weapon and weaves nothing', () => {
+    // The button used to fire the grapple on press and burst the primary Weave
+    // on release. Both were taken off it; only the weapon swing is left.
+    const input = createInputState();
+    input.isMouseDownFlag = 1;
+    input.isWeaponAttackHeldFlag = true;
+
+    const pressed = collectCommands(input);
+    assert.ok(!pressed.some(c => c.kind === CommandKind.GrappleFire));
+    assert.ok(!pressed.some(c => c.kind === CommandKind.WeaveActivatePrimary));
+    assert.ok(!pressed.some(c => c.kind === CommandKind.WeaveHoldPrimary));
+
+    input.isMouseDownFlag = 0;
+    input.isWeaponAttackHeldFlag = false;
+    const released = collectCommands(input);
+    assert.ok(!released.some(c => c.kind === CommandKind.WeaveActivatePrimary));
+    assert.ok(!released.some(c => c.kind === CommandKind.GrappleRelease));
   });
 
   test('the default attack key does not collide with another action', () => {
