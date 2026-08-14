@@ -415,7 +415,7 @@ describe('shield water surfing via applyHazards', () => {
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
     player.positionYWorld = 92;
-    player.healthPoints = 0; // no health → no motes
+    player.hitPoints = 0; // no health → no motes
     activateShieldDown(world, 0); // zero motes
     applyHazards(world);
     assert.notStrictEqual(player.velocityYWorld, -25, 'zero motes should not produce shield skip');
@@ -520,7 +520,7 @@ describe('shield lava surfing via applyHazards', () => {
     const player = world.clusters[0];
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
 
     activateShieldDown(world, 4);
     applyHazards(world);
@@ -529,7 +529,7 @@ describe('shield lava surfing via applyHazards', () => {
     assert.strictEqual(player.velocityXWorld, 40, 'shield lava skip: vx should be 40');
     assert.strictEqual(player.velocityYWorld, -25, 'shield lava skip: vy should be -25');
     // Lava damage suppressed
-    assert.strictEqual(player.healthPoints, initialHealth, 'lava damage should be suppressed');
+    assert.strictEqual(player.hitPoints, initialHealth, 'lava damage should be suppressed');
     // No water-droplet event
     assert.strictEqual(world.playerWaterSkipEventSequence, 0, 'lava skip must not emit water spray');
     // Shield impact recorded
@@ -541,14 +541,14 @@ describe('shield lava surfing via applyHazards', () => {
     const player = world.clusters[0];
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
 
     // Activate a rightward shield — this should NOT protect against lava coming from below
     activateShieldRight(world, 4);
     applyHazards(world);
 
     // Lava should have damaged the player
-    assert.ok(player.healthPoints < initialHealth, 'lava should deal damage with sideways shield');
+    assert.ok(player.hitPoints < initialHealth, 'lava should deal damage with sideways shield');
   });
 
   test('9b. lava damages normally when shield is inactive', () => {
@@ -556,12 +556,12 @@ describe('shield lava surfing via applyHazards', () => {
     const player = world.clusters[0];
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
 
     // No shield
     applyHazards(world);
 
-    assert.ok(player.healthPoints < initialHealth, 'lava should deal damage without shield');
+    assert.ok(player.hitPoints < initialHealth, 'lava should deal damage without shield');
   });
 
   test('9c. lava damages normally when player has zero speed in X', () => {
@@ -569,13 +569,13 @@ describe('shield lava surfing via applyHazards', () => {
     const player = world.clusters[0];
     player.velocityXWorld = 0; // no horizontal speed
     player.velocityYWorld = 30;
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
 
     activateShieldDown(world, 4);
     applyHazards(world);
 
     // vx=0 is not > 10, so no shield skip
-    assert.ok(player.healthPoints < initialHealth, 'lava should damage when no horizontal speed');
+    assert.ok(player.hitPoints < initialHealth, 'lava should damage when no horizontal speed');
   });
 
   test('14. lava skip does NOT emit the water-droplet spray event', () => {
@@ -598,14 +598,14 @@ describe('shield lava surfing via applyHazards', () => {
     const player = world.clusters[0];
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
 
     activateShieldDown(world, 4);
 
     // First tick: skip fires, no damage
     applyHazards(world);
     assert.strictEqual(player.velocityYWorld, -25);
-    assert.strictEqual(player.healthPoints, initialHealth);
+    assert.strictEqual(player.hitPoints, initialHealth);
 
     // Second tick: re-set velocity to approaching again
     player.velocityXWorld = 50;
@@ -700,12 +700,12 @@ describe('existing behavior preservation', () => {
   test('16b. lava still damages when no shield (regression check)', () => {
     const world = createLavaWorld(92);
     const player = world.clusters[0];
-    const initialHealth = player.healthPoints;
+    const initialHealth = player.hitPoints;
     player.velocityXWorld = 50;
     player.velocityYWorld = 30;
     // No shield
     applyHazards(world);
-    assert.ok(player.healthPoints < initialHealth, 'lava should still deal damage without shield (regression)');
+    assert.ok(player.hitPoints < initialHealth, 'lava should still deal damage without shield (regression)');
   });
 
   test('16c. shield projectile blocking still works', () => {

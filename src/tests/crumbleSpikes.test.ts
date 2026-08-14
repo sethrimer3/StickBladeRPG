@@ -250,12 +250,12 @@ test('crumble spike breaks (no damage) when the player meets the momentum-attack
   // Position the player overlapping that region.
   player.positionXWorld = world.spikeXWorld[0];
   player.positionYWorld = world.spikeYWorld[0] + BLOCK_SIZE_MEDIUM * 0.25;
-  const healthBefore = player.healthPoints;
+  const healthBefore = player.hitPoints;
 
   applyHazards(world);
 
   assert.equal(world.isCrumbleBlockActiveFlag[crumbleIdx], 0, 'crumble spike must be destroyed');
-  assert.equal(player.healthPoints, healthBefore, 'no damage should be dealt on a qualifying break');
+  assert.equal(player.hitPoints, healthBefore, 'no damage should be dealt on a qualifying break');
 });
 
 test('crumble spike deals normal spike damage and stays active when the break requirement is not met', () => {
@@ -269,12 +269,12 @@ test('crumble spike deals normal spike damage and stays active when the break re
 
   player.positionXWorld = world.spikeXWorld[0];
   player.positionYWorld = world.spikeYWorld[0] + BLOCK_SIZE_MEDIUM * 0.25;
-  const healthBefore = player.healthPoints;
+  const healthBefore = player.hitPoints;
 
   applyHazards(world);
 
   assert.equal(world.isCrumbleBlockActiveFlag[crumbleIdx], 1, 'crumble spike must remain active');
-  assert.ok(player.healthPoints < healthBefore, 'casual contact should still deal normal spike damage');
+  assert.ok(player.hitPoints < healthBefore, 'casual contact should still deal normal spike damage');
 });
 
 test('a destroyed crumble spike no longer damages the player on subsequent ticks', () => {
@@ -296,7 +296,7 @@ test('a destroyed crumble spike no longer damages the player on subsequent ticks
   // a live (non-crumble) spike would deal damage here; a destroyed one must not.
   world.spikeInvulnTicks = 0;
   player.isHighVelocityAttacking = 0;
-  const healthBefore = player.healthPoints;
+  const healthBefore = player.hitPoints;
   applyHazards(world);
-  assert.equal(player.healthPoints, healthBefore, 'destroyed crumble spike must be fully inert');
+  assert.equal(player.hitPoints, healthBefore, 'destroyed crumble spike must be fully inert');
 });

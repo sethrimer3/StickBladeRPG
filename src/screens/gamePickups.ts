@@ -13,6 +13,14 @@ import type { PlayerProgress } from '../progression/playerProgress';
 import type { RngState } from '../sim/rng';
 import { ParticleKind, isEquippableParticleKind } from '../sim/particles/kinds';
 import { grantDustContainerMotes, grantPlayerMotes, grantOverhealthMotes } from '../sim/playerMoteLife';
+// Motes and hit points are separate pools now (`sim/playerHealth.ts`), so each
+// life pickup has to grant both: the motes that feed the weaves, and the hit
+// points that keep the player alive.
+import {
+  grantDustContainerHitPoints,
+  grantTemporaryHitPoints,
+  healPlayerHitPoints,
+} from '../sim/playerHealth';
 import {
   DUST_CONTAINER_PICKUP_RADIUS_WORLD,
   DUST_CONTAINER_SHARD_PICKUP_RADIUS_WORLD,
@@ -65,6 +73,7 @@ export function processRoomPickups(
     if (dx * dx + dy * dy <= DUST_CONTAINER_PICKUP_RADIUS_WORLD * DUST_CONTAINER_PICKUP_RADIUS_WORLD) {
       collectedKeySet.add(pickupKey);
       grantDustContainerMotes(player);
+      grantDustContainerHitPoints(player);
       if (progress) {
         progress.dustContainerCount += 1;
         if (!progress.collectedDustContainerKeys.includes(pickupKey)) {
@@ -90,6 +99,7 @@ export function processRoomPickups(
     if (dx * dx + dy * dy <= DUST_CONTAINER_SHARD_PICKUP_RADIUS_WORLD * DUST_CONTAINER_SHARD_PICKUP_RADIUS_WORLD) {
       collectedKeySet.add(pickupKey);
       grantPlayerMotes(player, 1);
+      healPlayerHitPoints(player, 1);
       if (progress) {
         progress.dustContainerPieces += 1;
         if (!progress.collectedDustContainerKeys.includes(pickupKey)) {
@@ -99,6 +109,7 @@ export function processRoomPickups(
           const forgedContainerCount = Math.floor(progress.dustContainerPieces / DUST_CONTAINER_SHARDS_PER_CONTAINER);
           progress.dustContainerCount += forgedContainerCount;
           grantDustContainerMotes(player, forgedContainerCount);
+          grantDustContainerHitPoints(player, forgedContainerCount);
           progress.dustContainerPieces %= DUST_CONTAINER_SHARDS_PER_CONTAINER;
         }
       }
@@ -122,6 +133,7 @@ export function processRoomPickups(
       // not spawn player-owned legacy orbit particles (canonical life motes
       // already follow the player visually and are derived from health).
       grantOverhealthMotes(player, dustCount);
+      grantTemporaryHitPoints(player, dustCount);
     }
   }
 }

@@ -805,9 +805,9 @@ describe('Phase 2G: wind, sandstone, contact-damage, and break-resistance are un
     const room = makeEditorRoomData([{ xBlock: 5, yBlock: 5, blockId: 'custom:seal-dmg', tileWidth: 1, tileHeight: 1 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5, 200); // below reinforced(350) — does not break
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'contact damage is unaffected by liquid interaction');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'contact damage is unaffected by liquid interaction');
     assert.equal(world.isBreakableBlockActiveFlag[0], 1, 'block must not break below its reinforced threshold');
     const bx = (5 + 0.5) * BLOCK_SIZE_MEDIUM;
     const by = (5 + 0.5) * BLOCK_SIZE_MEDIUM;
@@ -838,9 +838,9 @@ describe('Phase 2G: wind, sandstone, contact-damage, and break-resistance are un
     assert.equal(roomDef.breakableBlocks?.[0]?.windResponse, 'block');
     assert.equal(roomDef.breakableBlocks?.[0]?.breakResistance, 'reinforced');
     const world = worldWithPlayerAt(roomDef, 5, 5, 200); // below reinforced(350)
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'contact damage independent of drain');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'contact damage independent of drain');
     assert.equal(world.isBreakableBlockActiveFlag[0], 1, 'still standing below reinforced threshold');
     clearCustomBlockSpriteCache();
   });

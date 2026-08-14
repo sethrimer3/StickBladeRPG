@@ -3,6 +3,7 @@ import { MAX_CW_METEOR_SCHEDULE } from './crimsonWizardConfig';
 import { MT_MAX_RING_RADIUS_WORLD } from './momentumTurretConfig';
 import type { ChallengeModeState } from '../challengeMode';
 import type { DamageAbsorbingWard } from '../playerDamage';
+import { PLAYER_STARTING_HIT_POINTS } from '../playerHealth';
 
 export interface ClusterState {
   /** World-local challenge state reference, assigned only on the active player. */
@@ -35,8 +36,22 @@ export interface ClusterState {
   followerShouldTeleport: 0 | 1;
 
   countsTowardRoomCompletionFlag: 0 | 1;
+  /**
+   * For enemies this is real health. For the player it is the dust-mote count,
+   * which the weaves size themselves from — damage no longer spends it; see
+   * `hitPoints`.
+   */
   healthPoints: number;
   maxHealthPoints: number;
+  /**
+   * The player's life pool (`sim/playerHealth.ts`), separate from motes.
+   *
+   * 0/0 for every cluster that is not the player, which is what
+   * `hasPlayerHealthPool` tests: a cluster without a pool takes damage exactly
+   * as it did before this system existed.
+   */
+  hitPoints: number;
+  maxHitPoints: number;
   /** Ported STICK-RPG enemy kind or null. */
   stickRpgEnemyKind: string | null;
   /** XP granted on defeat. */
@@ -1161,6 +1176,10 @@ export function createClusterState(
     countsTowardRoomCompletionFlag: isPlayerFlag === 1 ? 0 : 1,
     healthPoints: maxHealthPoints,
     maxHealthPoints,
+    // Only the player has a life pool; callers raise the maximum afterwards for
+    // Dust Containers.
+    hitPoints: isPlayerFlag === 1 ? PLAYER_STARTING_HIT_POINTS : 0,
+    maxHitPoints: isPlayerFlag === 1 ? PLAYER_STARTING_HIT_POINTS : 0,
     stickRpgEnemyKind: null,
     xpValue: 0,
     coinValue: 0,

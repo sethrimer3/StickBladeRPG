@@ -14,6 +14,7 @@ import type { HudState } from '../render/hud/overlay';
 import type { CombatTextSystem } from '../render/hud/combatText';
 import type { RenderProfiler } from '../render/hud/renderProfiler';
 import { getPlayerMoteCapacity, getPlayerMoteCount } from '../sim/playerMoteLife';
+import { getPlayerHitPoints, getPlayerMaxHitPoints } from '../sim/playerHealth';
 import {
   getMoteLifeColumnCount,
   getMoteLifeSlotPosition,
@@ -256,8 +257,10 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
     drawPlayerTopBar(
       ctx,
       {
-        currentHp: currentMoteCount,
-        maxHp: maxMoteCapacity,
+        // The life bar reads the life pool (`sim/playerHealth.ts`), not the
+        // mote count — those are separate now, and motes sit at capacity.
+        currentHp: playerForMoteLife ? getPlayerHitPoints(playerForMoteLife) : 0,
+        maxHp: playerForMoteLife ? getPlayerMaxHitPoints(playerForMoteLife) : 0,
         weaponName: weaponDef ? weaponDef.name : null,
       },
       nowMs,

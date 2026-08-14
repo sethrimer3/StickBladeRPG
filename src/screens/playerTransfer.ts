@@ -71,8 +71,14 @@ export interface CapturedPlayerParticle {
  * Carried across a true resident hot-swap room transition.
  */
 export interface PlayerTransferSnapshot {
-  /** HP from the outgoing world's player cluster. */
+  /** Dust-mote count from the outgoing world's player cluster. */
   healthPoints:     number;
+  /**
+   * Life pool from the outgoing world's player cluster (`sim/playerHealth.ts`).
+   * Carried separately from `healthPoints` since the two decoupled — without
+   * this, walking through a door would be a full heal.
+   */
+  hitPoints:        number;
   /** Sprite facing direction — preserved so the player does not snap on entry. */
   isFacingLeftFlag: 0 | 1;
   /** Entity id of the player in the outgoing world (always 1 in this codebase). */
@@ -131,6 +137,7 @@ export function capturePlayerTransferState(world: WorldState): PlayerTransferSna
 
   return {
     healthPoints:     player.healthPoints,
+    hitPoints:        player.hitPoints,
     isFacingLeftFlag: player.isFacingLeftFlag,
     ownedEntityId:    player.entityId,
     ownedParticles,

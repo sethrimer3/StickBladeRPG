@@ -491,9 +491,9 @@ describe('Phase 2E: contact-damage interaction', () => {
     // 200 wu/s is well below reinforced's 350 threshold, but contact damage
     // does not depend on momentum at all.
     const world = worldWithPlayerAt(roomDef, 5, 5, 200);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'high-tier contact damage still applied');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'high-tier contact damage still applied');
     assert.equal(world.isBreakableBlockActiveFlag[0], 1, 'block must NOT break below its reinforced threshold');
   });
 
@@ -503,9 +503,9 @@ describe('Phase 2E: contact-damage interaction', () => {
     const room = makeEditorRoomData([{ xBlock: 10, yBlock: 10, blockId: 'custom:weak-dmg-2x2', tileWidth: 2, tileHeight: 2 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 10, 10, 200); // breaks weak(150), well below standard(250)
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 1, 'exactly one low-tier hit, not four');
+    assert.equal(before - world.clusters[0]!.hitPoints, 1, 'exactly one low-tier hit, not four');
     for (let i = 0; i < 4; i++) assert.equal(world.isBreakableBlockActiveFlag[i], 0);
     clearCustomBlockSpriteCache();
   });

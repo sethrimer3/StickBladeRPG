@@ -14,6 +14,12 @@ const HORIZONTAL_POSITION_EPSILON_WORLD = 0.01;
 import type { ChallengeModeState } from './challengeMode';
 import { consumeChallengeReturn } from './challengeMode';
 import { getPlayerMoteCount, normalizeMoteCount } from './playerMoteLife';
+import {
+  damagePlayerHitPoints,
+  getPlayerMaxHitPoints,
+  hasPlayerHealthPool,
+  type PlayerHealthState,
+} from './playerHealth';
 import { computeStatDamage } from './stats/characterStats';
 import type { RngState } from './rng';
 
@@ -42,10 +48,18 @@ export interface PlayerDamageTarget {
   hurtTicks: number;
   isHighVelocityAttacking?: 0 | 1;
   /**
-   * Mote capacity, used only to decide whether a hit counts as heavy (see
-   * `HEAVY_HIT_HEALTH_FRACTION`). Absent targets never flag a heavy hit.
+   * Mote capacity. Since the player's life moved to `hitPoints` this is only
+   * the fallback capacity for `isHeavyHit` on targets with no life pool.
    */
   maxHealthPoints?: number;
+  /**
+   * The player's life pool (`sim/playerHealth.ts`). When `maxHitPoints` is
+   * positive this is what damage spends and what death is read from, and motes
+   * are left alone. Absent or zero — every non-player target — and damage falls
+   * back to spending motes exactly as it did before the pool existed.
+   */
+  hitPoints?: number;
+  maxHitPoints?: number;
   /**
    * Set to 1 by this pipeline when a hit costs more than
    * `HEAVY_HIT_HEALTH_FRACTION` of capacity. Consumed and cleared by whoever
@@ -185,14 +199,18 @@ export function absorbWithWard(ward: DamageAbsorbingWard | null | undefined, dam
 }
 
 /**
- * Share of mote capacity a single hit must cost to count as heavy. Heavy hits
- * are what ragdoll the stickman; anything lighter is just a hit.
+ * Share of the target's capacity a single hit must cost to count as heavy.
+ * Heavy hits are what ragdoll the stickman; anything lighter is just a hit.
  */
 export const HEAVY_HIT_HEALTH_FRACTION = 0.2;
 
 /** True when `damageToApply` exceeds `HEAVY_HIT_HEALTH_FRACTION` of capacity. */
 function isHeavyHit(player: PlayerDamageTarget, damageToApply: number): boolean {
-  const capacity = normalizeMoteCount(player.maxHealthPoints ?? 0);
+  // Measured against whichever pool the hit actually came out of, so the
+  // ragdoll threshold tracks the damage rather than an unrelated mote count.
+  const capacity = hasPlayerHealthPool(player)
+    ? getPlayerMaxHitPoints(player as PlayerHealthState)
+    : normalizeMoteCount(player.maxHealthPoints ?? 0);
   if (capacity <= 0) return false;
   return damageToApply > capacity * HEAVY_HIT_HEALTH_FRACTION;
 }
@@ -237,15 +255,22 @@ export function applyPlayerDamageWithKnockback(
     return true;
   }
 
-  // Reaching zero motes is survivable. A subsequent otherwise-valid damage
-  // event at zero is fatal through this canonical pipeline.
-  if (getPlayerMoteCount(player) === 0) {
-    player.healthPoints = 0;
-    player.isAliveFlag = 0;
-    return true;
+  if (hasPlayerHealthPool(player)) {
+    // The life pool is spent; motes are left at capacity so the weaves keep
+    // their full length no matter how hurt the player is.
+    if (damagePlayerHitPoints(player as PlayerHealthState, damageToApply) === 0) {
+      player.isAliveFlag = 0;
+    }
+  } else {
+    // Legacy motes-as-life, for every target with no pool. Reaching zero motes
+    // is survivable; a subsequent otherwise-valid damage event at zero is fatal.
+    if (getPlayerMoteCount(player) === 0) {
+      player.healthPoints = 0;
+      player.isAliveFlag = 0;
+      return true;
+    }
+    player.healthPoints = Math.max(0, getPlayerMoteCount(player) - damageToApply);
   }
-
-  player.healthPoints = Math.max(0, getPlayerMoteCount(player) - damageToApply);
 
   // Horizontal knockback direction based solely on whether the source is to
   // the left or right of the player — prevents diagonal sources from pushing
@@ -271,6 +296,9 @@ export function applyPlayerDamageWithKnockback(
 
 export function killPlayerImmediately(player: PlayerDamageTarget): void {
   if (player.isAliveFlag === 0) return;
+  // Both pools: motes so nothing keeps drawing a life cloud around a corpse,
+  // and hit points because that is what death is now read from.
   player.healthPoints = 0;
+  if (hasPlayerHealthPool(player)) player.hitPoints = 0;
   player.isAliveFlag = 0;
 }

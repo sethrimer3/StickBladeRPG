@@ -52,7 +52,7 @@ function tickN(world: WorldState, n: number, dt = TICK_DT): void {
 }
 
 function health(world: WorldState): number {
-  return world.clusters[0].healthPoints;
+  return world.clusters[0].hitPoints;
 }
 
 // ── Overlap helper ──────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ test('large tick crossing multiple 3s boundaries fires the correct number of hit
 
 test('stops processing further poison ticks once the player dies', () => {
   const world = makeWorldWithPlayer(...centerOfBlock(2, 2));
-  world.clusters[0].healthPoints = 2;
+  world.clusters[0].hitPoints = 2;
   setPoisonFields(world, [[2, 2, 1, 1]]);
   updatePoisonExposure(world, POISON_TICK_INTERVAL_SECONDS * 10);
   assert.equal(world.clusters[0].isAliveFlag, 0);

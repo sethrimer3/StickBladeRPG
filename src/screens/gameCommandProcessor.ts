@@ -34,6 +34,7 @@ import type { RngState } from '../sim/rng';
 import { isEquippableParticleKind } from '../sim/particles/kinds';
 import { stringToParticleKind } from '../editor/roomJsonSchema';
 import { grantOverhealthMotes } from '../sim/playerMoteLife';
+import { grantTemporaryHitPoints } from '../sim/playerHealth';
 import { getDustDefinition } from '../sim/weaves/dustDefinition';
 import type { DustSelectionWheelController } from './gameDustSelectionState';
 
@@ -478,6 +479,8 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
             // save with an already-collected swarm never re-grants). Must
             // not spawn a second player-owned legacy particle cloud.
             grantOverhealthMotes(playerForInteract, sw.dustCount);
+            // Motes and hit points are separate pools (`sim/playerHealth.ts`).
+            grantTemporaryHitPoints(playerForInteract, sw.dustCount);
             const kindName = getDustDefinition(dustKind).displayName;
             combatText.spawnLabel(
               playerForInteract.positionXWorld,

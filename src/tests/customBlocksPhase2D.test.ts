@@ -285,9 +285,9 @@ describe('Phase 2D: real contact-damage application', () => {
     const room = makeEditorRoomData([{ xBlock: 5, yBlock: 5, blockId: 'custom:dmg-low-1x1', tileWidth: 1, tileHeight: 1 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 1);
+    assert.equal(before - world.clusters[0]!.hitPoints, 1);
     clearCustomBlockSpriteCache();
   });
 
@@ -297,9 +297,9 @@ describe('Phase 2D: real contact-damage application', () => {
     const room = makeEditorRoomData([{ xBlock: 5, yBlock: 5, blockId: 'custom:dmg-high-1x1', tileWidth: 1, tileHeight: 1 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2);
+    assert.equal(before - world.clusters[0]!.hitPoints, 2);
     clearCustomBlockSpriteCache();
   });
 
@@ -310,9 +310,9 @@ describe('Phase 2D: real contact-damage application', () => {
     const roomDef = editorRoomDataToRoomDef(room);
     assert.equal(roomDef.contactDamageBlocks?.length ?? 0, 0);
     const world = worldWithPlayerAt(roomDef, 5, 5);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(world.clusters[0]!.healthPoints, before);
+    assert.equal(world.clusters[0]!.hitPoints, before);
     clearCustomBlockSpriteCache();
   });
 });
@@ -332,9 +332,9 @@ describe('Phase 2D: contact requires actual collision', () => {
     // block half 4, block size 8: 3 blocks = 24 world units of separation).
     const player = createClusterState(0, (5.5 + 3) * BLOCK_SIZE_MEDIUM, 5.5 * BLOCK_SIZE_MEDIUM, 1, 10);
     world.clusters = [player];
-    const before = player.healthPoints;
+    const before = player.hitPoints;
     applyHazards(world);
-    assert.equal(player.healthPoints, before);
+    assert.equal(player.hitPoints, before);
     clearCustomBlockSpriteCache();
   });
 });
@@ -349,15 +349,15 @@ describe('Phase 2D: invulnerability and repeat-contact behavior', () => {
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5);
     const player = world.clusters[0]!;
-    const startHealth = player.healthPoints;
+    const startHealth = player.hitPoints;
 
     applyHazards(world); // tick 1: first hit
-    assert.equal(startHealth - player.healthPoints, 1);
+    assert.equal(startHealth - player.hitPoints, 1);
 
     // Several more ticks while still overlapping — invulnerabilityTicks (90)
     // blocks every one of these; health must not drop further.
     for (let t = 0; t < 10; t++) applyHazards(world);
-    assert.equal(startHealth - player.healthPoints, 1, 'no additional damage while still invulnerable');
+    assert.equal(startHealth - player.hitPoints, 1, 'no additional damage while still invulnerable');
     clearCustomBlockSpriteCache();
   });
 });
@@ -383,9 +383,9 @@ describe('Phase 2D: logical placement ownership', () => {
     const cy = (10 + 1) * BLOCK_SIZE_MEDIUM;
     const player = createClusterState(0, cx, cy, 1, 10);
     world.clusters = [player];
-    const before = player.healthPoints;
+    const before = player.hitPoints;
     applyHazards(world);
-    assert.equal(before - player.healthPoints, 2, 'exactly one high-tier (2 point) hit, not four');
+    assert.equal(before - player.hitPoints, 2, 'exactly one high-tier (2 point) hit, not four');
     clearCustomBlockSpriteCache();
   });
 
@@ -438,9 +438,9 @@ describe('Phase 2D: logical placement ownership', () => {
     loadRoomHazards(world, roomDef);
     const player = createClusterState(0, 1 * BLOCK_SIZE_MEDIUM, 1 * BLOCK_SIZE_MEDIUM, 1, 10);
     world.clusters = [player];
-    const before = player.healthPoints;
+    const before = player.hitPoints;
     applyHazards(world);
-    assert.equal(before - player.healthPoints, 1);
+    assert.equal(before - player.hitPoints, 1);
     clearCustomBlockSpriteCache();
   });
 });
@@ -479,9 +479,9 @@ describe('Phase 2D: pixel transparency independence', () => {
     const room = makeEditorRoomData([{ xBlock: 5, yBlock: 5, blockId: 'custom:dmg-transparent', tileWidth: 1, tileHeight: 1 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2);
+    assert.equal(before - world.clusters[0]!.hitPoints, 2);
     clearCustomBlockSpriteCache();
   });
 });
@@ -496,9 +496,9 @@ describe('Phase 2D: fragile + contactDamage interaction', () => {
     const roomDef = editorRoomDataToRoomDef(room);
     // Fast enough to also satisfy the existing breakable-block momentum threshold.
     const world = worldWithPlayerAt(roomDef, 5, 5, 400);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 1, 'contact damage applied');
+    assert.equal(before - world.clusters[0]!.hitPoints, 1, 'contact damage applied');
     assert.equal(world.isBreakableBlockActiveFlag[0], 0, 'block also broke this tick');
     assert.equal(world.breakEventCount, 1, 'exactly one break event, unaffected by contact damage');
     clearCustomBlockSpriteCache();
@@ -510,18 +510,18 @@ describe('Phase 2D: fragile + contactDamage interaction', () => {
     const room = makeEditorRoomData([{ xBlock: 10, yBlock: 10, blockId: 'custom:frag-dmg-2x2', tileWidth: 2, tileHeight: 2 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 10, 10, 400);
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'exactly one high-tier hit, not four');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'exactly one high-tier hit, not four');
     for (let i = 0; i < 4; i++) assert.equal(world.isBreakableBlockActiveFlag[i], 0, `cell ${i} destroyed atomically`);
     assert.equal(world.breakEventCount, 1);
 
     // Re-running applyHazards on the now-broken placement must not damage
     // or break further (both idempotency guards — invuln + active-flag).
-    const midHealth = world.clusters[0]!.healthPoints;
+    const midHealth = world.clusters[0]!.hitPoints;
     applyHazards(world);
     applyHazards(world);
-    assert.equal(world.clusters[0]!.healthPoints, midHealth);
+    assert.equal(world.clusters[0]!.hitPoints, midHealth);
     clearCustomBlockSpriteCache();
   });
 });
@@ -536,9 +536,9 @@ describe('Phase 2D: indestructible damaging blocks', () => {
     const roomDef = editorRoomDataToRoomDef(room);
     assert.equal(roomDef.breakableBlocks?.length ?? 0, 0); // never entered the breakable pathway
     const world = worldWithPlayerAt(roomDef, 5, 5, 400); // even at high speed
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2);
+    assert.equal(before - world.clusters[0]!.hitPoints, 2);
     assert.equal(world.breakableBlockCount, 0);
     assert.equal(world.isContactDamageBlockActiveFlag[0], 1, 'still present/active after contact');
     clearCustomBlockSpriteCache();

@@ -723,9 +723,9 @@ describe('Phase 2H: interaction preservation with prior-phase properties', () =>
     const room = makeEditorRoomData([{ xBlock: 5, yBlock: 5, blockId: 'custom:vent-dmg', tileWidth: 1, tileHeight: 1 }]);
     const roomDef = editorRoomDataToRoomDef(room);
     const world = worldWithPlayerAt(roomDef, 5, 5, 50); // low speed — contact damage is not momentum-gated
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'contact damage is unaffected by wind emission');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'contact damage is unaffected by wind emission');
     clearCustomBlockSpriteCache();
   });
 
@@ -765,9 +765,9 @@ describe('Phase 2H: interaction preservation with prior-phase properties', () =>
     assert.equal(roomDef.breakableBlocks?.[0]?.liquidInteraction, 'drain');
     assert.equal(roomDef.breakableBlocks?.[0]?.windResponse, 'block');
     const world = worldWithPlayerAt(roomDef, 5, 5, 200); // below reinforced(350)
-    const before = world.clusters[0]!.healthPoints;
+    const before = world.clusters[0]!.hitPoints;
     applyHazards(world);
-    assert.equal(before - world.clusters[0]!.healthPoints, 2, 'contact damage independent of vent/drain/windbreak');
+    assert.equal(before - world.clusters[0]!.hitPoints, 2, 'contact damage independent of vent/drain/windbreak');
     assert.equal(world.isBreakableBlockActiveFlag[0], 1, 'still standing below reinforced threshold');
     assert.equal(world.windVentActiveFlag[0], 1, 'still emitting since it never broke');
     clearCustomBlockSpriteCache();

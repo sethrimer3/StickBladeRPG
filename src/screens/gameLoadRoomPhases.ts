@@ -135,6 +135,7 @@ import { resetIceMoteAuraForRoom } from '../sim/iceMoteAura';
 import { resetIceFrostForRoom } from '../sim/iceFrost';
 import { getStormweaveMoteCount } from '../sim/stormweave/lifeMotes';
 import { getPlayerMoteCapacityFromProgress } from '../sim/playerMoteLife';
+import { applyPlayerHealthOnSpawn } from '../sim/playerHealth';
 import { resetShieldWeaveState } from '../sim/stormweave/shieldWeave';
 import { resetShieldLiquidContactLatch } from '../sim/hazards';
 import { resetTimeStopFieldPlayerState } from '../sim/timeStopField/timeStopFieldPlayerState';
@@ -704,12 +705,15 @@ export function* makeLoadRoomPhases(
 
   const playerMoteCapacity = getPlayerMoteCapacityFromProgress(progress);
   let carryHealthPoints = playerMoteCapacity;
+  // undefined means "no player to carry from" — a fresh spawn at full health.
+  let carryHitPoints: number | undefined;
   if (
     world.clusters.length > 0 &&
     world.clusters[0].isPlayerFlag === 1 &&
     world.clusters[0].isAliveFlag === 1
   ) {
     carryHealthPoints = world.clusters[0].healthPoints;
+    carryHitPoints = world.clusters[0].hitPoints;
   }
 
   world.tick = 0;
@@ -733,6 +737,7 @@ export function* makeLoadRoomPhases(
   // Overhealth (healthPoints > maxHealthPoints) must survive ordinary room
   // transitions — do not clamp the carried value down to capacity here.
   playerCluster.healthPoints = carryHealthPoints;
+  applyPlayerHealthOnSpawn(playerCluster, progress?.dustContainerCount ?? 0, carryHitPoints);
   world.clusters.push(playerCluster);
   if (world.party) {
     spawnFollowerClusters(world, world.party, spawnXWorld, spawnYWorld, 2);
@@ -1065,6 +1070,11 @@ export function applyResidentRoomActivation(
   // Overhealth must survive resident hot-swap transfers too — only clamp
   // when there is no transfer snapshot (fresh spawn uses full capacity).
   playerCluster.healthPoints = playerTransfer !== undefined ? effectiveHealth : playerMoteCapacity;
+  applyPlayerHealthOnSpawn(
+    playerCluster,
+    progress?.dustContainerCount ?? 0,
+    playerTransfer?.hitPoints,
+  );
   // Preserve sprite facing direction from the outgoing room so the player
   // does not snap to the default (right-facing) on entry.
   if (playerTransfer !== undefined) {
