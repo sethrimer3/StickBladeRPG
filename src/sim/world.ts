@@ -456,6 +456,16 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    */
   playerWeapon: PlayerWeaponState;
   /**
+   * The off-hand weapon, fired with the right mouse button.
+   *
+   * A full second runtime rather than a shared one: each hand needs its own
+   * cooldown, swing arc, projectile pool and held pose, or a dagger in the left
+   * hand would be blocked by the bow in the right. Left unequipped (and
+   * therefore near-free to tick) whenever the main hand holds a two-hander,
+   * which claims both hands and both mouse buttons.
+   */
+  playerOffHandWeapon: PlayerWeaponState;
+  /**
    * The player's character/combat stats, mirrored from `PlayerProgress` on room
    * load so simulation never reaches into progression. Null before it is
    * supplied, in which case weapon damage falls back to the base attack stat.
@@ -757,6 +767,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     canonicalMoteVelXWorld:        new Float32Array(MAX_CANONICAL_MOTES),
     canonicalMoteVelYWorld:        new Float32Array(MAX_CANONICAL_MOTES),
     playerWeapon:                  createPlayerWeaponState(),
+    playerOffHandWeapon:           createPlayerWeaponState(),
     playerCharacterStats:          null,
     party:                         null,
     playerInventory:               null,

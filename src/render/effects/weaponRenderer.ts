@@ -102,6 +102,14 @@ export class WeaponRenderer {
    * simulation already resolves against the tiles each tick.
    */
   private readonly _bladeTrail = new BladeTrail();
+  /**
+   * The off hand's ribbon.
+   *
+   * Its own instance, not a shared one: two swinging blades write different tip
+   * paths, and a single trail would splice them into one ribbon jumping between
+   * the hands.
+   */
+  private readonly _offHandBladeTrail = new BladeTrail();
   /** Mutated in place each frame so styling a trail allocates nothing. */
   private readonly _bladeTrailStyle: TrailStyle = { ...DEFAULT_TRAIL_STYLE };
   /** Wielder pivot (the hip), resolved once per frame. */
@@ -127,9 +135,33 @@ export class WeaponRenderer {
     zoom: number,
     graphicsQuality: GraphicsQuality = 'med',
   ): void {
-    const weapon = snapshot.playerWeapon;
+    // Each hand is a full weapon runtime, so each is drawn the same way. The
+    // off hand goes first so the main hand's blade sits in front of it.
+    this._renderHand(
+      // Coalesced because hand-built snapshots (tests, tools) predate the second
+      // hand and simply omit the field; a missing off hand is an empty one.
+      ctx, snapshot, snapshot.playerOffHandWeapon ?? null, this._offHandBladeTrail,
+      ox, oy, zoom, graphicsQuality,
+    );
+    this._renderHand(
+      ctx, snapshot, snapshot.playerWeapon, this._bladeTrail,
+      ox, oy, zoom, graphicsQuality,
+    );
+  }
+
+  /** Draws one hand's weapon, its effects, and everything it has in flight. */
+  private _renderHand(
+    ctx: CanvasRenderingContext2D,
+    snapshot: WorldSnapshot,
+    weapon: PlayerWeaponState | null,
+    bladeTrail: BladeTrail,
+    ox: number,
+    oy: number,
+    zoom: number,
+    graphicsQuality: GraphicsQuality,
+  ): void {
     if (weapon === null) {
-      this._bladeTrail.clear();
+      bladeTrail.clear();
       return;
     }
 
@@ -142,12 +174,12 @@ export class WeaponRenderer {
 
     const def = getEquippedWeaponDef(weapon);
     if (def === null) {
-      this._bladeTrail.clear();
+      bladeTrail.clear();
       return;
     }
 
     // Before the blade, so the ribbon sits behind the weapon that cast it.
-    this._updateAndRenderBladeTrail(ctx, weapon, def, ox, oy, zoom, graphicsQuality);
+    this._updateAndRenderBladeTrail(ctx, weapon, def, bladeTrail, ox, oy, zoom, graphicsQuality);
 
     const body = snapshot.stickRangerBody;
     if (body !== null) {
@@ -830,6 +862,7 @@ export class WeaponRenderer {
     ctx: CanvasRenderingContext2D,
     weapon: PlayerWeaponState,
     def: WeaponDef,
+    bladeTrail: BladeTrail,
     ox: number,
     oy: number,
     zoom: number,
@@ -840,17 +873,17 @@ export class WeaponRenderer {
       && def.showWeapon !== false;
 
     if (isTrailingWeapon && weapon.swing.activeFlag === 1 && pose.reachWorld > 0) {
-      this._bladeTrail.push(pose.tipXWorld, pose.tipYWorld);
+      bladeTrail.push(pose.tipXWorld, pose.tipYWorld);
     } else {
-      this._bladeTrail.decay();
+      bladeTrail.decay();
     }
 
-    if (!this._bladeTrail.isVisible) return;
+    if (!bladeTrail.isVisible) return;
 
     // Restyled per frame rather than per weapon so a weapon swap, a glyph, or
     // any future dynamic recolor lands immediately, at no allocation cost.
     this._bladeTrailStyle.color = def.highlightColor ?? def.color ?? DEFAULT_BLADE_COLOR;
-    this._bladeTrail.render(ctx, ox, oy, zoom, this._bladeTrailStyle, graphicsQuality);
+    bladeTrail.render(ctx, ox, oy, zoom, this._bladeTrailStyle, graphicsQuality);
   }
 
   /** Draws every live projectile as a small square with a short motion trail. */

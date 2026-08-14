@@ -141,7 +141,7 @@ import { resetShieldLiquidContactLatch } from '../sim/hazards';
 import { resetTimeStopFieldPlayerState } from '../sim/timeStopField/timeStopFieldPlayerState';
 import { resetPoisonExposureState } from '../sim/poisonField/poisonExposureState';
 import { resetVoidDashState } from '../sim/clusters/voidDash';
-import { resetPlayerWeaponRoomState, equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
+import { resetPlayerWeaponRoomState, syncPlayerHandsFromEquipment } from '../sim/weapons/playerWeaponState';
 import { spawnFollowerClusters } from '../sim/party/partyWorld';
 import { getActiveMember } from '../sim/party/partyState';
 import type { CombatMode } from '../sim/combatMode';
@@ -399,6 +399,7 @@ function resetRoomScopedSimState(world: WorldState): void {
   // A swing in flight, live projectiles, and a partly-fired burst are all
   // room-scoped. The equipped weapon itself is player state and survives.
   resetPlayerWeaponRoomState(world.playerWeapon);
+  resetPlayerWeaponRoomState(world.playerOffHandWeapon);
 
   world.isGrappleActiveFlag       = 0;
   world.isGrappleMissActiveFlag   = 0;
@@ -456,11 +457,13 @@ function applyPlayerWeaveWorldFields(
   const activeMember                   = world.party ? getActiveMember(world.party) : null;
   world.playerCharacterStats           = activeMember ? activeMember.stats : (ctx.progress?.characterStats ?? null);
   world.playerInventory                = ctx.progress?.inventory ?? null;
-  // Equip active member's mainHand weapon if specified, otherwise default starter weapon.
-  const desiredWeaponId = activeMember?.equipment.mainHand ?? DEFAULT_STARTER_WEAPON_ID;
-  if (world.playerWeapon.equippedWeaponId !== desiredWeaponId) {
-    equipPlayerWeapon(world.playerWeapon, desiredWeaponId);
-  }
+  // Both hands follow the active member's slots; an absent main hand falls back
+  // to the starter weapon inside the sync.
+  syncPlayerHandsFromEquipment(
+    world,
+    activeMember?.equipment.mainHand ?? null,
+    activeMember?.equipment.offHand ?? null,
+  );
   // A fresh room means a fresh body: drop the old one so it is rebuilt at the
   // new spawn point instead of interpolating across the transition.
   world.stickRangerBody                = null;

@@ -15,6 +15,7 @@ import {
   isPlayerEquippableWeapon,
   isWeaponRuntimeImplemented,
   millisecondsToTicks,
+  resolveWeaponGrip,
   type WeaponGrip,
   type WeaponKind,
 } from '../sim/weapons/weaponDefs';
@@ -329,5 +330,39 @@ describe('glyph application', () => {
       assert.equal(result.glyphApplied, id);
       assert.equal(result.element, GLYPHS[id].element);
     }
+  });
+});
+
+describe('weapon grip resolution', () => {
+  test('a declared grip is returned unchanged', () => {
+    for (const id of WEAPON_IDS) {
+      const def = WEAPONS[id];
+      if (def.grip === undefined) continue;
+      assert.equal(resolveWeaponGrip(def), def.grip, id);
+    }
+  });
+
+  test('undeclared bows, guns, staves and summoners are two-handed', () => {
+    for (const kind of ['bow', 'gun', 'staff', 'summoner'] as const) {
+      for (const id of getWeaponIdsOfKind(kind)) {
+        assert.equal(resolveWeaponGrip(WEAPONS[id]), 'twoHand', id);
+      }
+    }
+  });
+
+  test('undeclared melee, magic, throw and spirit weapons are one-handed', () => {
+    for (const id of WEAPON_IDS) {
+      const def = WEAPONS[id];
+      if (def.grip !== undefined) continue;
+      if (['bow', 'gun', 'staff', 'summoner'].includes(def.kind)) continue;
+      assert.equal(resolveWeaponGrip(def), 'oneHand', id);
+    }
+  });
+
+  test('every weapon resolves to a valid grip, and nothing resolves for null', () => {
+    for (const id of WEAPON_IDS) {
+      assert.ok(VALID_GRIPS.includes(resolveWeaponGrip(WEAPONS[id])), id);
+    }
+    assert.equal(resolveWeaponGrip(null), 'oneHand');
   });
 });

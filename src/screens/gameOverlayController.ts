@@ -6,7 +6,7 @@ import { showDeathScreen } from '../ui/deathScreen';
 import { showMapOnlyModal, showSkillTombMenu } from '../ui/skillTombMenu';
 import { showInventoryPanel } from '../ui/inventoryPanel';
 import { getActiveMember } from '../sim/party/partyState';
-import { equipPlayerWeapon, DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
+import { syncPlayerHandsFromEquipment } from '../sim/weapons/playerWeaponState';
 import {
   executeGameDeathRespawn,
   type GameDeathRespawnPorts,
@@ -234,10 +234,11 @@ export function createGameOverlayController(
           const activeMember = getActiveMember(party);
           live.party = party;
           if (activeMember) live.playerCharacterStats = activeMember.stats;
-          const weaponId = activeMember?.equipment.mainHand ?? DEFAULT_STARTER_WEAPON_ID;
-          if (live.playerWeapon.equippedWeaponId !== weaponId) {
-            equipPlayerWeapon(live.playerWeapon, weaponId);
-          }
+          syncPlayerHandsFromEquipment(
+            live,
+            activeMember?.equipment.mainHand ?? null,
+            activeMember?.equipment.offHand ?? null,
+          );
         },
         onClose: () => {
           state.isInventoryOpen = false;

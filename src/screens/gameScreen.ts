@@ -2367,10 +2367,12 @@ export function startGameScreen(
         attackStat: world.playerCharacterStats?.attackBase ?? null,
       };
     };
-    (w as DwWin & { __dwEquip?: (id: string | null) => boolean }).__dwEquip =
-      (id: string | null): boolean => {
-        const ok = equipPlayerWeapon(world.playerWeapon, id);
-        console.log(`[dev] equip ${String(id)} → ${ok ? 'ok' : 'refused'}`);
+    // `__dwEquip(id)` fills the main hand; `__dwEquip(id, 'off')` the off hand.
+    (w as DwWin & { __dwEquip?: (id: string | null, hand?: 'main' | 'off') => boolean }).__dwEquip =
+      (id: string | null, hand: 'main' | 'off' = 'main'): boolean => {
+        const state = hand === 'off' ? world.playerOffHandWeapon : world.playerWeapon;
+        const ok = equipPlayerWeapon(state, id);
+        console.log(`[dev] equip ${String(id)} (${hand} hand) → ${ok ? 'ok' : 'refused'}`);
         return ok;
       };
 

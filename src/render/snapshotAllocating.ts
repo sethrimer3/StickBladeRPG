@@ -349,6 +349,7 @@ export function createSnapshot(world: WorldState): WorldSnapshot {
     newSwordCurrentAngleRad: world.newSwordCurrentAngleRad,
     characterId: world.characterId,
     playerWeapon: world.playerWeapon,
+    playerOffHandWeapon: world.playerOffHandWeapon,
     stickRangerBody: world.stickRangerBody,
     grasshopperCount:       world.grasshopperCount,
     grasshopperXWorld:      world.grasshopperXWorld,

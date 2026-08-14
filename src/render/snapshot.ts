@@ -103,6 +103,8 @@ interface _ReusableBacking {
    * read-only; it is owned by the simulation.
    */
   playerWeapon: import('../sim/weapons/playerWeaponState').PlayerWeaponState | null;
+  /** The off-hand runtime, on the same by-reference, read-only terms. */
+  playerOffHandWeapon: import('../sim/weapons/playerWeaponState').PlayerWeaponState | null;
   stickRangerBody: import('../sim/clusters/stickRangerBody').StickRangerBody | null;
   grasshopperCount: number;
   squareStampedeTrailXWorld: Float32Array;
@@ -296,6 +298,7 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
     newSwordCurrentAngleRad: world.newSwordCurrentAngleRad,
     characterId:              world.characterId,
     playerWeapon:             world.playerWeapon,
+    playerOffHandWeapon:      world.playerOffHandWeapon,
     stickRangerBody:          world.stickRangerBody,
     grasshopperCount:         world.grasshopperCount,
     grasshopperXWorld:        world.grasshopperXWorld,
@@ -557,6 +560,7 @@ export function updateSnapshotInPlace(
   b.newSwordCurrentAngleRad = world.newSwordCurrentAngleRad;
   b.characterId               = world.characterId;
   b.playerWeapon              = world.playerWeapon;
+  b.playerOffHandWeapon       = world.playerOffHandWeapon;
   b.stickRangerBody           = world.stickRangerBody;
   b.grasshopperCount          = world.grasshopperCount;
 

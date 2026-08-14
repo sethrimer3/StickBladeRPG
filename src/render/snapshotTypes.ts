@@ -222,6 +222,8 @@ export interface WorldSnapshot {
    * would be pure waste. Treat as read-only — the simulation owns it.
    */
   readonly playerWeapon: PlayerWeaponState | null;
+  /** The off-hand runtime, held by reference on the same terms. */
+  readonly playerOffHandWeapon: PlayerWeaponState | null;
   /** Number of active grasshoppers. */
   readonly grasshopperCount: number;
   /** X positions of grasshoppers (world units). */

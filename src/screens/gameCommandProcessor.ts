@@ -24,6 +24,7 @@ import {
   releasePlayerWeaponAttack,
   getEquippedWeaponDef,
 } from '../sim/weapons/playerWeaponState';
+import { resolveWeaponGrip } from '../sim/weapons/weaponDefs';
 import { getDoubleJumpToGrappleEnabled } from '../ui/renderSettings';
 import { SkillTombRenderer } from '../render/skillTombRenderer';
 import { SkillTombEffectRenderer } from '../render/skillTombEffectRenderer';
@@ -315,7 +316,12 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
       // when the equipped weapon grants one — the weave swords do, everything
       // else ignores the button. The gamepad's own trigger is unconditional, so
       // this gate applies only when the weapon secondary is the sole source.
-      const weaponGrantsShield = getEquippedWeaponDef(world.playerWeapon)?.secondaryShieldWeave === true;
+      //
+      // It also loses the button outright once the right hand is holding
+      // something: the off-hand weapon owns that button, and a raised shield on
+      // top of it would fire both from one press.
+      const weaponGrantsShield = getEquippedWeaponDef(world.playerWeapon)?.secondaryShieldWeave === true
+        && world.playerOffHandWeapon.equippedWeaponId === null;
       const allowedBySource = inputState.isShieldWeaveHeldFlag === 1 || weaponGrantsShield;
       if (!allowedBySource || !exclusiveAction.allowShieldWeave
         || player === undefined || player.isAliveFlag === 0) {
@@ -553,20 +559,52 @@ export function processPlayerCommands(ctx: GameCommandContext): GameCommandResul
   // (default Q), aimed with the mouse, and it never consumes or suppresses a
   // weave action. The attempt is made every frame the key is held; the
   // weapon's own cooldown decides whether an attack actually starts.
-  if (inputState.isWeaponAttackHeldFlag) {
+  {
     const weaponPlayer = world.clusters[0];
-    if (weaponPlayer !== undefined && weaponPlayer.isPlayerFlag === 1 && weaponPlayer.isAliveFlag === 1) {
+    const canAttack = weaponPlayer !== undefined
+      && weaponPlayer.isPlayerFlag === 1
+      && weaponPlayer.isAliveFlag === 1;
+
+    // Which runtime each button drives. A two-handed main-hand weapon fills both
+    // hands, so both buttons swing it — that is what "two-handed" means here.
+    // Otherwise the left button is the main hand and the right button is the off
+    // hand, which is idle (and therefore ignores the press) when empty.
+    const mainDef = getEquippedWeaponDef(world.playerWeapon);
+    const isTwoHanded = mainDef !== null && resolveWeaponGrip(mainDef) === 'twoHand';
+    const rightHandState = isTwoHanded ? world.playerWeapon : world.playerOffHandWeapon;
+
+    const leftHeld = inputState.isWeaponAttackHeldFlag;
+    const rightHeld = inputState.isWeaponSecondaryHeldFlag
+      && rightHandState.equippedWeaponId !== null;
+
+    if (canAttack && (leftHeld || rightHeld)) {
       const aim = screenToWorld(
         inputState.mouseXPx, inputState.mouseYPx,
         offsetXPx, offsetYPx, zoom,
         canvas.width, canvas.height,
         virtualWidthPx, virtualHeightPx,
       );
-      tryStartPlayerWeaponAttack(world, weaponPlayer, aim.xWorld, aim.yWorld, world.rng);
+      if (leftHeld) {
+        tryStartPlayerWeaponAttack(world, weaponPlayer, aim.xWorld, aim.yWorld, world.rng);
+      }
+      // Skipped when a two-hander already swung above on the left button: one
+      // weapon, one attack per frame, whichever button asked for it.
+      if (rightHeld && !(isTwoHanded && leftHeld)) {
+        tryStartPlayerWeaponAttack(
+          world, weaponPlayer, aim.xWorld, aim.yWorld, world.rng, rightHandState,
+        );
+      }
     }
-  } else {
-    // Staves channel while the key is held; releasing must stop the drain.
-    releasePlayerWeaponAttack(world);
+
+    // Staves channel while the button is held; releasing must stop the drain,
+    // per hand. A two-hander's single runtime is only released when *neither*
+    // button is down, or the left release would cut a right-button channel.
+    if (!leftHeld && !(isTwoHanded && rightHeld)) {
+      releasePlayerWeaponAttack(world);
+    }
+    if (!rightHeld && rightHandState !== world.playerWeapon) {
+      releasePlayerWeaponAttack(world, rightHandState);
+    }
   }
 
   return { moveDx, jumpTriggered, openPause, interactTriggered, interactInputPulseTrigger, grappleFireTriggered };

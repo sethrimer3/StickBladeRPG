@@ -34,7 +34,12 @@ import {
   type PlayerInventory,
 } from '../sim/party/inventory';
 import { computeDerivedStats } from '../sim/stats/characterStats';
-import { getWeaponDef, isWeaponRuntimeImplemented, type WeaponDef } from '../sim/weapons/weaponDefs';
+import {
+  getWeaponDef,
+  isWeaponRuntimeImplemented,
+  resolveWeaponGrip,
+  type WeaponDef,
+} from '../sim/weapons/weaponDefs';
 
 export interface InventoryPanelCallbacks {
   /** Called once when the screen closes, after all edits have been applied. */
@@ -58,6 +63,17 @@ const SLOT_LABELS: Record<EquipmentSubslot, string> = {
   mainHand: 'Main Hand',
   offHand: 'Off Hand',
   armor: 'Armor',
+};
+
+/**
+ * Which mouse button fires each hand. Shown on the slot itself, because the
+ * hands are the control scheme: left button swings the main hand, right button
+ * the off hand, and a two-handed weapon claims both.
+ */
+const SLOT_BUTTON_HINTS: Record<EquipmentSubslot, string> = {
+  mainHand: 'LMB',
+  offHand: 'RMB',
+  armor: '',
 };
 
 /**
@@ -249,9 +265,16 @@ export function showInventoryPanel(
 
     const name = itemId !== null
       ? getItemDisplayName(itemId)
-      : (isBlockedByTwoHander ? 'Two-Handed' : 'Empty');
+      : (isBlockedByTwoHander ? 'Both hands in use' : 'Empty');
+    // A two-hander in the main hand answers to both buttons, so say so there
+    // rather than leaving the off hand looking merely broken.
+    const hint = subslot === 'mainHand' && isTwoHandedWeapon(getWeaponDef(itemId))
+      ? 'LMB + RMB'
+      : (isBlockedByTwoHander ? '' : SLOT_BUTTON_HINTS[subslot]);
     chip.innerHTML = `
-      <span style="color:#888; font-size:0.65rem; letter-spacing:0.08em; text-transform:uppercase;">${SLOT_LABELS[subslot]}</span>
+      <span style="color:#888; font-size:0.65rem; letter-spacing:0.08em; text-transform:uppercase;">
+        ${SLOT_LABELS[subslot]}${hint === '' ? '' : ` · <span style="color:${GOLD_DIM};">${hint}</span>`}
+      </span>
       <span style="color:${itemId === null ? '#666' : '#eee'}; font-size:0.85rem;">${escapeHtml(name)}</span>
     `;
 
@@ -515,9 +538,11 @@ export function showInventoryPanel(
       border-radius: 4px; cursor: ${allowed ? 'pointer' : 'not-allowed'};
     `;
     if (!allowed) {
-      button.title = subslot === 'offHand'
-        ? 'Blocked: a two-handed weapon needs both hands.'
-        : 'This item cannot go in that slot.';
+      button.title = subslot !== 'offHand'
+        ? 'This item cannot go in that slot.'
+        : (isTwoHandedWeapon(getWeaponDef(itemId))
+          ? 'Two-handed: it goes in the main hand and uses both mouse buttons.'
+          : 'Blocked: the two-handed weapon in the main hand needs both hands.');
     }
     button.addEventListener('click', () => {
       if (!equipFromInventory(inventory, member.equipment, subslot, itemId)) return;
@@ -592,7 +617,10 @@ export function showInventoryPanel(
 /** One-line summary of a weapon for the item card. */
 function describeWeapon(def: WeaponDef): string {
   const parts: string[] = [def.kind];
-  if (def.grip !== undefined) parts.push(def.grip === 'twoHand' ? 'two-handed' : def.grip === 'dual' ? 'dual' : 'one-handed');
+  // Resolved, not read raw: most donor weapons declare no grip, and the card
+  // must agree with the slot rules about which hands the weapon needs.
+  const grip = resolveWeaponGrip(def);
+  parts.push(grip === 'twoHand' ? 'two-handed' : grip === 'dual' ? 'dual' : 'one-handed');
   if (typeof def.dmg === 'number') parts.push(`${def.dmg} dmg`);
   if (def.element !== undefined && def.element !== 'physical') parts.push(def.element);
   return parts.join(' · ');

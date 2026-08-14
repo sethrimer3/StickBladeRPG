@@ -433,6 +433,37 @@ export function isWeaponRuntimeImplemented(def: WeaponDef): boolean {
   return RUNTIME_IMPLEMENTED_KINDS.has(def.kind);
 }
 
+/**
+ * Kinds that are two-handed unless the weapon says otherwise.
+ *
+ * The donor table is sparse — a third of the weapons omit `grip` entirely — but
+ * it is not arbitrary about it: every bow, gun, staff and summoner that *does*
+ * declare a grip declares `twoHand` (12/7/7/4 of them), and every undeclared
+ * melee, magic, throw and spirit weapon is a one-handed dagger, bolt, chakram or
+ * halo. This encodes that, so `prismStaff` (the one staff with no grip field)
+ * behaves like the seven staves beside it rather than becoming an off-hand
+ * oddity.
+ */
+const TWO_HANDED_BY_DEFAULT: ReadonlySet<WeaponKind> = new Set<WeaponKind>([
+  'bow',
+  'gun',
+  'staff',
+  'summoner',
+]);
+
+/**
+ * How the weapon occupies the hands, with the donor's sparse table filled in.
+ *
+ * The single place that decides one- vs two-handed. Slot rules
+ * (`canEquipInSubslot`) and the mouse-button routing both read this, so a weapon
+ * can never be two-handed for one and one-handed for the other.
+ */
+export function resolveWeaponGrip(def: WeaponDef | null): WeaponGrip {
+  if (def === null) return 'oneHand';
+  if (def.grip !== undefined) return def.grip;
+  return TWO_HANDED_BY_DEFAULT.has(def.kind) ? 'twoHand' : 'oneHand';
+}
+
 /** Effective element for a weapon with no glyph socketed. */
 export function getWeaponBaseElement(def: WeaponDef): WeaponElement {
   return def.element ?? 'physical';

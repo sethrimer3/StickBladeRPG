@@ -229,6 +229,9 @@ export function tick(world: WorldState): void {
         ? player
         : null;
     tickPlayerWeapon(world, livingPlayer, world.rng);
+    // The off hand is its own runtime with its own cooldown and projectiles, so
+    // it advances independently. Cheap when nothing is equipped there.
+    tickPlayerWeapon(world, livingPlayer, world.rng, world.playerOffHandWeapon);
     // After the weapon: the aura's reach depends on whether the staff is still
     // channelling this tick, which the weapon step is what decides.
     tickPartyAuras(world, livingPlayer);

@@ -164,6 +164,21 @@ describe('equipment rules', () => {
     assert.equal(equipToSubslot(equipment, 'offHand', 'sword'), false);
   });
 
+  test('a two-handed weapon is refused by the off hand even with the main hand empty', () => {
+    // The hands drive the mouse buttons: the off hand answers to the right
+    // button alone, which a weapon needing both cannot be fired from.
+    const equipment = createEmptyEquipment();
+    assert.equal(canEquipInSubslot(equipment, 'offHand', 'greatsword'), false);
+    assert.equal(equipToSubslot(equipment, 'offHand', 'greatsword'), false);
+    assert.equal(equipment.offHand, null);
+  });
+
+  test('bows are two-handed despite declaring no grip explicitly', () => {
+    const equipment = createEmptyEquipment();
+    assert.equal(isTwoHandedWeapon(getWeaponDef('bow')), true);
+    assert.equal(canEquipInSubslot(equipment, 'offHand', 'bow'), false);
+  });
+
   test('a one-handed weapon leaves the off hand usable', () => {
     const equipment = createEmptyEquipment();
     equipToSubslot(equipment, 'mainHand', 'sword');

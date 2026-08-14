@@ -17,7 +17,7 @@ import {
   sanitizeCharacterStats,
   type CharacterStats,
 } from '../stats/characterStats';
-import { getWeaponDef, type WeaponDef } from '../weapons/weaponDefs';
+import { getWeaponDef, resolveWeaponGrip, type WeaponDef } from '../weapons/weaponDefs';
 
 /** Maximum party members. Donor `TEAM_SIZE`. */
 export const MAX_PARTY_SIZE = 3;
@@ -174,9 +174,15 @@ export function recruitMember(party: PartyState, index: number): boolean {
 
 // ---- Equipment ------------------------------------------------------------
 
-/** True when a weapon occupies both hands. */
+/**
+ * True when a weapon occupies both hands.
+ *
+ * Reads `resolveWeaponGrip` rather than `def.grip` directly, so the donor's
+ * many grip-less entries are classified rather than all falling through as
+ * one-handed.
+ */
 export function isTwoHandedWeapon(def: WeaponDef | null): boolean {
-  return def !== null && def.grip === 'twoHand';
+  return def !== null && resolveWeaponGrip(def) === 'twoHand';
 }
 
 /**
@@ -186,6 +192,10 @@ export function isTwoHandedWeapon(def: WeaponDef | null): boolean {
  * hand, and nothing may occupy the off hand while a two-handed weapon is held.
  * Armor is accepted structurally — there is no armor table yet, so any id is
  * allowed there and validation lands with that table.
+ *
+ * A two-handed weapon is also refused *in* the off hand, not just alongside one.
+ * The hands drive the two mouse buttons — main hand on left, off hand on
+ * right — and a two-hander claims both, which it cannot do from the off hand.
  */
 export function canEquipInSubslot(
   equipment: EquipmentSlots,
@@ -197,8 +207,10 @@ export function canEquipInSubslot(
   if (subslot === 'mainHand') return getWeaponDef(weaponId) !== null;
 
   if (subslot === 'offHand') {
-    if (isTwoHandedWeapon(getWeaponDef(equipment.mainHand))) return false;
-    return getWeaponDef(weaponId) !== null;
+    const def = getWeaponDef(weaponId);
+    if (def === null) return false;
+    if (isTwoHandedWeapon(def)) return false;
+    return !isTwoHandedWeapon(getWeaponDef(equipment.mainHand));
   }
 
   return true;

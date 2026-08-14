@@ -19,6 +19,7 @@ import { computeDerivedStats, type CharacterStats } from '../stats/characterStat
 import {
   getWeaponDef,
   isWeaponRuntimeImplemented,
+  resolveWeaponGrip,
   type WeaponDef,
 } from './weaponDefs';
 import {
@@ -98,6 +99,15 @@ import {
 
 /** Ticks between the shots of a burst-fire weapon. */
 const BURST_SHOT_INTERVAL_TICKS = 4;
+
+/**
+ * How much lower than the main hand an off-hand weapon is carried, radians.
+ *
+ * Purely so two held weapons are distinguishable at rest. Kept well under the
+ * avoidance search's range so a lowered off-hand blade still tilts up out of the
+ * floor rather than clipping through it.
+ */
+const OFF_HAND_CARRY_OFFSET_RAD = 0.5;
 
 /**
  * Weapon the player carries until a real equipment slot exists.
@@ -229,6 +239,46 @@ export function equipPlayerWeapon(state: PlayerWeaponState, weaponId: string | n
   return true;
 }
 
+/**
+ * Points both hand runtimes at the ids in an equipment record.
+ *
+ * The one place equipment slots become held weapons, so every caller — room
+ * load, the inventory screen's live edit, the dev weapon picker — agrees on the
+ * hand rules:
+ *
+ *   • The main hand holds `mainHand`, falling back to the starter weapon so the
+ *     player is never empty-handed (the pre-slot behavior this replaces).
+ *   • The off hand holds `offHand`, and is emptied when the main hand holds a
+ *     two-hander. `canEquipInSubslot` already forbids that combination, but a
+ *     hand-edited save must not produce a phantom third weapon.
+ *
+ * Re-equipping is skipped when the id is unchanged, because `equipPlayerWeapon`
+ * cancels the swing in flight and would stutter an attack every frame.
+ */
+export function syncPlayerHandsFromEquipment(
+  world: WorldState,
+  mainHandId: string | null,
+  offHandId: string | null,
+): void {
+  const mainId = mainHandId ?? DEFAULT_STARTER_WEAPON_ID;
+  if (world.playerWeapon.equippedWeaponId !== mainId) {
+    equipPlayerWeapon(world.playerWeapon, mainId);
+  }
+
+  const mainDef = getWeaponDef(world.playerWeapon.equippedWeaponId);
+  const offId = isTwoHanded(mainDef) || isTwoHanded(getWeaponDef(offHandId))
+    ? null
+    : offHandId;
+  if (world.playerOffHandWeapon.equippedWeaponId !== offId) {
+    equipPlayerWeapon(world.playerOffHandWeapon, offId);
+  }
+}
+
+/** Local grip test — kept here so the sim does not import the party module. */
+function isTwoHanded(def: WeaponDef | null): boolean {
+  return def !== null && resolveWeaponGrip(def) === 'twoHand';
+}
+
 /** The equipped weapon definition, or null when unarmed. */
 export function getEquippedWeaponDef(state: PlayerWeaponState): WeaponDef | null {
   return getWeaponDef(state.equippedWeaponId);
@@ -267,8 +317,9 @@ export function tryStartPlayerWeaponAttack(
   aimXWorld: number,
   aimYWorld: number,
   rng: RngState,
+  /** Which hand is attacking. Defaults to the main hand. */
+  state: PlayerWeaponState = world.playerWeapon,
 ): boolean {
-  const state = world.playerWeapon;
   const def = getEquippedWeaponDef(state);
   if (def === null) return false;
 
@@ -369,8 +420,11 @@ export function tryStartPlayerWeaponAttack(
  * this a staff would keep draining after the key came up. Harmless to call
  * every frame the input is not held.
  */
-export function releasePlayerWeaponAttack(world: WorldState): void {
-  releaseStaffChannel(world.playerWeapon.staff);
+export function releasePlayerWeaponAttack(
+  world: WorldState,
+  state: PlayerWeaponState = world.playerWeapon,
+): void {
+  releaseStaffChannel(state.staff);
 }
 
 /**
@@ -407,7 +461,13 @@ function tickPlayerProjectileShield(
   );
 
   if (player !== null) {
-    player.projectileShield = shield.isActiveFlag === 1 ? shield : null;
+    if (shield.isActiveFlag === 1) {
+      player.projectileShield = shield;
+    } else if (player.projectileShield === shield) {
+      // Only ever clear our *own* ward: with a weapon in each hand both hands
+      // tick this, and an empty off hand must not drop the main hand's shield.
+      player.projectileShield = null;
+    }
   }
 }
 
@@ -446,9 +506,16 @@ function tickHeldWeaponPose(
     return;
   }
 
+  // At rest the two hands would resolve to the same grip and the same rest
+  // angle, drawing one weapon exactly on top of the other. The off hand carries
+  // lower so the pair reads as two weapons in a V; mirrored with facing, since
+  // the rest angle itself is mirrored. A swing overrides this entirely — the arc
+  // is where the damage is, and it must be drawn where it is swept.
+  const restAngleRad = resolveHeldRestAngleRad(def, body.facingDirection);
+  const isOffHand = state === world.playerOffHandWeapon;
   const preferredAngleRad = isSwinging
     ? swing.currentAngleRad
-    : resolveHeldRestAngleRad(def, body.facingDirection);
+    : restAngleRad + (isOffHand ? body.facingDirection * OFF_HAND_CARRY_OFFSET_RAD : 0);
 
   computeHeldWeaponPose(
     world,
@@ -481,8 +548,9 @@ export function tickPlayerWeapon(
   world: WorldState,
   player: ClusterState | null,
   rng: RngState,
+  /** Which hand to advance. Defaults to the main hand. */
+  state: PlayerWeaponState = world.playerWeapon,
 ): void {
-  const state = world.playerWeapon;
   state.attackStartedFlag = 0;
 
   tickWeaponCooldown(state.swing);

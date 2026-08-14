@@ -7,6 +7,7 @@ import {
   equipPlayerWeapon,
   getEquippedWeaponDef,
   resetPlayerWeaponRoomState,
+  syncPlayerHandsFromEquipment,
   tickPlayerWeapon,
   tryStartPlayerWeaponAttack,
 } from '../sim/weapons/playerWeaponState';
@@ -313,5 +314,66 @@ describe('input binding', () => {
     const bindings = Object.values(DEFAULT_KEYBOARD_BINDINGS);
     const unique = new Set(bindings);
     assert.equal(bindings.length, unique.size, 'default keybindings must be unique');
+  });
+});
+
+describe('two hands', () => {
+  test('a fresh world has an idle, independent off-hand runtime', () => {
+    const world = createWorldState(DT_MS, 1);
+    assert.equal(world.playerOffHandWeapon.equippedWeaponId, null);
+    assert.notEqual(world.playerOffHandWeapon, world.playerWeapon);
+  });
+
+  test('the sync fills both hands from the equipment slots', () => {
+    const { world } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, 'sword', 'dagger');
+    assert.equal(world.playerWeapon.equippedWeaponId, 'sword');
+    assert.equal(world.playerOffHandWeapon.equippedWeaponId, 'dagger');
+  });
+
+  test('a two-handed main hand empties the off hand, even if a save asked otherwise', () => {
+    const { world } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, 'greatsword', 'dagger');
+    assert.equal(world.playerWeapon.equippedWeaponId, 'greatsword');
+    assert.equal(world.playerOffHandWeapon.equippedWeaponId, null);
+  });
+
+  test('a two-handed weapon is never held in the off hand', () => {
+    const { world } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, 'sword', 'greatsword');
+    assert.equal(world.playerOffHandWeapon.equippedWeaponId, null);
+  });
+
+  test('an empty main hand falls back to the starter weapon', () => {
+    const { world } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, null, null);
+    assert.equal(world.playerWeapon.equippedWeaponId, DEFAULT_STARTER_WEAPON_ID);
+  });
+
+  test('each hand keeps its own cooldown, so one does not block the other', () => {
+    const { world, player } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, 'sword', 'dagger');
+
+    assert.equal(tryStartPlayerWeaponAttack(world, player, 40, 0, world.rng), true);
+    // The main hand is now on cooldown; the off hand must be untouched by that.
+    assert.equal(tryStartPlayerWeaponAttack(world, player, 40, 0, world.rng), false);
+    assert.equal(
+      tryStartPlayerWeaponAttack(world, player, 40, 0, world.rng, world.playerOffHandWeapon),
+      true,
+    );
+  });
+
+  test('the off hand ticks independently of the main hand', () => {
+    const { world, player } = createWorldWithPlayer();
+    syncPlayerHandsFromEquipment(world, 'sword', 'dagger');
+    tryStartPlayerWeaponAttack(world, player, 40, 0, world.rng, world.playerOffHandWeapon);
+
+    const before = world.playerOffHandWeapon.swing.cooldownRemainingTicks;
+    assert.ok(before > 0);
+    tickPlayerWeapon(world, player, world.rng, world.playerOffHandWeapon);
+    assert.equal(world.playerOffHandWeapon.swing.cooldownRemainingTicks, before - 1);
+    // Ticking one hand must not advance the other's cooldown.
+    tickPlayerWeapon(world, player, world.rng);
+    assert.equal(world.playerOffHandWeapon.swing.cooldownRemainingTicks, before - 1);
   });
 });
