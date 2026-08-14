@@ -91,6 +91,8 @@ import {
   computeHeldWeaponPose,
   createHeldWeaponPose,
   resolveHeldRestAngleRad,
+  seedHeldWeaponPose,
+  DEFAULT_HELD_REACH_WORLD,
   type HeldWeaponPose,
 } from './weaponHeldPose';
 
@@ -184,6 +186,7 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetSoulOrbPool(state.soulOrbs);
   resetProjectileShieldState(state.projectileShield);
   resetExpiryFlashPool(state.expiryFlashes);
+  seedHeldWeaponPose(state.heldPose, getWeaponDef(state.equippedWeaponId));
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -204,6 +207,7 @@ export function equipPlayerWeapon(state: PlayerWeaponState, weaponId: string | n
     resetStaffChannelState(state.staff);
     resetSpiritOrbs(state.spiritOrbs, null);
     resetProjectileShieldState(state.projectileShield);
+    seedHeldWeaponPose(state.heldPose, null);
     return true;
   }
 
@@ -219,6 +223,7 @@ export function equipPlayerWeapon(state: PlayerWeaponState, weaponId: string | n
   resetStaffChannelState(state.staff);
   resetProjectileShieldState(state.projectileShield);
   resetSpiritOrbs(state.spiritOrbs, def);
+  seedHeldWeaponPose(state.heldPose, def);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   return true;
@@ -416,9 +421,6 @@ function resolveHeldReachWorld(state: PlayerWeaponState, def: WeaponDef): number
   return def.range ?? DEFAULT_HELD_REACH_WORLD;
 }
 
-/** Reach assumed for a weapon that declares no range — matches the renderer's fallback. */
-const DEFAULT_HELD_REACH_WORLD = 24;
-
 /**
  * Recomputes where the held weapon sits.
  *
@@ -433,15 +435,17 @@ function tickHeldWeaponPose(
 ): void {
   const pose = state.heldPose;
   const body = world.stickRangerBody;
+  const swing = state.swing;
+  const isSwinging = swing.activeFlag === 1;
+
+  // No rig to hang the weapon on (the editor, a headless world): fall back to
+  // the open-air rest pose rather than zeroing, so a consumer that does have a
+  // body to draw against still gets a sane length.
   if (def === null || body === null || def.showWeapon === false) {
-    pose.reachWorld = 0;
-    pose.requestedReachWorld = 0;
-    pose.tipContactFlag = 0;
+    seedHeldWeaponPose(pose, def);
     return;
   }
 
-  const swing = state.swing;
-  const isSwinging = swing.activeFlag === 1;
   const preferredAngleRad = isSwinging
     ? swing.currentAngleRad
     : resolveHeldRestAngleRad(def, body.facingDirection);

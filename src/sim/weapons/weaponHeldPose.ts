@@ -78,6 +78,38 @@ export interface HeldWeaponPose {
   tipContactFlag: 0 | 1;
 }
 
+/**
+ * Sets a pose to the weapon's unobstructed rest carry, without consulting the
+ * world.
+ *
+ * Equipping happens outside the tick, so without this the first frame after a
+ * swap would draw the previous weapon's length — or, on a fresh state, nothing
+ * at all. This is the pose the tick would produce in open air, so the seed is
+ * only ever corrected, never contradicted.
+ */
+export function seedHeldWeaponPose(
+  out: HeldWeaponPose,
+  def: WeaponDef | null,
+  facingDirection: -1 | 1 = 1,
+): void {
+  if (def === null || def.showWeapon === false) {
+    out.reachWorld = 0;
+    out.requestedReachWorld = 0;
+    out.tipContactFlag = 0;
+    return;
+  }
+  const reach = Math.max(0, def.range ?? DEFAULT_HELD_REACH_WORLD);
+  out.angleRad = resolveHeldRestAngleRad(def, facingDirection);
+  out.reachWorld = reach;
+  out.requestedReachWorld = reach;
+  out.tipContactFlag = 0;
+  out.tipXWorld = out.gripXWorld + Math.cos(out.angleRad) * reach;
+  out.tipYWorld = out.gripYWorld + Math.sin(out.angleRad) * reach;
+}
+
+/** Reach assumed for a weapon that declares no range. */
+export const DEFAULT_HELD_REACH_WORLD = 24;
+
 /** Allocates a zeroed pose, for callers that want to own one. */
 export function createHeldWeaponPose(): HeldWeaponPose {
   return {

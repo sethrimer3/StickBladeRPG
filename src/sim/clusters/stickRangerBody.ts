@@ -352,6 +352,11 @@ const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, numbe
  *
  * One-way keeps the half that earns its place (legs cannot merge into one line)
  * and drops the half that fought the gait.
+ *
+ * Note that the spawn offsets still start the knees 6 apart rather than at this
+ * minimum. Narrowing them to match measured worse — the walk hunched to 12.1
+ * from 13.9 — so the body is left to settle into its own standing width (about
+ * 2.2) over the first frames instead.
  */
 const KNEE_SPREAD_MIN = 2.4;
 /** Solver weight for the knee spreader — very loose, so legs splay rather than lock. */

@@ -77,7 +77,8 @@ describe('weapon data integrity', () => {
       cooldown: 550, knock: 160, color: '#d0f', grip: 'oneHand',
     });
     assert.deepEqual(WEAPONS['woodenSword'], {
-      name: 'Wooden Sword', kind: 'melee', range: 42, arc: 1.1, dmg: 2,
+      // Deliberately half the donor's 42 — see the note in weaponData.ts.
+      name: 'Wooden Sword', kind: 'melee', range: 21, arc: 1.1, dmg: 2,
       cooldown: 550, knock: 160, color: '#c89d66', grip: 'twoHand',
       spriteUrl: 'SPRITES/Weapons/WoodenSword.png',
       spriteGripRatioX: 0.5, spriteGripRatioY: 0.9,

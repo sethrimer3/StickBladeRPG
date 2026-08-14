@@ -30,6 +30,7 @@ import {
 } from '../../sim/clusters/stickRangerBody';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
 import { computeWeaponGripAnchor, createWeaponGripAnchor } from '../../sim/weapons/weaponGrip';
+import { resolveHeldRestAngleRad } from '../../sim/weapons/weaponHeldPose';
 
 /** Limb segments, in draw order — same set Stick Ranger strokes per frame. */
 const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
@@ -155,7 +156,11 @@ export function renderStickRangerWeapon(
 
   const originXPx = _weaponAnchorScratch.xWorld * scalePx + offsetXPx;
   const originYPx = _weaponAnchorScratch.yWorld * scalePx + offsetYPx;
-  const angleRad = isSwinging ? swingAngleRad : _weaponAnchorScratch.angleRad;
+  // At rest the blade follows the carry pose, not the arm: shoulder → hand
+  // points almost straight down on this rig, which reads as a dropped weapon.
+  const angleRad = isSwinging
+    ? swingAngleRad
+    : resolveHeldRestAngleRad(def, body.facingDirection);
 
   ctx.save();
   ctx.translate(originXPx, originYPx);

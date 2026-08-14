@@ -41,6 +41,7 @@ import {
   createWeaponGripAnchor,
   type WeaponGripAnchor,
 } from '../../sim/weapons/weaponGrip';
+import { getStickRangerRenderAlpha } from '../../sim/clusters/stickRangerBody';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
 import { getProjectileShieldConfig } from '../../sim/weapons/projectileShield';
 import {
@@ -491,17 +492,19 @@ export class WeaponRenderer {
     const body = snapshot.stickRangerBody;
     if (body === null) return;
 
-    // The pose (grip, angle, and tile-clipped length) is resolved once per tick
-    // in `tickHeldWeaponPose`; re-deriving it here could disagree with it.
+    // Angle and length come from the pose the simulation resolved against the
+    // tiles this tick (`tickHeldWeaponPose`) — re-deriving them here could
+    // disagree with it. The grip is still resolved from the body so it can use
+    // the render interpolation the pose, being tick-aligned, does not have.
     const pose = weapon.heldPose;
-    if (pose.reachWorld <= 0) return;
+    computeWeaponGripAnchor(body, def, getStickRangerRenderAlpha(body), this._anchor);
 
     const swing = weapon.swing;
     const isSwinging = swing.activeFlag === 1;
     const angleRad = pose.angleRad;
 
-    const originXPx = (pose.gripXWorld - ox) * zoom;
-    const originYPx = (pose.gripYWorld - oy) * zoom;
+    const originXPx = (this._anchor.xWorld - ox) * zoom;
+    const originYPx = (this._anchor.yWorld - oy) * zoom;
 
     ctx.save();
 
