@@ -258,6 +258,9 @@ function deleteResolvedCandidate(
     case 'decoration':
       removed = removeByUid(room.decorations, uid);
       break;
+    case 'decorativeObject':
+      removed = removeByUid(room.decorativeObjects, uid);
+      break;
     case 'wall':
       removed = removeByUid(room.interiorWalls, uid);
       break;

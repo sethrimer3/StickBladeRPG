@@ -92,6 +92,7 @@ import {
   DecorationWaveState,
 } from '../render/effects/wallDecorations';
 import type { WallDecoration } from '../render/effects/wallDecorations';
+import { renderDecorativeObjects } from '../render/decorativeObjects/decorativeObjectRenderer';
 import { renderRopes } from '../render/ropes/ropeRenderer';
 import type { InputState } from '../input/handler';
 import {
@@ -589,6 +590,7 @@ export function renderFrame(r: RenderFrameContext): void {
   );
 
   renderDecorationSprites(ctx, cachedDecorations, ox, oy, zoom, BLOCK_SIZE_SMALL, decorationWaveState, virtualWidthPx, virtualHeightPx);
+  renderDecorativeObjects(ctx, currentRoom.decorativeObjects, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   if (renderProfiler !== undefined) renderProfiler.stageEnd(STAGE_WALLS);
 
   // ── Entities and grapple ─────────────────────────────────────────────────

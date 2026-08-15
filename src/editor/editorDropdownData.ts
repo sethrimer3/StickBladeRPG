@@ -13,6 +13,9 @@ import { AVAILABLE_SONGS, SONG_DISPLAY_NAMES } from '../audio/musicManager';
 import { FOLDER_BLOCK_THEMES, folderThemeShortId } from '../render/walls/folderBlockThemes';
 export { BACKGROUND_OPTIONS } from '../render/backgroundCatalogue';
 
+import { DECORATIVE_OBJECT_OPTIONS } from '../render/decorativeObjects/decorativeObjectCatalogue';
+export { DECORATIVE_OBJECT_OPTIONS } from '../render/decorativeObjects/decorativeObjectCatalogue';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Active brush mode for painting tools. */
@@ -22,6 +25,20 @@ export type BrushMode = 'single' | '3x3' | '5x5' | 'rect' | 'fill';
 // so tests can import them; re-exported here for existing callers.
 export type { PaletteCategory, PaletteItem } from './editorPaletteItems';
 export { PALETTE_CATEGORIES, PALETTE_CATEGORY_LABELS, PALETTE_ITEMS } from './editorPaletteItems';
+import { PALETTE_ITEMS, type PaletteItem } from './editorPaletteItems';
+
+export function getDiscoveredDecorativePaletteItems(): PaletteItem[] {
+  if (DECORATIVE_OBJECT_OPTIONS.length === 0) {
+    return PALETTE_ITEMS.filter(i => i.category === 'decorativeObjects');
+  }
+  return DECORATIVE_OBJECT_OPTIONS.map(opt => ({
+    id: `decorative_${opt.id}`,
+    label: opt.label,
+    category: 'decorativeObjects',
+    isDecorativeObjectItem: 1,
+    decorativeObjectType: opt.id,
+  }));
+}
 
 export type RopeDestructibility = 'indestructible' | 'playerOnly' | 'any';
 

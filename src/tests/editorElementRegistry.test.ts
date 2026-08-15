@@ -38,7 +38,7 @@ function makeRoom(overrides: Partial<EditorRoomData> = {}): EditorRoomData {
 const EXPECTED_TYPES: readonly SelectedElementType[] = [
   'wall', 'enemy', 'transition', 'saveTomb', 'skillTomb', 'challengeField', 'challengeGate',
   'gate', 'challengeTotem', 'dustContainer', 'dustContainerPiece', 'dustBoostJar', 'dustSwarm',
-  'lambdaAnchor', 'dustPile', 'grasshopperArea', 'fireflyArea', 'decoration', 'playerSpawn',
+  'lambdaAnchor', 'dustPile', 'grasshopperArea', 'fireflyArea', 'decoration', 'decorativeObject', 'playerSpawn',
   'campaignSpawn', 'ambientLightBlocker', 'lightSource', 'waterZone', 'lavaZone', 'timeStopField',
   'poisonField',
   'crumbleBlock', 'spike', 'laser', 'bouncePad', 'kineticBlock', 'grappleCarryBlock', 'zipMoveBlock',

@@ -536,6 +536,13 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
   }));
   if (saved.grasshopperAreas) json.grasshopperAreas = saved.grasshopperAreas.map(([x, y, w, h, count]) => ({ xBlock: x, yBlock: y, wBlock: w, hBlock: h, count }) as RoomJsonGrasshopperArea);
   if (saved.decorations)    json.decorations     = saved.decorations.map(([x, y, kind]) => ({ xBlock: x, yBlock: y, kind }) as RoomJsonDecoration);
+  if (saved.decorativeObjects) json.decorativeObjects = saved.decorativeObjects.map(([x, y, objectType, offsetXPixel, offsetYPixel]) => ({
+    xBlock: x,
+    yBlock: y,
+    objectType,
+    offsetXPixel: offsetXPixel ?? 0,
+    offsetYPixel: offsetYPixel ?? 0,
+  }));
   if (saved.pixelMaterials) json.pixelMaterials  = saved.pixelMaterials.map(([x, y, material]) => ({ xPixel: x, yPixel: y, material }) as RoomJsonPixelMaterial);
   if (saved.ambientDir) {
     // Cast — the JSON field is typed as the literal union `AmbientLightDirection`.

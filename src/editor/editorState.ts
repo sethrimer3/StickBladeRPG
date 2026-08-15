@@ -31,7 +31,7 @@ export type {
   EditorSaveTomb, EditorSkillTomb, EditorDustContainer, EditorDustContainerPiece,
   EditorDustBoostJar, EditorDustSwarm, EditorLambdaAnchor, EditorDustPile,
   EditorFireflyJar, EditorSpringboard, EditorBreakableBlock,
-  EditorGrasshopperArea, EditorFireflyArea, EditorDecoration,
+  EditorGrasshopperArea, EditorFireflyArea, EditorDecoration, EditorDecorativeObject,
   EditorAmbientLightBlocker, EditorLightSource, EditorSunbeam, EditorFallingBlock,
   EditorBackgroundBlock, EditorDialogueEntry, EditorDialogueTrigger,
   EditorGuideDustPath, EditorGuideDustPathPoint,

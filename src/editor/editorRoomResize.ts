@@ -109,6 +109,11 @@ export function applyRoomDimensionChange(
     deco.yBlock = Math.min(Math.max(0, deco.yBlock), maxY);
   }
 
+  for (const deco of (room.decorativeObjects ?? [])) {
+    deco.xBlock = Math.min(Math.max(0, deco.xBlock), maxX);
+    deco.yBlock = Math.min(Math.max(0, deco.yBlock), maxY);
+  }
+
   for (const light of (room.lightSources ?? [])) {
     light.xBlock = Math.min(Math.max(0, light.xBlock), maxX);
     light.yBlock = Math.min(Math.max(0, light.yBlock), maxY);
@@ -324,6 +329,7 @@ export function applyEdgeResize(
     'enemies', 'saveTombs', 'skillTombs', 'challengeTotems', 'dustContainers',
     'dustContainerPieces', 'dustBoostJars', 'dustSwarms', 'lambdaAnchors',
     'fireflyJars', 'springboards', 'lasers', 'breakableBlocks', 'dustPiles', 'decorations',
+    'decorativeObjects',
     'ambientLightBlockers', 'lightSources', 'fallingBlocks', 'phantasmalTiles',
     'grappleCarryBlocks',
   ] as const) {

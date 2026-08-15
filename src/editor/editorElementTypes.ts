@@ -558,6 +558,16 @@ export interface EditorDecoration {
   kind: DecorationKind;
 }
 
+/** An editor-placed decorative object (custom sprite with 1:1 scaling and ±8px shift). */
+export interface EditorDecorativeObject {
+  uid: number;
+  xBlock: number;
+  yBlock: number;
+  objectType: string;
+  offsetXPixel?: number;
+  offsetYPixel?: number;
+}
+
 // ── Lighting elements ─────────────────────────────────────────────────────────
 
 /**
@@ -744,6 +754,8 @@ export interface EditorRoomData {
   fireflyAreas: EditorFireflyArea[];
   /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
   decorations: EditorDecoration[];
+  /** Editor-placed decorative objects (custom sprites with 1:1 scaling and ±8px shift). */
+  decorativeObjects?: EditorDecorativeObject[];
   /** Editor-painted ambient-light blocker tiles (sparse). */
   ambientLightBlockers: EditorAmbientLightBlocker[];
   /** Editor-placed local light sources. */
@@ -792,7 +804,7 @@ export interface EditorRoomData {
 
 // ── Selected element reference ────────────────────────────────────────────────
 
-export type SelectedElementType = 'wall' | 'enemy' | 'transition' | 'saveTomb' | 'skillTomb' | 'challengeField' | 'challengeGate' | 'gate' | 'challengeTotem' | 'dustContainer' | 'dustContainerPiece' | 'dustBoostJar' | 'dustSwarm' | 'lambdaAnchor' | 'dustPile' | 'grasshopperArea' | 'fireflyArea' | 'decoration' | 'playerSpawn' | 'campaignSpawn' | 'ambientLightBlocker' | 'lightSource' | 'waterZone' | 'lavaZone' | 'timeStopField' | 'poisonField' | 'crumbleBlock' | 'spike' | 'laser' | 'bouncePad' | 'kineticBlock' | 'grappleCarryBlock' | 'zipMoveBlock' | 'phantasmalTile' | 'pixelMaterial' | 'rope' | 'sunbeam' | 'sceneLight' | 'fallingBlock' | 'dialogueTrigger' | 'backgroundBlock' | 'guideDustPath' | 'customBlock' | 'fireflyJar' | 'springboard' | 'breakableBlock';
+export type SelectedElementType = 'wall' | 'enemy' | 'transition' | 'saveTomb' | 'skillTomb' | 'challengeField' | 'challengeGate' | 'gate' | 'challengeTotem' | 'dustContainer' | 'dustContainerPiece' | 'dustBoostJar' | 'dustSwarm' | 'lambdaAnchor' | 'dustPile' | 'grasshopperArea' | 'fireflyArea' | 'decoration' | 'decorativeObject' | 'playerSpawn' | 'campaignSpawn' | 'ambientLightBlocker' | 'lightSource' | 'waterZone' | 'lavaZone' | 'timeStopField' | 'poisonField' | 'crumbleBlock' | 'spike' | 'laser' | 'bouncePad' | 'kineticBlock' | 'grappleCarryBlock' | 'zipMoveBlock' | 'phantasmalTile' | 'pixelMaterial' | 'rope' | 'sunbeam' | 'sceneLight' | 'fallingBlock' | 'dialogueTrigger' | 'backgroundBlock' | 'guideDustPath' | 'customBlock' | 'fireflyJar' | 'springboard' | 'breakableBlock';
 
 export interface SelectedElement {
   type: SelectedElementType;

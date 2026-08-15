@@ -169,7 +169,7 @@ import type {
   EditorWall, EditorEnemy, EditorTransition, EditorSaveTomb, EditorSkillTomb,
   EditorChallengeRect, EditorChallengeTotem, EditorGate, EditorDustContainer,
   EditorDustContainerPiece, EditorDustBoostJar, EditorDustSwarm, EditorLambdaAnchor,
-  EditorDustPile, EditorGrasshopperArea, EditorFireflyArea, EditorDecoration,
+  EditorDustPile, EditorGrasshopperArea, EditorFireflyArea, EditorDecoration, EditorDecorativeObject,
   EditorAmbientLightBlocker, EditorLightSource, EditorWaterZone, EditorLavaZone,
   EditorTimeStopField, EditorPoisonField, EditorCrumbleBlock, EditorSpike, EditorLaser, EditorBouncePad,
   EditorKineticBlock, EditorGrappleCarryBlock, EditorZipMoveBlock, EditorPhantasmalTile,
@@ -213,6 +213,7 @@ const dustPileAdapter = pointAdapter<EditorDustPile>('dustPile', getLayerForElem
 const grasshopperAreaAdapter = zoneAdapter<EditorGrasshopperArea>('grasshopperArea', getLayerForElementType('grasshopperArea'), (_s, room) => room.grasshopperAreas);
 const fireflyAreaAdapter = zoneAdapter<EditorFireflyArea>('fireflyArea', getLayerForElementType('fireflyArea'), (_s, room) => room.fireflyAreas ?? []);
 const decorationAdapter = pointAdapter<EditorDecoration>('decoration', getLayerForElementType('decoration'), (_s, room) => room.decorations ?? []);
+const decorativeObjectAdapter = pointAdapter<EditorDecorativeObject>('decorativeObject', getLayerForElementType('decorativeObject'), (_s, room) => room.decorativeObjects ?? []);
 
 const ambientLightBlockerAdapter: EditorElementAdapter<EditorAmbientLightBlocker> = {
   elementType: 'ambientLightBlocker',
@@ -429,6 +430,7 @@ export const ELEMENT_ADAPTERS: { readonly [K in SelectedElementType]: EditorElem
   grasshopperArea: grasshopperAreaAdapter,
   fireflyArea: fireflyAreaAdapter,
   decoration: decorationAdapter,
+  decorativeObject: decorativeObjectAdapter,
   playerSpawn: playerSpawnAdapter,
   campaignSpawn: campaignSpawnAdapter,
   ambientLightBlocker: ambientLightBlockerAdapter,

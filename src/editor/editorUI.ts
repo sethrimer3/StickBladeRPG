@@ -13,6 +13,7 @@ import {
   RoomEdge, EditorUICallbacks, BrushMode, BlockPlacementModifier,
   CRUMBLE_VARIANT_OPTIONS, CrumbleVariant, PaletteItem,
 } from './editorState';
+import { getDiscoveredDecorativePaletteItems } from './editorDropdownData';
 import {
   addDimField,
 } from './editorFormWidgets';
@@ -1214,7 +1215,9 @@ export function createEditorUI(
         if (state.activeCategory === 'lighting') {
           lightingPanel.syncOnRebuild(state, currentLighting, paletteDiv);
         }
-        const items = PALETTE_ITEMS.filter(i => i.category === state.activeCategory);
+        const items = state.activeCategory === 'decorativeObjects'
+          ? getDiscoveredDecorativePaletteItems()
+          : PALETTE_ITEMS.filter(i => i.category === state.activeCategory);
 
         // Custom blocks panel — generated dynamically from registry
         if (state.activeCategory === 'customBlocks') {

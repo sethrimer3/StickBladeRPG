@@ -121,6 +121,7 @@ const ELEMENT_TYPE_LAYER: Readonly<Record<SelectedElementType, LayerId>> = {
   grasshopperArea: 'enemies',
   fireflyArea: 'lighting',
   decoration: 'foreground',
+  decorativeObject: 'foreground',
   playerSpawn: 'roomStructure',
   campaignSpawn: 'roomStructure',
   ambientLightBlocker: 'lighting',
@@ -173,6 +174,7 @@ const CATEGORY_DEFAULT_LAYER: Readonly<Record<PaletteCategory, LayerId>> = {
   ropes: 'objects',
   guidePaths: 'paths',
   customBlocks: 'terrain',
+  decorativeObjects: 'foreground',
 };
 
 /**

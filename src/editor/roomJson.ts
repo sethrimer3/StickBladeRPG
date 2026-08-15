@@ -19,7 +19,7 @@ import { legacyChallengeGateToRoomGate, normalizeRoomGateDef } from '../levels/g
 import type {
   EditorRoomData, EditorEnemy, EditorTransition, EditorWall,
   EditorSaveTomb, EditorSkillTomb, EditorDustPile,
-  EditorGrasshopperArea, EditorFireflyArea, EditorDecoration,
+  EditorGrasshopperArea, EditorFireflyArea, EditorDecoration, EditorDecorativeObject,
   EditorAmbientLightBlocker, EditorLightSource, EditorSunbeam,
   EditorWaterZone, EditorLavaZone, EditorTimeStopField, EditorPoisonField, EditorCrumbleBlock, EditorSpike, EditorLaser, EditorBouncePad, EditorKineticBlock,
   EditorRope, RopeDestructibility,
@@ -73,6 +73,7 @@ export type {
   RoomJsonGrasshopperArea,
   RoomJsonFireflyArea,
   RoomJsonDecoration,
+  RoomJsonDecorativeObject,
   RoomJsonAmbientLightBlocker,
   RoomJsonLightSource,
   RoomJsonSunbeam,
@@ -446,6 +447,15 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
     kind: d.kind,
   }));
 
+  const decorativeObjects: EditorDecorativeObject[] = (json.decorativeObjects ?? []).map(d => ({
+    uid: uid++,
+    xBlock: d.xBlock,
+    yBlock: d.yBlock,
+    objectType: d.objectType,
+    offsetXPixel: d.offsetXPixel ?? 0,
+    offsetYPixel: d.offsetYPixel ?? 0,
+  }));
+
   const ambientLightBlockers: EditorAmbientLightBlocker[] = (json.ambientLightBlockers ?? []).map(b => ({
     uid: uid++,
     xBlock: b.xBlock,
@@ -698,6 +708,7 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
       grasshopperAreas,
       fireflyAreas,
       decorations,
+      decorativeObjects,
       ambientLightBlockers,
       lightSources,
       waterZones,

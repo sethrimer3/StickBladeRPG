@@ -16,6 +16,7 @@
 import type { PaletteItem } from './editorState';
 import { THEME_BLOCK_SPRITE_URL, makeBlockPreviewShapeCss, makePaletteCardShell, makePreviewContainer } from './editorUIHelpers';
 import { getKineticBlockSpriteUrls } from '../render/specialBlocks/specialBlockSprites';
+import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
 
 // ── Warning log deduplication ────────────────────────────────────────────────
 
@@ -692,6 +693,9 @@ export function getPaletteItemSpriteUrl(itemId: string): string | null {
   // Check sprite override table
   const direct = ITEM_SPRITE_URL[itemId];
   if (direct !== undefined) return direct;
+  if (itemId.startsWith('decorative_')) {
+    return getDecorativeObjectSpriteUrl(itemId.slice('decorative_'.length));
+  }
   return null;
 }
 
@@ -708,6 +712,7 @@ export type PalettePreviewKind =
  */
 export function getPalettePreviewKind(item: PaletteItem): PalettePreviewKind {
   if (item.category === 'specialBlocks') return 'specialBlock';
+  if (item.category === 'decorativeObjects' || item.isDecorativeObjectItem === 1) return 'sprite';
   if (Object.prototype.hasOwnProperty.call(ITEM_SPRITE_URL, item.id)) return 'sprite';
   if (Object.prototype.hasOwnProperty.call(ITEM_VISUAL, item.id)) return 'procedural';
   return 'none';
@@ -774,6 +779,14 @@ export function makePalettePreviewCard(
 
   if (item.category === 'specialBlocks') {
     previewEl = _makeSpecialBlockPreview(item, blockTheme);
+  } else if (item.category === 'decorativeObjects' || item.isDecorativeObjectItem === 1) {
+    const objectType = item.decorativeObjectType ?? (item.id.startsWith('decorative_') ? item.id.slice('decorative_'.length) : item.id);
+    const spriteUrl = getDecorativeObjectSpriteUrl(objectType);
+    if (spriteUrl) {
+      previewEl = _makeSpritePreview(spriteUrl, item.id);
+    } else {
+      previewEl = _makeProceduralPreview({ bg: '#1c2214', glyph: '✿' });
+    }
   } else {
     const spriteUrl = ITEM_SPRITE_URL[item.id];
     if (spriteUrl !== undefined) {

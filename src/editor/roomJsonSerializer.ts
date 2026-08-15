@@ -297,6 +297,15 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       kind: d.kind,
     }));
   }
+  if ((data.decorativeObjects ?? []).length > 0) {
+    json.decorativeObjects = data.decorativeObjects!.map(d => ({
+      xBlock: d.xBlock,
+      yBlock: d.yBlock,
+      objectType: d.objectType,
+      ...(d.offsetXPixel !== undefined && d.offsetXPixel !== 0 ? { offsetXPixel: d.offsetXPixel } : {}),
+      ...(d.offsetYPixel !== undefined && d.offsetYPixel !== 0 ? { offsetYPixel: d.offsetYPixel } : {}),
+    }));
+  }
   if (data.ambientLightDirection) {
     json.ambientLightDirection = data.ambientLightDirection;
   }

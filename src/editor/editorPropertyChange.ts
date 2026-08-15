@@ -22,6 +22,7 @@ import type {
   EditorGrasshopperArea,
   EditorFireflyArea,
   EditorDecoration,
+  EditorDecorativeObject,
   EditorLightSource,
   EditorSunbeam,
   EditorWaterZone,
@@ -368,6 +369,21 @@ export function applyPropertyToElement(
       if (prop === 'decoration.xBlock' && !isNaN(numVal)) deco.xBlock = numVal;
       if (prop === 'decoration.yBlock' && !isNaN(numVal)) deco.yBlock = numVal;
     }
+  } else if (el.type === 'decorativeObject') {
+    const deco = (room.decorativeObjects ?? []).find((d: EditorDecorativeObject) => d.uid === el.uid);
+    if (deco) {
+      if (prop === 'decorativeObject.xBlock' && !isNaN(numVal)) deco.xBlock = numVal;
+      if (prop === 'decorativeObject.yBlock' && !isNaN(numVal)) deco.yBlock = numVal;
+      if (prop === 'decorativeObject.offsetXPixel' && !isNaN(numVal)) {
+        deco.offsetXPixel = Math.max(-8, Math.min(8, Math.round(numVal)));
+      }
+      if (prop === 'decorativeObject.offsetYPixel' && !isNaN(numVal)) {
+        deco.offsetYPixel = Math.max(-8, Math.min(8, Math.round(numVal)));
+      }
+      if (prop === 'decorativeObject.objectType' && typeof value === 'string') {
+        deco.objectType = value;
+      }
+    }
   } else if (el.type === 'lightSource') {
     const light = (room.lightSources ?? []).find((l: EditorLightSource) => l.uid === el.uid);
     if (light) {
@@ -513,6 +529,7 @@ function findElementRef(room: EditorRoomData, el: SelectedElement): unknown {
     case 'grasshopperArea': return room.grasshopperAreas.find(a => a.uid === el.uid);
     case 'fireflyArea': return (room.fireflyAreas ?? []).find(a => a.uid === el.uid);
     case 'decoration': return (room.decorations ?? []).find(d => d.uid === el.uid);
+    case 'decorativeObject': return (room.decorativeObjects ?? []).find(d => d.uid === el.uid);
     case 'lightSource': return (room.lightSources ?? []).find(l => l.uid === el.uid);
     case 'sunbeam': return (room.sunbeams ?? []).find(s => s.uid === el.uid);
     case 'rope': return (room.ropes ?? []).find(r => r.uid === el.uid);

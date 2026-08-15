@@ -555,6 +555,13 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   if (json.decorations && json.decorations.length > 0) {
     out.decorations = json.decorations.map(d => [d.xBlock, d.yBlock, d.kind] as [number, number, string]);
   }
+  if (json.decorativeObjects && json.decorativeObjects.length > 0) {
+    out.decorativeObjects = json.decorativeObjects.map(d =>
+      (d.offsetXPixel !== undefined && d.offsetXPixel !== 0) || (d.offsetYPixel !== undefined && d.offsetYPixel !== 0)
+        ? [d.xBlock, d.yBlock, d.objectType, d.offsetXPixel ?? 0, d.offsetYPixel ?? 0]
+        : [d.xBlock, d.yBlock, d.objectType],
+    );
+  }
   if (json.pixelMaterials && json.pixelMaterials.length > 0) {
     out.pixelMaterials = json.pixelMaterials.map(p => [p.xPixel, p.yPixel, p.material] as [number, number, number]);
   }
@@ -898,7 +905,7 @@ export function validateRoomRoundtrip(json: RoomJsonDef): string[] {
     'challengeFields', 'challengeGates', 'challengeTotems', 'gates',
     'dustContainers', 'dustContainerPieces', 'dustBoostJars', 'dustSwarms',
     'lambdaAnchors', 'fireflyJars', 'springboards', 'breakableBlocks',
-    'dustPiles', 'grasshopperAreas', 'fireflyAreas', 'decorations',
+    'dustPiles', 'grasshopperAreas', 'fireflyAreas', 'decorations', 'decorativeObjects',
     'lightSources', 'sunbeams', 'sceneLights', 'fallingBlocks', 'crumbleBlocks',
     'spikes', 'lasers', 'bouncePads', 'kineticBlocks', 'grappleCarryBlocks',
     'zipMoveBlocks', 'phantasmalTiles', 'pixelMaterials', 'ropes',

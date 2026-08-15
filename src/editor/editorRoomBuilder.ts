@@ -419,6 +419,13 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
       yBlock: d.yBlock,
       kind: d.kind,
     })),
+    decorativeObjects: (data.decorativeObjects ?? []).map(d => ({
+      xBlock: d.xBlock,
+      yBlock: d.yBlock,
+      objectType: d.objectType,
+      offsetXPixel: d.offsetXPixel ?? 0,
+      offsetYPixel: d.offsetYPixel ?? 0,
+    })),
     ambientLightDirection: data.ambientLightDirection,
     directionalBias:       data.directionalBias,
     sideExposureStrength:  data.sideExposureStrength,

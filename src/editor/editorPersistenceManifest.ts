@@ -16,7 +16,7 @@ export const EDITOR_ROOM_ELEMENT_COLLECTION_KEYS = [
   'challengeFields', 'challengeGates', 'challengeTotems', 'gates',
   'dustContainers', 'dustContainerPieces', 'dustBoostJars', 'dustSwarms',
   'lambdaAnchors', 'fireflyJars', 'springboards', 'breakableBlocks',
-  'dustPiles', 'grasshopperAreas', 'fireflyAreas', 'decorations',
+  'dustPiles', 'grasshopperAreas', 'fireflyAreas', 'decorations', 'decorativeObjects',
   'ambientLightBlockers', 'lightSources', 'waterZones', 'lavaZones',
   'timeStopFields', 'poisonFields', 'crumbleBlocks', 'spikes', 'lasers', 'bouncePads', 'kineticBlocks',
   'grappleCarryBlocks', 'zipMoveBlocks', 'phantasmalTiles', 'pixelMaterials',

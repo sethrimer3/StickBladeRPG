@@ -500,6 +500,20 @@ export interface RoomDecorationDef {
   kind: DecorationKind;
 }
 
+/** A placed decorative object with 1:1 sprite scaling and ±8px X/Y shift. */
+export interface RoomDecorativeObjectDef {
+  /** Block column (X). */
+  xBlock: number;
+  /** Block row (Y). */
+  yBlock: number;
+  /** Discovered sprite ID / object type name (e.g. 'OakTree1'). */
+  objectType: string;
+  /** Pixel shift on the X-axis in range [-8, 8]. Defaults to 0. */
+  offsetXPixel?: number;
+  /** Pixel shift on the Y-axis in range [-8, 8]. Defaults to 0. */
+  offsetYPixel?: number;
+}
+
 // ── Falling blocks ────────────────────────────────────────────────────────────
 
 /**

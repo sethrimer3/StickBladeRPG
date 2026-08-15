@@ -528,6 +528,10 @@ export function wouldPlacementSucceedAt(
     return alreadyPlaced ? 'occupied' : true;
   }
 
+  if (item.isDecorativeObjectItem === 1 || item.category === 'decorativeObjects') {
+    return true;
+  }
+
   if (item.category === 'ropes') {
     // First click of a rope only sets a pending anchor — always "valid" as a
     // location (the second click is what can actually fail min-length/wall-
@@ -1311,6 +1315,17 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       xBlock: bx,
       yBlock: targetRow,
       kind,
+    });
+  } else if (item.isDecorativeObjectItem === 1 || item.category === 'decorativeObjects') {
+    const objectType = item.decorativeObjectType ?? (item.id.startsWith('decorative_') ? item.id.slice('decorative_'.length) : item.id);
+    if (!room.decorativeObjects) room.decorativeObjects = [];
+    room.decorativeObjects.push({
+      uid: allocateUid(state),
+      xBlock: bx,
+      yBlock: by,
+      objectType,
+      offsetXPixel: 0,
+      offsetYPixel: 0,
     });
   } else if (item.category === 'ropes') {
     if (state.pendingRopeAnchorXBlock === null) {

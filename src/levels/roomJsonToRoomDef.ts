@@ -371,6 +371,16 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
     }));
   }
 
+  if (json.decorativeObjects && json.decorativeObjects.length > 0) {
+    room.decorativeObjects = json.decorativeObjects.map(d => ({
+      xBlock: d.xBlock,
+      yBlock: d.yBlock,
+      objectType: d.objectType,
+      offsetXPixel: d.offsetXPixel ?? 0,
+      offsetYPixel: d.offsetYPixel ?? 0,
+    }));
+  }
+
   if (json.ambientLightDirection) {
     room.ambientLightDirection = json.ambientLightDirection;
   }

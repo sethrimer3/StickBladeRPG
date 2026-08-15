@@ -53,6 +53,7 @@ import type {
   RoomDustSwarmDef,
   RoomDustPileDef,
   RoomDecorationDef,
+  RoomDecorativeObjectDef,
   RoomFallingBlockDef,
   RoomBackgroundBlockDef,
   RoomGrasshopperAreaDef,
@@ -570,6 +571,7 @@ export type {
   RoomDustPileDef,
   DecorationKind,
   RoomDecorationDef,
+  RoomDecorativeObjectDef,
   FallingBlockVariant,
   RoomFallingBlockDef,
   RoomBackgroundBlockDef,
@@ -867,6 +869,8 @@ export interface RoomDef {
   fireflyAreas?: readonly RoomFireflyAreaDef[];
   /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
   decorations?: readonly RoomDecorationDef[];
+  /** Editor-placed decorative objects (custom sprites with 1:1 scaling and ±8px shift). */
+  decorativeObjects?: readonly RoomDecorativeObjectDef[];
   /** Falling block tiles — grouped into rigid falling units at load time. */
   fallingBlocks?: readonly RoomFallingBlockDef[];
   /** Visual-only background blocks — no collision, drawn behind foreground walls. */

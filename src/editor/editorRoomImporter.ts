@@ -28,6 +28,7 @@ import type {
   EditorGrasshopperArea,
   EditorFireflyArea,
   EditorDecoration,
+  EditorDecorativeObject,
   EditorAmbientLightBlocker,
   EditorLightSource,
   EditorSunbeam,
@@ -347,6 +348,15 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
     kind: d.kind,
   }));
 
+  const decorativeObjects: EditorDecorativeObject[] = (room.decorativeObjects ?? []).map(d => ({
+    uid: uid++,
+    xBlock: d.xBlock,
+    yBlock: d.yBlock,
+    objectType: d.objectType,
+    offsetXPixel: d.offsetXPixel ?? 0,
+    offsetYPixel: d.offsetYPixel ?? 0,
+  }));
+
   const ambientLightBlockers: EditorAmbientLightBlocker[] = (room.ambientLightBlockers ?? []).map(b => ({
     uid: uid++,
     xBlock: b.xBlock,
@@ -620,6 +630,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
       grasshopperAreas,
       fireflyAreas,
       decorations,
+      decorativeObjects,
       ambientLightBlockers,
       lightSources,
       waterZones,

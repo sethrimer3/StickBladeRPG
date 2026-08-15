@@ -36,6 +36,7 @@ import {
 } from './editorRendererHelpers';
 import { loadImg, isSpriteReady } from '../render/imageCache';
 import { THEME_BLOCK_SPRITE_URL } from './editorUIHelpers';
+import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
 
 // ============================================================================
 // Sprite animation tables for ghost placement preview
@@ -697,6 +698,34 @@ export function drawPlacementPreview(
       positionBlock: placement.positionBlock,
     };
     drawTransitionZone(ctx, previewTransition, room, offsetXPx, offsetYPx, zoom, PREVIEW_COLOR, 0, true);
+    return;
+  }
+
+  if (item.isDecorativeObjectItem === 1 || item.category === 'decorativeObjects') {
+    const objectType = item.decorativeObjectType ?? (item.id.startsWith('decorative_') ? item.id.slice('decorative_'.length) : item.id);
+    const spriteUrl = getDecorativeObjectSpriteUrl(objectType);
+    const xPx = state.cursorBlockX * BLOCK_SIZE_SMALL * zoom + offsetXPx;
+    const yPx = state.cursorBlockY * BLOCK_SIZE_SMALL * zoom + offsetYPx;
+    let drawn = false;
+    if (spriteUrl) {
+      const sprite = loadImg(spriteUrl);
+      if (isSpriteReady(sprite) && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+        const wPx = sprite.naturalWidth * zoom;
+        const hPx = sprite.naturalHeight * zoom;
+        ctx.save();
+        ctx.globalAlpha = SPRITE_GHOST_ALPHA;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sprite, Math.round(xPx), Math.round(yPx), Math.round(wPx), Math.round(hPx));
+        ctx.strokeStyle = '#ffd85a';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(xPx), Math.round(yPx), Math.round(wPx), Math.round(hPx));
+        ctx.restore();
+        drawn = true;
+      }
+    }
+    if (!drawn) {
+      drawMarker(ctx, state.cursorBlockX, state.cursorBlockY, offsetXPx, offsetYPx, zoom, 'rgba(100,200,120,0.6)', '✿');
+    }
     return;
   }
 

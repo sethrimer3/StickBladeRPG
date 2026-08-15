@@ -248,6 +248,7 @@ export function countRoomDefCategories(room: RoomDef): RoomComplexityCategoryCou
     tiles: room.walls.length + (room.backgroundBlocks?.length ?? 0),
     objects:
       (room.decorations?.length ?? 0) +
+      (room.decorativeObjects?.length ?? 0) +
       (room.dustContainers?.length ?? 0) +
       (room.dustContainerPieces?.length ?? 0) +
       (room.dustBoostJars?.length ?? 0) +

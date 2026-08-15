@@ -31,6 +31,8 @@ import {
   type EditorViewport,
 } from './editorRendererHelpers';
 import { editorPerfCounters } from './editorPerfCounters';
+import { loadImg, isSpriteReady } from '../render/imageCache';
+import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
 
 /** Helper type: function that returns whether a room element is selected. */
 export type IsElementSelected = (type: string, uid: number) => boolean;
@@ -705,7 +707,7 @@ export function drawEditorEnvironmentItems(
   ctx: CanvasRenderingContext2D,
   room: EditorRoomData,
   isSelected: IsElementSelected,
-  isTypeVisible: (type: 'decoration' | 'fallingBlock') => boolean,
+  isTypeVisible: (type: 'decoration' | 'decorativeObject' | 'fallingBlock') => boolean,
   offsetXPx: number,
   offsetYPx: number,
   zoom: number,
@@ -720,6 +722,41 @@ export function drawEditorEnvironmentItems(
     const emoji = d.kind === 'mushroom' ? '🍄' : d.kind === 'glowGrass' ? '🌿' : d.kind === 'tallGrass' ? '🌾' : '🌱';
     const color = sel ? 'rgba(80,220,130,0.9)' : 'rgba(60,170,90,0.55)';
     drawMarker(ctx, d.xBlock, d.yBlock, offsetXPx, offsetYPx, zoom, color, emoji);
+  }
+
+  // Decorative Objects (OakTree1, etc.) — Foreground layer
+  if (isTypeVisible('decorativeObject')) for (const d of (room.decorativeObjects ?? [])) {
+    editorPerfCounters.overlayElementsVisited++;
+    if (!isElementInViewport(viewport, d.xBlock, d.yBlock, 1, 1)) continue;
+    editorPerfCounters.overlayElementsDrawn++;
+    const sel = isSelected('decorativeObject', d.uid);
+    const spriteUrl = getDecorativeObjectSpriteUrl(d.objectType);
+    const worldX = d.xBlock * BLOCK_SIZE_SMALL + (d.offsetXPixel ?? 0);
+    const worldY = d.yBlock * BLOCK_SIZE_SMALL + (d.offsetYPixel ?? 0);
+    const screenX = worldX * zoom + offsetXPx;
+    const screenY = worldY * zoom + offsetYPx;
+    let drawn = false;
+    if (spriteUrl) {
+      const sprite = loadImg(spriteUrl);
+      if (isSpriteReady(sprite) && sprite.naturalWidth > 0 && sprite.naturalHeight > 0) {
+        const wPx = sprite.naturalWidth * zoom;
+        const hPx = sprite.naturalHeight * zoom;
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(sprite, Math.round(screenX), Math.round(screenY), Math.round(wPx), Math.round(hPx));
+        if (sel) {
+          ctx.strokeStyle = '#ffd85a';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(Math.round(screenX), Math.round(screenY), Math.round(wPx), Math.round(hPx));
+        }
+        ctx.restore();
+        drawn = true;
+      }
+    }
+    if (!drawn) {
+      const color = sel ? 'rgba(255,216,90,0.9)' : 'rgba(100,200,120,0.55)';
+      drawMarker(ctx, d.xBlock, d.yBlock, offsetXPx, offsetYPx, zoom, color, '✿');
+    }
   }
 
   // Falling block tiles (standard, tough, sensitive) — Dynamic Geometry layer

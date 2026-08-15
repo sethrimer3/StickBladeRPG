@@ -1686,6 +1686,7 @@ export function createEditorController(
       for (const s of state.roomData.challengeTotems ?? []) maxUid = Math.max(maxUid, s.uid + 1);
       for (const p of state.roomData.dustPiles)      maxUid = Math.max(maxUid, p.uid + 1);
       for (const d of (state.roomData.decorations ?? [])) maxUid = Math.max(maxUid, d.uid + 1);
+      for (const d of (state.roomData.decorativeObjects ?? [])) maxUid = Math.max(maxUid, d.uid + 1);
       // Ensure nextUid never regresses below its current value (other rooms may
       // already have used higher UIDs during this session).
       state.nextUid = Math.max(state.nextUid, maxUid);

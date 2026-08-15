@@ -411,6 +411,8 @@ export interface SavedRoomV2 {
   grasshopperAreas?: [number, number, number, number, number][];
   /** [x, y, kind] */
   decorations?: [number, number, string][];
+  /** [x, y, objectType, offsetXPixel?, offsetYPixel?] */
+  decorativeObjects?: [number, number, string, number?, number?][];
   /**
    * Authored ambient/skylight direction (see `AmbientLightDirection`).
    * Stored verbatim as the string literal.

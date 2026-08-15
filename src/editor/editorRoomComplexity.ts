@@ -28,6 +28,7 @@ export function countEditorRoomDataCategories(room: EditorRoomData): RoomComplex
     tiles: room.interiorWalls.length + (room.backgroundBlocks?.length ?? 0),
     objects:
       room.decorations.length +
+      (room.decorativeObjects?.length ?? 0) +
       room.dustContainers.length +
       room.dustContainerPieces.length +
       room.dustBoostJars.length +

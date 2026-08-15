@@ -34,6 +34,7 @@ export function buildElementTooltipId(type: SelectedElementType, uid: number): s
     grasshopperArea:  'grasshopper_area',
     fireflyArea:      'firefly_area',
     decoration:       'decoration',
+    decorativeObject: 'decorative_object',
     playerSpawn:      'player_spawn',
     campaignSpawn:    'campaign_spawn',
     ambientLightBlocker: 'ambient_blocker',
@@ -100,6 +101,11 @@ export function buildElementTypeName(
       if (d.kind === 'vine')      return 'Glow Vine';
     }
     return 'Decoration';
+  }
+  if (type === 'decorativeObject') {
+    const d = (room.decorativeObjects ?? []).find(x => x.uid === uid);
+    if (d) return d.objectType;
+    return 'Decorative Object';
   }
   if (type === 'skillTomb') {
     const s = room.skillTombs.find(x => x.uid === uid);

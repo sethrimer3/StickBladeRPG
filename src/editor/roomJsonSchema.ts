@@ -334,6 +334,14 @@ export interface RoomJsonDecoration {
   kind: DecorationKind;
 }
 
+export interface RoomJsonDecorativeObject {
+  xBlock: number;
+  yBlock: number;
+  objectType: string;
+  offsetXPixel?: number;
+  offsetYPixel?: number;
+}
+
 /** Authored tile-coord ambient-light blocker (see {@link RoomAmbientLightBlockerDef}). */
 export interface RoomJsonAmbientLightBlocker {
   xBlock: number;
@@ -574,6 +582,8 @@ export interface RoomJsonDef {
   fireflyAreas?: RoomJsonFireflyArea[];
   /** Editor-placed decorations (glowing mushrooms, grass tufts, vines). */
   decorations?: RoomJsonDecoration[];
+  /** Editor-placed decorative objects (custom sprites with 1:1 scaling and ±8px shift). */
+  decorativeObjects?: RoomJsonDecorativeObject[];
   /** Editor-painted falling block tiles (grouped into rigid falling units at runtime). */
   fallingBlocks?: RoomJsonFallingBlock[];
   /** Dialogue trigger zones. Absent in older rooms — ignored on load (backward-compatible). */

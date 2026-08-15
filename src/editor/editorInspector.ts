@@ -206,6 +206,11 @@ export function updateInspector(
           v => callbacks?.onPropertyChange('spike.blockTheme', v));
         addCheckbox(div, 'Cracked', false,
           v => callbacks?.onPropertyChange('block.cracked', v ? 1 : 0));
+      } else if (type === 'decorativeObject') {
+        addNumberField(div, 'offsetX (px)', 0, -8, 8,
+          v => callbacks?.onPropertyChange('decorativeObject.offsetXPixel', v));
+        addNumberField(div, 'offsetY (px)', 0, -8, 8,
+          v => callbacks?.onPropertyChange('decorativeObject.offsetYPixel', v));
       }
     } else {
       const typeInfo = document.createElement('div');
@@ -588,6 +593,19 @@ export function updateInspector(
         v => callbacks?.onPropertyChange('decoration.xBlock', parseInt(v)));
       addField(div, 'yBlock', String(deco.yBlock),
         v => callbacks?.onPropertyChange('decoration.yBlock', parseInt(v)));
+    }
+  } else if (el.type === 'decorativeObject') {
+    const deco = (room.decorativeObjects ?? []).find(d => d.uid === el.uid);
+    if (deco) {
+      addField(div, 'object', deco.objectType, () => {/* read-only */});
+      addField(div, 'xBlock', String(deco.xBlock),
+        v => callbacks?.onPropertyChange('decorativeObject.xBlock', parseInt(v)));
+      addField(div, 'yBlock', String(deco.yBlock),
+        v => callbacks?.onPropertyChange('decorativeObject.yBlock', parseInt(v)));
+      addNumberField(div, 'offsetX (px)', deco.offsetXPixel ?? 0, -8, 8,
+        v => callbacks?.onPropertyChange('decorativeObject.offsetXPixel', v));
+      addNumberField(div, 'offsetY (px)', deco.offsetYPixel ?? 0, -8, 8,
+        v => callbacks?.onPropertyChange('decorativeObject.offsetYPixel', v));
     }
   } else if (el.type === 'ambientLightBlocker') {
     const blocker = (room.ambientLightBlockers ?? []).find(b => b.uid === el.uid);

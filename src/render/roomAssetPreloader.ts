@@ -30,6 +30,7 @@ import { decodeSpriteAtlasForTheme, preloadSpriteAtlasForTheme } from './atlases
 import type { RoomDef } from '../levels/roomDef';
 import { ROOM_REGISTRY } from '../levels/rooms';
 import { preloadRoomBackgroundDecoded, isRoomBackgroundDecodeReady as _isBgDecodeReady } from './backgroundRenderer';
+import { getDecorativeObjectSpriteUrl } from './decorativeObjects/decorativeObjectCatalogue';
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -93,6 +94,12 @@ export function preloadRoomThemeSprites(room: RoomDef): void {
     }
     for (let i = 0; i < urls.length; i++) {
       loadImg(urls[i]); // fire-and-forget; already cached if loaded before
+    }
+  }
+  if (room.decorativeObjects) {
+    for (const obj of room.decorativeObjects) {
+      const url = getDecorativeObjectSpriteUrl(obj.objectType);
+      if (url) loadImg(url);
     }
   }
 }

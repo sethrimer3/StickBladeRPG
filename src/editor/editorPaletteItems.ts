@@ -29,6 +29,7 @@ export const PALETTE_CATEGORIES = [
   'ropes',
   'guidePaths',
   'customBlocks',
+  'decorativeObjects',
 ] as const;
 
 export type PaletteCategory = typeof PALETTE_CATEGORIES[number];
@@ -49,6 +50,7 @@ export const PALETTE_CATEGORY_LABELS: Readonly<Record<PaletteCategory, string>> 
   ropes: 'Ropes',
   guidePaths: 'Guide Paths',
   customBlocks: 'Custom Blocks',
+  decorativeObjects: 'Decorative Objects',
 };
 
 export interface PaletteItem {
@@ -146,6 +148,10 @@ export interface PaletteItem {
   customBlockTileWidth?: 1 | 2;
   /** Tile height of the custom block footprint (1 or 2). */
   customBlockTileHeight?: 1 | 2;
+  /** 1 if this palette item places a decorative object. */
+  isDecorativeObjectItem?: 1;
+  /** Specific decorative object type name (e.g. 'OakTree1'). */
+  decorativeObjectType?: string;
 }
 
 
@@ -332,4 +338,6 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   // shape compatibility, but no PALETTE_ITEMS entry sets them any more.
   { id: 'rope', label: 'Rope', category: 'ropes', defaultWidthBlocks: 1, defaultHeightBlocks: 1 },
   { id: 'guide_dust_path', label: 'Guide Dust Path', category: 'guidePaths', isGuideDustPathItem: 1 as const },
+  // Decorative objects (discovered from ASSETS/SPRITES/DecorativeObjects)
+  { id: 'decorative_OakTree1', label: 'OakTree1', category: 'decorativeObjects', isDecorativeObjectItem: 1, decorativeObjectType: 'OakTree1' },
 ];
