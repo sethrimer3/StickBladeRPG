@@ -279,17 +279,45 @@ export function startGameScreen(
   function resizeCanvas(): void {
     const selectedRenderSize = getSelectedRenderSize();
     const rect = canvas.getBoundingClientRect();
+    const cssWidthPx = rect.width || window.innerWidth || selectedRenderSize.widthPx;
+    const cssHeightPx = rect.height || window.innerHeight || selectedRenderSize.heightPx;
     const metrics = computeRenderViewportMetrics(
-      rect.width || window.innerWidth || selectedRenderSize.widthPx,
-      rect.height || window.innerHeight || selectedRenderSize.heightPx,
+      cssWidthPx,
+      cssHeightPx,
       selectedRenderSize.widthPx,
       selectedRenderSize.heightPx,
       window.devicePixelRatio || 1,
       getActiveWorldViewPreset().virtualHeight,
     );
-    resizeCanvasBackingStore(canvas, metrics.backingWidthPx, metrics.backingHeightPx);
     virtualWidthPx = metrics.logicalWidthPx;
     virtualHeightPx = metrics.logicalHeightPx;
+
+    if (getCrispPixelScalingEnabled()) {
+      // Experimental: force the backing store to an exact integer multiple
+      // of the virtual resolution so the virtual→device upscale (a nearest-
+      // neighbor drawImage) maps every virtual pixel to a uniform N×N block
+      // of device pixels — no fractional-scale blur. The canvas is then
+      // shrunk back to that exact device-pixel size in CSS (an exact 1:1
+      // backing-to-device mapping) and letterboxed/centered in the viewport.
+      const dpr = window.devicePixelRatio || 1;
+      const integerScale = Math.max(
+        1,
+        Math.floor(Math.min(metrics.backingWidthPx / virtualWidthPx, metrics.backingHeightPx / virtualHeightPx)),
+      );
+      const crispBackingWidthPx = virtualWidthPx * integerScale;
+      const crispBackingHeightPx = virtualHeightPx * integerScale;
+      resizeCanvasBackingStore(canvas, crispBackingWidthPx, crispBackingHeightPx);
+      canvas.style.width = `${crispBackingWidthPx / dpr}px`;
+      canvas.style.height = `${crispBackingHeightPx / dpr}px`;
+      canvas.style.left = `${(cssWidthPx - crispBackingWidthPx / dpr) / 2}px`;
+      canvas.style.top = `${(cssHeightPx - crispBackingHeightPx / dpr) / 2}px`;
+    } else {
+      resizeCanvasBackingStore(canvas, metrics.backingWidthPx, metrics.backingHeightPx);
+      canvas.style.width = '100vw';
+      canvas.style.height = '100vh';
+      canvas.style.left = '0';
+      canvas.style.top = '0';
+    }
     resizeCanvasBackingStore(virtualCanvas, virtualWidthPx, virtualHeightPx);
     // Canvas resize resets 2D context state, so enforce nearest-neighbour
     // sampling again for pixel-art sprite rendering.

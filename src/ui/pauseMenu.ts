@@ -39,6 +39,8 @@ import {
   setAdvancedWallJumpsEnabled,
   getAirCurrentsDebugEnabled,
   setAirCurrentsDebugEnabled,
+  getCrispPixelScalingEnabled,
+  setCrispPixelScalingEnabled,
 } from './renderSettings';
 import { debugPanelVisibility, setDebugPanelVisible } from './debugPanelManager';
 import { createSlideReveal } from './slideReveal';
@@ -310,6 +312,21 @@ export function showPauseMenu(
         font-size: 0.72rem; text-align: center; margin-top: 6px;
       `;
       optionsPanel.appendChild(wvHint);
+
+      // Experimental: forces the virtual→device upscale to an exact integer
+      // pixel multiple (letterboxed) instead of a fractional stretch, for
+      // testing a crisper, less blurry pixel-art look.
+      optionsPanel.appendChild(
+        makeCheckboxRow(
+          t('pause.graphics.crispPixelScaling'),
+          getCrispPixelScalingEnabled(),
+          (enabled) => {
+            setCrispPixelScalingEnabled(enabled);
+            if (callbacks.onWorldViewChanged) callbacks.onWorldViewChanged();
+          },
+          t('pause.graphics.crispPixelScalingTooltip'),
+        ),
+      );
 
       // "Camera Always Centered" parent option, with a child "Render Adjacent
       // Rooms" checkbox that smoothly reveals/hides beneath it.  The child is

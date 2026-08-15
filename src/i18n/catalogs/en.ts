@@ -196,6 +196,11 @@ export const EN_CATALOG = {
     'Displays real-time render chunk prewarm statistics and background warming queue '
     + 'status. Only active while Debug mode is on.',
   'pause.graphics.worldView': 'World View',
+  'pause.graphics.crispPixelScaling': 'CRISP PIXEL SCALING (EXPERIMENTAL)',
+  'pause.graphics.crispPixelScalingTooltip':
+    'Snaps the pixel-art upscale to an exact whole-number multiple and letterboxes the rest, '
+    + 'instead of stretching to a fractional scale. Removes fractional-scale blur for a fully '
+    + 'crisp, one-block-per-pixel look. Experimental — may show black bars on some window sizes.',
   'pause.graphics.renderAdjacentRooms': 'RENDER ADJACENT ROOMS',
   'pause.graphics.cameraAlwaysCentered': 'CAMERA ALWAYS CENTERED',
   'pause.graphics.spriteAtlasesHardDisabled':
