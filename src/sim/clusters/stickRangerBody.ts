@@ -338,6 +338,57 @@ const AIR_POSE_LAG_LIMIT = 3;
  * which reads as the figure gathering itself rather than snapping to an idle.
  */
 const STAND_POSE_BIAS = 0.05;
+
+// ── Weapon carry pose ───────────────────────────────────────────────────────
+//
+// Left to itself the rig lets both hands hang at the hips, which is where the
+// donor wanted them — Stick Ranger's figures do not hold anything. A wielded
+// weapon reads as dropped from that pose, because the hand it is drawn from is
+// behind the body as often as in front of it. These pull the holding hand (or
+// both hands, on a two-hander) forward into a carry.
+//
+// A bias rather than a constraint: the arm springs and the gait still own the
+// hand, this only leans on it. Walk cycles, knockback, and collisions all still
+// move the arm, and the weapon moves with it.
+
+/**
+ * Shoulder-to-hand rest length. Must match the arm entries in `CONSTRAINTS` —
+ * a carry target further out than the arm is simply overruled by the constraint
+ * two lines later, which is what makes the bias look like it does nothing.
+ */
+const CARRY_ARM_LENGTH = 4.8;
+/**
+ * Angle below horizontal, radians, that a carrying arm wants to hold.
+ *
+ * The target is placed on the arm's own reach circle rather than at an absolute
+ * point in front of the hip, because the shoulders sit ±4.8 either side of the
+ * hip: the trailing shoulder physically cannot put its hand in front of the
+ * body, so an absolute target would be dragged back every frame. Forward of its
+ * own shoulder is the reachable version of the same intent, and it still puts
+ * the two-handed grip — the midpoint of the hands — well in front of the hip.
+ *
+ * Just past 60° down reads as a relaxed carry; nearer horizontal reads as
+ * presenting the weapon, which belongs to an attack rather than to standing.
+ */
+const CARRY_ARM_ANGLE_RAD = 1.05;
+/**
+ * Angular split between the two hands of a two-handed grip, radians.
+ *
+ * Both hands hold one haft, so they belong close together — but exactly
+ * together draws both forearms as a single line. Splitting the arm angles reads
+ * as two hands spaced along a grip.
+ */
+const CARRY_TWO_HAND_SPLIT_RAD = 0.22;
+/**
+ * Strength of the carry pull.
+ *
+ * Between the standing settle (0.05, meant to be invisible) and the airborne
+ * pose: the hand should visibly favour the front without the arm feeling
+ * pinned there. At 0.09 a hand crosses from behind the body to the carry in
+ * roughly fifteen frames, which reads as the arm swinging forward rather than
+ * teleporting.
+ */
+const CARRY_POSE_BIAS = 0.09;
 /** Half the standing foot gap — each foot is targeted this far to its own side. */
 const STAND_FOOT_SPREAD = 1.4;
 /** Standing foot depth below the hip — near the 9.6 full leg extension. */
@@ -501,6 +552,18 @@ export interface StickRangerBody {
    * `triggerStickRangerRagdoll` (heavy damage).
    */
   ragdollFrames: number;
+  /**
+   * 1 while that hand is holding a weapon, which pulls it forward into a carry
+   * (see `applyWeaponCarryBias`). Both are set for a two-handed weapon, one for
+   * a one-handed weapon, neither when unarmed.
+   *
+   * Set every tick by whoever owns the wielder's equipment — for the player
+   * that is `sim/weapons/playerWeaponState.ts`. Plain flags rather than a grip
+   * enum so this module keeps no dependency on the weapon system, which already
+   * depends on it.
+   */
+  carryHandLeftFlag: 0 | 1;
+  carryHandRightFlag: 0 | 1;
   /** 1 while the figure hangs from a grapple rope by one hand. */
   grappleHangFlag: 0 | 1;
   /** Point index of the hand holding the rope — SR_HAND_L or SR_HAND_R. */
@@ -543,6 +606,8 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     swingFoot: SR_FOOT_L,
     swingFrames: 0,
     ragdollFrames: 0,
+    carryHandLeftFlag: 0,
+    carryHandRightFlag: 0,
     grappleHangFlag: 0,
     grappleHandIndex: SR_HAND_R,
     grappleAnchorXWorld: 0,
@@ -968,6 +1033,47 @@ function applyStandingPoseBias(body: StickRangerBody): void {
 }
 
 /**
+ * Leans the weapon-holding hand (or both, on a two-hander) toward a carry
+ * position in front of the hip, on the side the figure faces.
+ *
+ * Skips the hand currently gripping a grapple rope: that hand is already
+ * committed to the anchor, and pulling it forward would either drag the figure
+ * or make the rope visibly leave the fist.
+ *
+ * Like every other pose bias here, the net translation is cancelled afterwards
+ * so leaning on the arms cannot push the body across the room.
+ */
+function applyWeaponCarryBias(body: StickRangerBody): void {
+  const holdsLeft = body.carryHandLeftFlag === 1;
+  const holdsRight = body.carryHandRightFlag === 1;
+  if (!holdsLeft && !holdsRight) return;
+
+  const hipX = body.x[SR_HIP];
+  const hipY = body.y[SR_HIP];
+  const forward = body.facingDirection < 0 ? -1 : 1;
+  const carryY = hipY + CARRY_HAND_BELOW;
+  const applied = { x: 0, y: 0 };
+
+  // On a two-hander the hands share one haft, so they split fore and aft of a
+  // single carry point instead of each taking their own.
+  const isTwoHanded = holdsLeft && holdsRight;
+  const nearReach = CARRY_HAND_FORWARD * (isTwoHanded ? 1 - CARRY_TWO_HAND_SPLIT : 1);
+  const farReach = CARRY_HAND_FORWARD * (isTwoHanded ? 1 + CARRY_TWO_HAND_SPLIT : 1);
+  // The trailing hand is the one on the far side of the body from the facing.
+  const leftReach = forward < 0 ? farReach : nearReach;
+  const rightReach = forward < 0 ? nearReach : farReach;
+
+  if (holdsLeft && !(body.grappleHangFlag === 1 && body.grappleHandIndex === SR_HAND_L)) {
+    biasPointToward(body, SR_HAND_L, hipX + forward * leftReach, carryY, CARRY_POSE_BIAS, applied);
+  }
+  if (holdsRight && !(body.grappleHangFlag === 1 && body.grappleHandIndex === SR_HAND_R)) {
+    biasPointToward(body, SR_HAND_R, hipX + forward * rightReach, carryY, CARRY_POSE_BIAS, applied);
+  }
+
+  cancelNetTranslation(body, applied);
+}
+
+/**
  * Checks whether a specific foot of the stickman is in a valid grounded
  * position for jumping:
  *   1. The foot itself must NOT be inside a solid block ("Inside a block does not count").
@@ -1319,6 +1425,9 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
   // Only once the figure is genuinely off the ground (past the launch window,
   // which a walking body never leaves), and only while not ragdolling. Ramped
   // in over the first frames so takeoff itself stays loose.
+  // Read before the countdown below consumes it, so 2c sees the same frame's
+  // ragdoll state rather than the next one's.
+  const isRagdolling = body.ragdollFrames > 0;
   if (body.ragdollFrames > 0) {
     body.ragdollFrames -= 1;
   } else if (!inLaunchWindow) {
@@ -1326,6 +1435,14 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     const ramp = Math.min(1, (airFrames + 1) / AIR_POSE_RAMP_FRAMES);
     const poseDirection = moveDirection !== 0 ? (moveDirection < 0 ? -1 : 1) : body.facingDirection;
     applyAirbornePoseBias(body, poseDirection, ramp);
+  }
+
+  // ── 2c. Weapon carry bias ───────────────────────────────────────────────
+  // Runs in the air and on the ground alike — a weapon does not stop being
+  // held mid-jump — but not while ragdolling, where the whole point is that the
+  // figure has lost control of its limbs.
+  if (!isRagdolling) {
+    applyWeaponCarryBias(body);
   }
 
   // ── 3. Constraints — TWO passes, soft weights ───────────────────────────

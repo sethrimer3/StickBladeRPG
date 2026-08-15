@@ -22,7 +22,7 @@ import { WorldState } from './world';
 import { applyClusterMovement } from './clusters/movement';
 import { applyGrappleClusterConstraint, updateGrappleChainParticles, updateGrappleRopeAnchor } from './clusters/grapple';
 import { applyEnemyAI } from './clusters/enemyAi';
-import { tickPlayerWeapon } from './weapons/playerWeaponState';
+import { tickPlayerWeapon, syncStickmanCarryHands } from './weapons/playerWeaponState';
 import { tickPartyAuras } from './party/partyAuras';
 import { applyRockElementalAI } from './clusters/rockElementalAi';
 import { applyRadiantTetherAI } from './clusters/radiantTetherAi';
@@ -232,6 +232,9 @@ export function tick(world: WorldState): void {
     // The off hand is its own runtime with its own cooldown and projectiles, so
     // it advances independently. Cheap when nothing is equipped there.
     tickPlayerWeapon(world, livingPlayer, world.rng, world.playerOffHandWeapon);
+    // Both hands are known now, so the rig can be told which ones are holding
+    // something and should carry in front of the body.
+    syncStickmanCarryHands(world);
     // After the weapon: the aura's reach depends on whether the staff is still
     // channelling this tick, which the weapon step is what decides.
     tickPartyAuras(world, livingPlayer);

@@ -89,6 +89,11 @@ import {
   type SoulOrbPool,
 } from './soulOrbs';
 import {
+  GRIP_HAND_BOTH,
+  GRIP_HAND_LEFT,
+  resolveGripHand,
+} from './weaponGrip';
+import {
   computeHeldWeaponPose,
   createHeldWeaponPose,
   resolveHeldRestAngleRad,
@@ -527,6 +532,49 @@ function tickHeldWeaponPose(
     !isSwinging,
     pose,
   );
+}
+
+/**
+ * Tells the stickman rig which hands are holding something, so those hands
+ * carry in front of the body instead of hanging at the hips.
+ *
+ * Both hands for a two-handed weapon, the dominant hand for a one-handed one —
+ * the same hand `resolveGripHand` picks, so the carry and the drawn grip can
+ * never disagree about which fist the weapon is in. An off-hand weapon claims
+ * the remaining hand.
+ *
+ * Reads both hands at once rather than living in the per-hand tick, which runs
+ * twice and would otherwise have each call overwrite the other's answer.
+ */
+export function syncStickmanCarryHands(world: WorldState): void {
+  const body = world.stickRangerBody;
+  if (body === null) return;
+
+  let left = 0;
+  let right = 0;
+
+  const mainDef = getEquippedWeaponDef(world.playerWeapon);
+  if (mainDef !== null && mainDef.showWeapon !== false) {
+    const hand = resolveGripHand(mainDef.grip, body.facingDirection);
+    if (hand === GRIP_HAND_BOTH) {
+      left = 1;
+      right = 1;
+    } else if (hand === GRIP_HAND_LEFT) {
+      left = 1;
+    } else {
+      right = 1;
+    }
+  }
+
+  const offDef = getEquippedWeaponDef(world.playerOffHandWeapon);
+  if (offDef !== null && offDef.showWeapon !== false) {
+    // The off hand is whichever the main hand did not take.
+    if (right === 1 && left === 0) left = 1;
+    else if (left === 1 && right === 0) right = 1;
+  }
+
+  body.carryHandLeftFlag = left as 0 | 1;
+  body.carryHandRightFlag = right as 0 | 1;
 }
 
 /** Cooldown in ticks for a ranged weapon, floored at 1 so it cannot fire every tick. */
