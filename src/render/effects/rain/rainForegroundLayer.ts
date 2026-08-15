@@ -1,5 +1,6 @@
 import type { WorldState } from '../../../sim/world';
 import type { RoomDef } from '../../../levels/roomDef';
+import { computeOpenCeilingColumns } from '../weather/openCeilingColumns';
 
 /**
  * Foreground rain: droplets fall through open-ceiling columns and splash
@@ -13,12 +14,13 @@ import type { RoomDef } from '../../../levels/roomDef';
  * column lands.
  */
 
-const CELL_WORLD = 32;
-const CEILING_OPEN_EPS_WORLD = 10;
 const SPAWN_ABOVE_ROOM_WORLD = 24;
 const FALL_SPEED_WORLD_PER_SEC = 260;
 const MAX_DROPS = 40;
 const SPAWN_INTERVAL_MS = 60;
+/** Thunderstorm mode spawns denser, faster rain than plain 'rain'. */
+const THUNDERSTORM_MAX_DROPS = 110;
+const THUNDERSTORM_SPAWN_INTERVAL_MS = 22;
 const MAX_SPLASH_PARTICLES = 160;
 const SPLASH_PARTICLE_LIFE_MS = 260;
 const SPLASH_PARTICLES_PER_SPLASH = 5;
@@ -39,6 +41,7 @@ interface SplashParticle {
 
 export class RainForegroundLayer {
   private active = false;
+  private dense = false;
   private openColumnXs: number[] = [];
   private columnLandingY: number[] = [];
   private spawnTimerMs = 0;
@@ -47,7 +50,8 @@ export class RainForegroundLayer {
   private rngState = 1;
 
   initFromRoom(world: WorldState, room: RoomDef): void {
-    this.active = room.weather === 'rain';
+    this.active = room.weather === 'rain' || room.weather === 'thunderstorm';
+    this.dense = room.weather === 'thunderstorm';
     this.drops.length = 0;
     this.splashes.length = 0;
     this.spawnTimerMs = 0;
@@ -58,26 +62,15 @@ export class RainForegroundLayer {
       return;
     }
 
-    const numColumns = Math.max(1, Math.ceil(world.worldWidthWorld / CELL_WORLD));
-    const landingY = new Array<number>(numColumns).fill(world.worldHeightWorld - 1);
+    const walls: { xWorld: number; yWorld: number; wWorld: number }[] = [];
     for (let wi = 0; wi < world.wallCount; wi++) {
-      const wx = world.wallXWorld[wi];
-      const ww = world.wallWWorld[wi];
-      const wy = world.wallYWorld[wi];
-      const c0 = Math.max(0, Math.floor(wx / CELL_WORLD));
-      const c1 = Math.min(numColumns - 1, Math.floor((wx + ww) / CELL_WORLD));
-      for (let c = c0; c <= c1; c++) {
-        if (wy < landingY[c]) landingY[c] = wy;
-      }
+      walls.push({ xWorld: world.wallXWorld[wi], yWorld: world.wallYWorld[wi], wWorld: world.wallWWorld[wi] });
     }
-
-    this.columnLandingY = landingY;
-    this.openColumnXs = [];
-    for (let c = 0; c < numColumns; c++) {
-      if (landingY[c] > CEILING_OPEN_EPS_WORLD) {
-        this.openColumnXs.push(c * CELL_WORLD + CELL_WORLD * 0.5);
-      }
-    }
+    const { columnLandingY, openColumnXs } = computeOpenCeilingColumns(
+      world.worldWidthWorld, world.worldHeightWorld, walls,
+    );
+    this.columnLandingY = columnLandingY;
+    this.openColumnXs = openColumnXs;
   }
 
   private nextRandom(): number {
@@ -94,11 +87,13 @@ export class RainForegroundLayer {
     }
 
     const dt = dtMs / 1000.0;
+    const spawnIntervalMs = this.dense ? THUNDERSTORM_SPAWN_INTERVAL_MS : SPAWN_INTERVAL_MS;
+    const maxDrops = this.dense ? THUNDERSTORM_MAX_DROPS : MAX_DROPS;
 
     this.spawnTimerMs += dtMs;
-    while (this.spawnTimerMs >= SPAWN_INTERVAL_MS) {
-      this.spawnTimerMs -= SPAWN_INTERVAL_MS;
-      if (this.drops.length < MAX_DROPS) {
+    while (this.spawnTimerMs >= spawnIntervalMs) {
+      this.spawnTimerMs -= spawnIntervalMs;
+      if (this.drops.length < maxDrops) {
         const columnIndex = Math.floor(this.nextRandom() * this.openColumnXs.length);
         const x = this.openColumnXs[columnIndex] + (this.nextRandom() - 0.5) * CELL_WORLD * 0.6;
         const c = Math.max(0, Math.min(this.columnLandingY.length - 1, Math.floor(x / CELL_WORLD)));

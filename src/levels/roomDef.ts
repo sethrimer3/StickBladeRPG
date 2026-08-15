@@ -112,10 +112,23 @@ export type BackgroundId = string;
 export type LightingEffect = 'Ambient' | 'DarkRoom' | 'FullyLit' | 'DEFAULT' | 'Above';
 
 /**
- * Room-level weather effect: falling rain drops in the foreground plus a
- * parallax rain background. `'none'` disables both.
+ * Room-level weather effect:
+ * - `'none'`         — disabled.
+ * - `'rain'`         — falling rain drops in the foreground plus a parallax
+ *                       rain background, both through open-ceiling columns.
+ * - `'sunny'`        — angled god-rays through open-ceiling columns.
+ * - `'cloudy'`       — a subtle full-screen gray filter.
+ * - `'thunderstorm'` — dense rain, a screen darkening filter, and occasional
+ *                       background-only lightning flashes.
+ *
+ * `'rain'`, `'sunny'` and `'thunderstorm'` require open-ceiling columns to be
+ * visible at all — see `hasAnyOpenCeilingColumn()` in
+ * `render/effects/weather/openCeilingColumns.ts`.
  */
-export type WeatherEffect = 'none' | 'rain';
+export type WeatherEffect = 'none' | 'rain' | 'sunny' | 'cloudy' | 'thunderstorm';
+
+/** Weather patterns whose effect requires at least one open-ceiling column to be visible. */
+export const OPEN_CEILING_WEATHER_EFFECTS: readonly WeatherEffect[] = ['rain', 'sunny', 'thunderstorm'];
 
 /**
  * Direction that ambient/skylight arrives from.

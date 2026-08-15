@@ -34,7 +34,7 @@ export class RainParallaxBackground {
   private active = false;
 
   initFromRoom(room: RoomDef): void {
-    this.active = room.weather === 'rain';
+    this.active = room.weather === 'rain' || room.weather === 'thunderstorm';
   }
 
   render(
