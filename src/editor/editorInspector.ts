@@ -34,6 +34,7 @@ import { WEAVE_LIST, WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
 import { ALL_PASSIVE_TECHNIQUE_IDS, PASSIVE_TECHNIQUE_DEFINITIONS } from '../progression/passiveTechniques';
 import { buildDialogueTriggerInspector } from './editorDialogueTriggerInspector';
 import type { EditorWall } from './editorElementTypes';
+import { getStickRpgEnemyTrait } from '../sim/clusters/stickRpgEnemyTraits';
 import {
   DEFAULT_SURFACE_RIM_STYLE,
   normalizeSurfaceRimStyle,
@@ -248,18 +249,28 @@ export function updateInspector(
   } else if (el.type === 'enemy') {
     const enemy = room.enemies.find(e => e.uid === el.uid);
     if (enemy) {
+      if (enemy.stickRpgEnemyKind) {
+        const trait = getStickRpgEnemyTrait(enemy.stickRpgEnemyKind);
+        const traitName = trait ? trait.name : enemy.stickRpgEnemyKind;
+        const enemyKindLabel = document.createElement('div');
+        enemyKindLabel.textContent = `Type: ${traitName}`;
+        enemyKindLabel.style.cssText = 'font-size: 12px; color: #ffd85a; margin-bottom: 6px; font-weight: bold;';
+        div.appendChild(enemyKindLabel);
+      }
       addField(div, 'xBlock', String(enemy.xBlock), v => callbacks?.onPropertyChange('enemy.xBlock', parseInt(v)));
       addField(div, 'yBlock', String(enemy.yBlock), v => callbacks?.onPropertyChange('enemy.yBlock', parseInt(v)));
       addField(div, 'kinds', enemy.kinds.join(', '), v => callbacks?.onPropertyChange('enemy.kinds', v));
       addField(div, 'particleCount', String(enemy.particleCount), v => callbacks?.onPropertyChange('enemy.particleCount', parseInt(v)));
-      addSelect(div, 'type', [
-        { label: 'Rolling', value: 'rolling' },
-        { label: 'Flying Eye', value: 'flyingEye' },
-      ], enemy.isRollingEnemyFlag === 1 ? 'rolling' : 'flyingEye',
-      v => callbacks?.onPropertyChange('enemy.type', v));
-      if (enemy.isRollingEnemyFlag === 1) {
-        addField(div, 'spriteIndex', String(enemy.rollingEnemySpriteIndex),
-          v => callbacks?.onPropertyChange('enemy.rollingEnemySpriteIndex', parseInt(v)));
+      if (!enemy.stickRpgEnemyKind) {
+        addSelect(div, 'type', [
+          { label: 'Rolling', value: 'rolling' },
+          { label: 'Flying Eye', value: 'flyingEye' },
+        ], enemy.isRollingEnemyFlag === 1 ? 'rolling' : 'flyingEye',
+        v => callbacks?.onPropertyChange('enemy.type', v));
+        if (enemy.isRollingEnemyFlag === 1) {
+          addField(div, 'spriteIndex', String(enemy.rollingEnemySpriteIndex),
+            v => callbacks?.onPropertyChange('enemy.rollingEnemySpriteIndex', parseInt(v)));
+        }
       }
       addCheckbox(div, 'isBoss', enemy.isBossFlag === 1,
         v => callbacks?.onPropertyChange('enemy.isBossFlag', v ? 1 : 0));

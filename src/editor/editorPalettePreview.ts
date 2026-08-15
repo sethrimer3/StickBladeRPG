@@ -236,6 +236,98 @@ const ITEM_VISUAL: Readonly<Record<string, ProceduralVisual>> = Object.freeze({
     extraCss: `border-radius: 50%; border: 2px solid rgba(255,120,10,0.7); box-sizing: border-box;`,
     glyph: '✦',
   },
+  // ── Stickman Enemies ───────────────────────────────────────────────────────
+  enemy_stickman_swordsman: {
+    bg: '#250808',
+    extraCss: `border-radius: 4px; border: 2px solid rgba(200,40,40,0.9); box-sizing: border-box;`,
+    glyph: '⚔',
+  },
+  enemy_stickman_archer: {
+    bg: '#200808',
+    extraCss: `border-radius: 4px; border: 2px solid rgba(200,60,40,0.9); box-sizing: border-box;`,
+    glyph: '🏹',
+  },
+  enemy_stickman_mage: {
+    bg: '#1e0828',
+    extraCss: `border-radius: 4px; border: 2px solid rgba(180,60,220,0.9); box-sizing: border-box;`,
+    glyph: '✦',
+  },
+  // ── STICK-RPG Ported Enemies ───────────────────────────────────────────────
+  enemy_bald_roller: {
+    bg: '#2a2010',
+    extraCss: `border-radius: 50%; border: 2px solid #d4a820; box-sizing: border-box;`,
+    glyph: '●',
+  },
+  enemy_slime_cube: {
+    bg: '#103010',
+    extraCss: `border-radius: 4px; border: 2px solid #40c040; box-sizing: border-box;`,
+    glyph: '◼',
+  },
+  enemy_tripod_spinner: {
+    bg: '#201830',
+    extraCss: `clip-path: polygon(50% 0%, 100% 100%, 0% 100%); border: 2px solid #a060e0;`,
+    glyph: '▲',
+  },
+  enemy_psi_sky_ranger: {
+    bg: '#082030',
+    extraCss: `border-radius: 50%; border: 2px solid #40b0e0; box-sizing: border-box;`,
+    glyph: 'ψ',
+  },
+  enemy_glyph_gyre: {
+    bg: '#301808',
+    extraCss: `border-radius: 50%; border: 2px dashed #e08020; box-sizing: border-box;`,
+    glyph: '◎',
+  },
+  enemy_time_wraith: {
+    bg: '#181028',
+    extraCss: `border-radius: 50% 50% 20% 20%; border: 2px solid #8060c0; box-sizing: border-box;`,
+    glyph: '⏳',
+  },
+  enemy_realm_guardian: {
+    bg: '#280808',
+    extraCss: `clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); border: 2px solid #e03030;`,
+    glyph: '👑',
+  },
+  enemy_tricyclic_slasher: {
+    bg: '#200810',
+    extraCss: `border-radius: 30%; border: 2px solid #c03060; box-sizing: border-box;`,
+    glyph: '⚙',
+  },
+  enemy_sand_block: {
+    bg: '#382810',
+    extraCss: `border: 2px solid #d0a040; box-sizing: border-box;`,
+    glyph: '▨',
+  },
+  enemy_sand_wanderer: {
+    bg: '#2e2010',
+    extraCss: `border-radius: 4px; border: 2px solid #c89848; box-sizing: border-box;`,
+    glyph: '🚶',
+  },
+  enemy_aleph_glyph: {
+    bg: '#181828',
+    extraCss: `border-radius: 4px; border: 2px solid #7080c0; box-sizing: border-box;`,
+    glyph: 'א',
+  },
+  enemy_shin_glyph: {
+    bg: '#281818',
+    extraCss: `border-radius: 4px; border: 2px solid #c07070; box-sizing: border-box;`,
+    glyph: 'ש',
+  },
+  enemy_zeta_glyph: {
+    bg: '#182818',
+    extraCss: `border-radius: 4px; border: 2px solid #70c070; box-sizing: border-box;`,
+    glyph: 'ζ',
+  },
+  enemy_xi_glyph: {
+    bg: '#282818',
+    extraCss: `border-radius: 4px; border: 2px solid #c0c070; box-sizing: border-box;`,
+    glyph: 'ξ',
+  },
+  enemy_theta_harmonic: {
+    bg: '#201828',
+    extraCss: `border-radius: 50%; border: 2px solid #a070c0; box-sizing: border-box;`,
+    glyph: 'θ',
+  },
 
   // ── Triggers ───────────────────────────────────────────────────────────────
   campaign_spawn: {

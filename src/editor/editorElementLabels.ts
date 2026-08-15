@@ -8,6 +8,7 @@
 
 import type { SelectedElementType, EditorRoomData } from './editorState';
 import { WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
+import { getStickRpgEnemyTrait } from '../sim/clusters/stickRpgEnemyTraits';
 
 /** Returns a unique display ID string for the given element (e.g. "skill_tomb_12"). */
 export function buildElementTooltipId(type: SelectedElementType, uid: number): string {
@@ -75,6 +76,10 @@ export function buildElementTypeName(
   if (type === 'enemy') {
     const e = room.enemies.find(x => x.uid === uid);
     if (e) {
+      if (e.stickRpgEnemyKind) {
+        const trait = getStickRpgEnemyTrait(e.stickRpgEnemyKind);
+        if (trait) return trait.name;
+      }
       if (e.isFlyingEyeFlag === 1)    return 'Flying Eye';
       if (e.isRollingEnemyFlag === 1) return 'Rolling Enemy';
       if (e.isRockElementalFlag === 1)return 'Rock Elemental';

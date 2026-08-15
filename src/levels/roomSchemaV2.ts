@@ -745,6 +745,7 @@ function dehydrateEnemy(e: RoomJsonEnemy): SavedEnemy {
   if (e.kinds.length > 0) out.kinds = [...e.kinds];
   if (e.particleCount !== 0) out.particleCount = e.particleCount;
   if (e.isBoss) out.boss = true;
+  if (e.stickRpgEnemyKind) out.stickRpgEnemyKind = e.stickRpgEnemyKind;
   if (e.countsTowardRoomCompletion === false) out.countsTowardRoomCompletion = 0;
   if (type === 'goldenMimic' && e.isGoldenMimicYFlipped) out.goldenMimicYFlipped = 1;
   if (type === 'rolling' && e.rollingEnemySpriteIndex !== undefined && e.rollingEnemySpriteIndex !== 1) {

@@ -53,7 +53,7 @@ import { expandLayerToRects, expandBlockerLayerToCells } from './tileGridCompres
 /** Expand a SavedEnemyType into the legacy boolean-flag shape (as RoomJsonEnemy). */
 export function enemyTypeToFlags(
   type: SavedEnemyType,
-  base: { xBlock: number; yBlock: number; kinds: string[]; particleCount: number; isBoss: boolean; countsTowardRoomCompletion?: 0; goldenMimicYFlipped?: 1; spriteIndex?: number; snakeLength?: number; momentumTurretFacingIndex?: 0 | 1 | 2 | 3; slimeSnailSideIndex?: 0 | 1 | 2 | 3; slimeSnailCw?: 0 | 1 },
+  base: { xBlock: number; yBlock: number; kinds: string[]; particleCount: number; isBoss: boolean; countsTowardRoomCompletion?: 0; goldenMimicYFlipped?: 1; spriteIndex?: number; snakeLength?: number; momentumTurretFacingIndex?: 0 | 1 | 2 | 3; slimeSnailSideIndex?: 0 | 1 | 2 | 3; slimeSnailCw?: 0 | 1; stickRpgEnemyKind?: string },
 ): RoomJsonEnemy {
   if (!SAVED_ENEMY_TYPES.includes(type)) {
     throw new Error(`Unsupported saved enemy type "${String(type)}"; refusing to downgrade it to basic.`);
@@ -64,6 +64,7 @@ export function enemyTypeToFlags(
     kinds: base.kinds,
     particleCount: base.particleCount,
     isBoss: base.isBoss,
+    stickRpgEnemyKind: base.stickRpgEnemyKind,
     countsTowardRoomCompletion: base.countsTowardRoomCompletion === 0 ? false : undefined,
     isFlyingEye:     type === 'flyingEye',
     isRollingEnemy:  type === 'rolling',
@@ -420,6 +421,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
     slimeSnailCw: e.slimeSnailCw,
     countsTowardRoomCompletion: e.countsTowardRoomCompletion,
     goldenMimicYFlipped: e.goldenMimicYFlipped,
+    stickRpgEnemyKind: e.stickRpgEnemyKind,
   }));
 
   const transitions: RoomJsonTransition[] = (saved.transitions ?? []).map(t => {

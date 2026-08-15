@@ -20,6 +20,11 @@ import { placeEnemyAtCursor } from '../editor/editorEnemyPlacer';
 import { createEditorState } from '../editor/editorState';
 import type { EditorRoomData } from '../editor/editorElementTypes';
 import { PALETTE_ITEMS } from '../editor/editorPaletteItems';
+import { editorRoomDataToJson } from '../editor/roomJsonSerializer';
+import { jsonToEditorRoomData } from '../editor/roomJson';
+import { buildElementTypeName } from '../editor/editorElementLabels';
+import { dehydrateRoom } from '../levels/roomSchemaV2';
+import { hydrateV2Room } from '../levels/roomSchemaHydrator';
 
 function makeTestRoom(): EditorRoomData {
   return {
@@ -203,5 +208,71 @@ describe('editor palette enemy placement', () => {
     assert.equal(enemy.stickRpgEnemyKind, 'baldRoller');
     assert.equal(enemy.xBlock, 5);
     assert.equal(enemy.yBlock, 8);
+  });
+
+  test('places all stickman enemies (swordsman, archer, mage) with proper traits and labels', () => {
+    const state = createEditorState();
+    const room = makeTestRoom();
+    state.roomData = room;
+
+    const swordsmanItem = PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_swordsman')!;
+    const archerItem = PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_archer')!;
+    const mageItem = PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_mage')!;
+
+    assert.ok(swordsmanItem, 'Stickman Swordsman item should exist in palette');
+    assert.ok(archerItem, 'Stickman Archer item should exist in palette');
+    assert.ok(mageItem, 'Stickman Mage item should exist in palette');
+
+    assert.equal(placeEnemyAtCursor(state, room, swordsmanItem, 4, 10), true);
+    assert.equal(placeEnemyAtCursor(state, room, archerItem, 8, 10), true);
+    assert.equal(placeEnemyAtCursor(state, room, mageItem, 12, 10), true);
+
+    assert.equal(room.enemies.length, 3);
+    assert.equal(room.enemies[0].stickRpgEnemyKind, 'stickmanSwordsman');
+    assert.equal(room.enemies[1].stickRpgEnemyKind, 'stickmanArcher');
+    assert.equal(room.enemies[2].stickRpgEnemyKind, 'stickmanMage');
+
+    // Test label resolution
+    assert.equal(buildElementTypeName('enemy', room.enemies[0].uid, room), 'Stickman Swordsman');
+    assert.equal(buildElementTypeName('enemy', room.enemies[1].uid, room), 'Stickman Archer');
+    assert.equal(buildElementTypeName('enemy', room.enemies[2].uid, room), 'Stickman Mage');
+  });
+
+  test('stickman enemies round-trip through editor JSON and compact schema v2/v3 without losing kind', () => {
+    const state = createEditorState();
+    const room = makeTestRoom();
+    state.roomData = room;
+
+    placeEnemyAtCursor(state, room, PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_swordsman')!, 2, 5);
+    placeEnemyAtCursor(state, room, PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_archer')!, 6, 5);
+    placeEnemyAtCursor(state, room, PALETTE_ITEMS.find(p => p.id === 'enemy_stickman_mage')!, 10, 5);
+
+    // 1. EditorRoomData -> RoomJsonDef
+    const json = editorRoomDataToJson(room);
+    assert.equal(json.enemies.length, 3);
+    assert.equal(json.enemies[0].stickRpgEnemyKind, 'stickmanSwordsman');
+    assert.equal(json.enemies[1].stickRpgEnemyKind, 'stickmanArcher');
+    assert.equal(json.enemies[2].stickRpgEnemyKind, 'stickmanMage');
+
+    // 2. RoomJsonDef -> EditorRoomData
+    const importedRoom = jsonToEditorRoomData(json, 1).data;
+    assert.equal(importedRoom.enemies.length, 3);
+    assert.equal(importedRoom.enemies[0].stickRpgEnemyKind, 'stickmanSwordsman');
+    assert.equal(importedRoom.enemies[1].stickRpgEnemyKind, 'stickmanArcher');
+    assert.equal(importedRoom.enemies[2].stickRpgEnemyKind, 'stickmanMage');
+
+    // 3. RoomJsonDef -> SavedRoomV2 -> RoomJsonDef (compact schema round-trip)
+    const saved = dehydrateRoom(json);
+    assert.ok(saved.enemies);
+    assert.equal(saved.enemies.length, 3);
+    assert.equal(saved.enemies[0].stickRpgEnemyKind, 'stickmanSwordsman');
+    assert.equal(saved.enemies[1].stickRpgEnemyKind, 'stickmanArcher');
+    assert.equal(saved.enemies[2].stickRpgEnemyKind, 'stickmanMage');
+
+    const rehydratedJson = hydrateV2Room(saved);
+    assert.equal(rehydratedJson.enemies.length, 3);
+    assert.equal(rehydratedJson.enemies[0].stickRpgEnemyKind, 'stickmanSwordsman');
+    assert.equal(rehydratedJson.enemies[1].stickRpgEnemyKind, 'stickmanArcher');
+    assert.equal(rehydratedJson.enemies[2].stickRpgEnemyKind, 'stickmanMage');
   });
 });

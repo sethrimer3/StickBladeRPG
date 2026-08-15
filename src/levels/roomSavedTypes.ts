@@ -198,6 +198,7 @@ export interface SavedEnemy {
   kinds?: string[];
   particleCount?: number;
   boss?: true;
+  stickRpgEnemyKind?: string;
   /** Sprite index — only meaningful for `rolling`. */
   spriteIndex?: number;
   snakeLength?: number;

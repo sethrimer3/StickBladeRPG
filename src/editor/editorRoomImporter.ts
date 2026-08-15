@@ -170,6 +170,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
     particleCount: e.particleCount,
     countsTowardRoomCompletionFlag: (e.countsTowardRoomCompletionFlag ?? 1) as 0 | 1,
     isBossFlag: e.isBossFlag,
+    stickRpgEnemyKind: e.stickRpgEnemyKind,
     isFlyingEyeFlag: (e.isFlyingEyeFlag ?? 0) as 0 | 1,
     isRollingEnemyFlag: (e.isRollingEnemyFlag ?? 0) as 0 | 1,
     rollingEnemySpriteIndex: e.rollingEnemySpriteIndex ?? 1,

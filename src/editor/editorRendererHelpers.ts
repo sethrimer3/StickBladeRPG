@@ -16,6 +16,7 @@ import type { CrumbleVariant, EditorRoomData, EditorTransition, EditorWall, Ambi
 import { getTransitionEditorHitbox } from './editorHitTest';
 import { editorPerfCounters } from './editorPerfCounters';
 import { findTransitionWidthMismatch } from './editorVisualMapHelpers';
+import { getStickRpgEnemyTrait } from '../sim/clusters/stickRpgEnemyTraits';
 
 /** Click/tap tolerance radius, in screen px, around a transition's width-mismatch warning icon. */
 export const TRANSITION_WARNING_ICON_RADIUS_PX = 9;
@@ -543,6 +544,15 @@ export function drawObjectFootprint(
 }
 
 export function getEnemyFootprintBlocks(enemy: EditorEnemy): { wBlock: number; hBlock: number } | null {
+  if (enemy.stickRpgEnemyKind) {
+    const trait = getStickRpgEnemyTrait(enemy.stickRpgEnemyKind);
+    if (trait) {
+      return {
+        wBlock: Math.max(1, Math.ceil(trait.hitboxWidth / 16)),
+        hBlock: Math.max(1, Math.ceil(trait.hitboxHeight / 16)),
+      };
+    }
+  }
   if (enemy.isRollingEnemyFlag === 1) return { wBlock: 2, hBlock: 2 };
   if (enemy.isSlimeFlag === 1) return { wBlock: 2, hBlock: 2 };
   if (enemy.isBeetleFlag === 1) return { wBlock: 2, hBlock: 1 };

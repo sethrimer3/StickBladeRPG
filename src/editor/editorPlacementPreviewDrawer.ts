@@ -620,6 +620,19 @@ export function drawPlacementPreview(
     return;
   }
 
+  if (item.id === 'enemy_stickman_swordsman' || item.id === 'enemy_stickman_archer' || item.id === 'enemy_stickman_mage') {
+    const glyph = item.id === 'enemy_stickman_swordsman' ? '⚔' : item.id === 'enemy_stickman_archer' ? '🏹' : '✦';
+    drawObjectFootprint(ctx, state.cursorBlockX, state.cursorBlockY, 1, 2, offsetXPx, offsetYPx, zoom, 'rgba(220,70,70,0.25)', 2);
+    drawMarker(ctx, state.cursorBlockX, state.cursorBlockY, offsetXPx, offsetYPx, zoom, 'rgba(220,70,70,0.7)', glyph);
+    return;
+  }
+
+  if (item.category === 'enemies') {
+    drawObjectFootprint(ctx, state.cursorBlockX, state.cursorBlockY, 1, 1, offsetXPx, offsetYPx, zoom, 'rgba(220,70,70,0.20)', 2);
+    drawMarker(ctx, state.cursorBlockX, state.cursorBlockY, offsetXPx, offsetYPx, zoom, 'rgba(220,70,70,0.55)', '⚔');
+    return;
+  }
+
   if (item.isDustContainerItem === 1 || item.id === 'dust_container') {
     drawObjectFootprint(ctx, state.cursorBlockX, state.cursorBlockY, 1, 1,
       offsetXPx, offsetYPx, zoom, 'rgba(80,220,255,0.20)', 2);
