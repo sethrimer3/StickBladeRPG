@@ -22,12 +22,18 @@ import {
   requestStickRangerJump,
   triggerStickRangerRagdoll,
   canStickmanJump,
+  attachStickRangerGrapple,
+  updateStickRangerGrapple,
+  detachStickRangerGrapple,
+  isStickRangerGrappleHanging,
   SR_HIP,
   SR_HEAD,
   SR_FOOT_L,
   SR_FOOT_R,
   SR_FRAME_MS,
 } from './stickRangerBody';
+import type { StickRangerBody } from './stickRangerBody';
+import { GRAPPLE_MIN_LENGTH_WORLD } from './grappleShared';
 import {
   createStickmanBotState,
   setStickmanBotTarget,
@@ -48,6 +54,47 @@ const TELEPORT_RESYNC_DISTANCE = 64;
 /** True while the player should be simulated as the Stick Ranger stickman. */
 export function isStickRangerActive(world: WorldState): boolean {
   return world.characterId === STICKMAN_CHARACTER_ID;
+}
+
+/**
+ * Mirrors the world's grapple state onto the softbody, so the figure grabs the
+ * rope the tick after it attaches and lets go the tick after it releases.
+ *
+ * The rope length the world carries is measured from the hip, because that is
+ * where the AABB player's rope is anchored. The stickman hangs by a *hand*, so
+ * the attach re-baselines the world length to the hand's own distance from the
+ * anchor — otherwise the first hang frame would either snap the figure inward
+ * or start with a visibly slack rope.
+ *
+ * The zip is excluded: while it runs it owns the player's position outright and
+ * drags the body along (see grappleConstraint.ts), which a taut rope would fight.
+ */
+function syncGrappleHang(body: StickRangerBody, world: WorldState): void {
+  const shouldHang =
+    world.isGrappleActiveFlag === 1 &&
+    world.isGrappleZipActiveFlag === 0 &&
+    world.isGrappleStuckFlag === 0;
+
+  if (!shouldHang) {
+    if (isStickRangerGrappleHanging(body)) detachStickRangerGrapple(body);
+    return;
+  }
+
+  // Wrapping makes the newest wrap corner the live swing anchor, exactly as it
+  // does for the AABB path.
+  const hasWrap = world.isGrappleWrappingEnabled === 1 && world.grappleWrapPointCount > 0;
+  const anchorX = hasWrap
+    ? world.grappleWrapPointXWorld[world.grappleWrapPointCount - 1]
+    : world.grappleAnchorXWorld;
+  const anchorY = hasWrap
+    ? world.grappleWrapPointYWorld[world.grappleWrapPointCount - 1]
+    : world.grappleAnchorYWorld;
+
+  if (!isStickRangerGrappleHanging(body)) {
+    world.grappleLengthWorld = attachStickRangerGrapple(body, anchorX, anchorY, GRAPPLE_MIN_LENGTH_WORLD);
+    return;
+  }
+  updateStickRangerGrapple(body, anchorX, anchorY, world.grappleLengthWorld);
 }
 
 /**
@@ -77,6 +124,16 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
   if (cluster.heavyHitFlag === 1) {
     cluster.heavyHitFlag = 0;
     triggerStickRangerRagdoll(body);
+  }
+
+  // Grab or let go of the rope before the body steps, so the hang owns the
+  // whole of this tick's motion rather than half of it.
+  syncGrappleHang(body, world);
+  const isHanging = isStickRangerGrappleHanging(body);
+  if (isHanging) {
+    // A hanging figure is not walking anywhere on its own.
+    world.playerAutoMoveTargetBlock = null;
+    world.playerAutoMoveBotState = null;
   }
 
   // ── Auto-Move / Mobile Navigation ───────────────────────────────────────
@@ -119,14 +176,20 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
     // press is never swallowed.
     // applyClusterMovement clears the flag after the cluster loop, so reading it
     // here sees the current tick's press.
-    if (world.playerJumpTriggeredFlag === 1) {
+    //
+    // While hanging the grapple owns the jump: pressing it releases the rope
+    // with an upward impulse (grappleConstraint.ts), and queueing a body jump
+    // here as well would fire a second one on the frame after the release.
+    if (world.playerJumpTriggeredFlag === 1 && !isHanging) {
       requestStickRangerJump(body);
     }
 
     stepStickRangerBody(
       body,
       world.pixelMaterialSystem.solid,
-      world.playerMoveInputDxWorld,
+      // Limp means limp: left/right do not steer a hanging figure. The rope is
+      // the only thing acting on it besides gravity.
+      isHanging ? 0 : world.playerMoveInputDxWorld,
       world.dtMs,
     );
   }
@@ -148,7 +211,9 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
   cluster.velocityXWorld = (body.x[SR_HIP] - body.prevX[SR_HIP]) * framesPerSecond;
   cluster.velocityYWorld = (body.y[SR_HIP] - body.prevY[SR_HIP]) * framesPerSecond;
 
-  cluster.isGroundedFlag = canStickmanJump(body, world.pixelMaterialSystem.solid) ? 1 : 0;
+  // A figure hanging off a rope is never grounded, even when its feet happen to
+  // brush a ledge — grounded here would hand the jump back to normal movement.
+  cluster.isGroundedFlag = !isHanging && canStickmanJump(body, world.pixelMaterialSystem.solid) ? 1 : 0;
   cluster.isFacingLeftFlag = body.facingDirection < 0 ? 1 : 0;
 
   // Keep the hitbox wrapped around the actual drawn figure so contact damage

@@ -373,6 +373,44 @@ export const STICKMAN_RAGDOLL_FRAMES = 45;
  */
 const RAGDOLL_LANDING_SPEED = 2.1;
 
+// ── Grapple hang (this project's addition) ──────────────────────────────────
+//
+// While the grapple is attached the figure is *pinned by one hand and nothing
+// else*. Every animation input — the walk's launch-gravity dipole, steering,
+// the standing settle, the airborne jump pose — is switched off, so what is
+// left is eleven points falling under plain gravity with one of them held on a
+// circle around the anchor. That is the whole mechanic: the limp body is not a
+// pose, it is the absence of every pose, and the swing is not scripted, it is
+// the rope constraint doing what a rope does.
+//
+// Two departures from the rest of the body are needed to make the swing keep
+// going the way the request asks:
+//
+//   • Damping is 1.0 rather than DAMPING. Stick Ranger's 0.99 is a per-frame
+//     1 % velocity bleed, which at 75 frames/sec drains a pendulum to a stop in
+//     a couple of seconds.
+//   • The frame's mechanical energy is measured before and restored after the
+//     constraint solve (see `restoreGrappleEnergy`). Position-based constraints
+//     are not energy-preserving — every rope correction and every soft limb
+//     constraint quietly removes a little — and without the restore the swing
+//     still decays, just more slowly than damping alone would take it.
+//
+// The restore is skipped on any frame where something real changed the energy:
+// a wall contact, a rope-length change from retraction, or an external impulse.
+
+/** Per-frame velocity retention while hanging: none, so the swing never decays. */
+const GRAPPLE_HANG_DAMPING = 1.0;
+/**
+ * Bounds on the per-frame energy-restore rescale. A correction outside this
+ * range means something other than solver drift moved the body (a collision the
+ * contact flag missed, a teleport), and forcing the old energy back onto it
+ * would be a fabricated impulse rather than a repair.
+ */
+const GRAPPLE_ENERGY_RESCALE_MIN = 0.5;
+const GRAPPLE_ENERGY_RESCALE_MAX = 2.0;
+/** Solver passes used to pull the hand back onto the rope circle each frame. */
+const GRAPPLE_ROPE_PASSES = 2;
+
 /** Rest lengths and solver weights, from Stick Ranger's `Eg.prototype.qa`. */
 const CONSTRAINTS: ReadonlyArray<readonly [number, number, number, number, number]> = [
   [SR_HEAD, SR_CHEST, 3.6, 0.5, 0.5],
@@ -463,6 +501,27 @@ export interface StickRangerBody {
    * `triggerStickRangerRagdoll` (heavy damage).
    */
   ragdollFrames: number;
+  /** 1 while the figure hangs from a grapple rope by one hand. */
+  grappleHangFlag: 0 | 1;
+  /** Point index of the hand holding the rope — SR_HAND_L or SR_HAND_R. */
+  grappleHandIndex: number;
+  /** Rope anchor, world units. Refreshed every host tick from the world state. */
+  grappleAnchorXWorld: number;
+  grappleAnchorYWorld: number;
+  /** Current rope length, world units. */
+  grappleLengthWorld: number;
+  /**
+   * Mechanical energy (per unit mass, per-frame units) the hang is holding on
+   * to. Recomputed on attach and after any frame whose energy change was real;
+   * used to undo the constraint solver's numerical bleed on every other frame.
+   */
+  grappleEnergy: number;
+  /**
+   * 1 when something legitimately changed the body's energy this frame — a
+   * rope-length change or an external impulse — so the restore must re-baseline
+   * instead of undoing it.
+   */
+  grappleEnergyDirtyFlag: 0 | 1;
 }
 
 /** Allocates a body with its hip at (hipX, hipY), in its rest pose. */
@@ -484,6 +543,13 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     swingFoot: SR_FOOT_L,
     swingFrames: 0,
     ragdollFrames: 0,
+    grappleHangFlag: 0,
+    grappleHandIndex: SR_HAND_R,
+    grappleAnchorXWorld: 0,
+    grappleAnchorYWorld: 0,
+    grappleLengthWorld: 0,
+    grappleEnergy: 0,
+    grappleEnergyDirtyFlag: 0,
   };
   resetStickRangerBody(body, hipX, hipY);
   return body;
@@ -513,6 +579,7 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.swingFoot = SR_FOOT_L;
   body.swingFrames = 0;
   body.ragdollFrames = 0;
+  detachStickRangerGrapple(body);
 }
 
 /**
@@ -538,6 +605,219 @@ export function triggerStickRangerRagdoll(body: StickRangerBody, frames = STICKM
 /** True while the figure is tumbling on raw physics with the pose bias off. */
 export function isStickRangerRagdolling(body: StickRangerBody): boolean {
   return body.ragdollFrames > 0;
+}
+
+// ── Grapple hang API ────────────────────────────────────────────────────────
+
+/**
+ * Total mechanical energy per unit mass, in the body's own per-frame units.
+ *
+ * Verlet velocity is `current - previous`, and gravity is an acceleration in
+ * units per frame squared, so kinetic and potential terms are directly
+ * comparable without any rate conversion. Y grows downward, hence the sign on
+ * the potential term.
+ */
+function computeBodyEnergy(body: StickRangerBody): number {
+  let kinetic = 0;
+  let potential = 0;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    const vx = body.x[i] - body.prevX[i];
+    const vy = body.y[i] - body.prevY[i];
+    kinetic += 0.5 * (vx * vx + vy * vy);
+    potential -= GRAVITY * body.y[i];
+  }
+  return kinetic + potential;
+}
+
+/**
+ * Rescales every point's velocity so the body's mechanical energy returns to
+ * `body.grappleEnergy`, undoing what the constraint solve bled off.
+ *
+ * Scaling velocity means moving `prev`, never `x` — the shape the solver just
+ * produced is correct and must not be disturbed; only how fast the body is
+ * travelling through it is being repaired.
+ */
+function restoreGrappleEnergy(body: StickRangerBody): void {
+  let kinetic = 0;
+  let potential = 0;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    const vx = body.x[i] - body.prevX[i];
+    const vy = body.y[i] - body.prevY[i];
+    kinetic += 0.5 * (vx * vx + vy * vy);
+    potential -= GRAVITY * body.y[i];
+  }
+  const targetKinetic = body.grappleEnergy - potential;
+  // A negative target means the body is higher than its energy allows — it has
+  // been dragged there by the rope or a wall, not by its own momentum. Nothing
+  // to restore, and re-baselining keeps the next frame honest.
+  if (targetKinetic <= 0 || kinetic <= 1e-9) {
+    body.grappleEnergy = kinetic + potential;
+    return;
+  }
+  const scale = Math.sqrt(targetKinetic / kinetic);
+  if (scale < GRAPPLE_ENERGY_RESCALE_MIN || scale > GRAPPLE_ENERGY_RESCALE_MAX) {
+    body.grappleEnergy = kinetic + potential;
+    return;
+  }
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    body.prevX[i] = body.x[i] - (body.x[i] - body.prevX[i]) * scale;
+    body.prevY[i] = body.y[i] - (body.y[i] - body.prevY[i]) * scale;
+  }
+}
+
+/** Pulls the roped hand back onto the rope circle. A rope pulls, never pushes. */
+function applyRopeConstraint(body: StickRangerBody): void {
+  const i = body.grappleHandIndex;
+  const dx = body.x[i] - body.grappleAnchorXWorld;
+  const dy = body.y[i] - body.grappleAnchorYWorld;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  if (distance <= body.grappleLengthWorld || distance < 1e-6) return;
+  const scale = body.grappleLengthWorld / distance;
+  body.x[i] = body.grappleAnchorXWorld + dx * scale;
+  body.y[i] = body.grappleAnchorYWorld + dy * scale;
+}
+
+/**
+ * Grabs the rope with whichever hand is already nearer the anchor, and hands
+ * the body over to the hang. Returns the rope length that was adopted, which is
+ * the hand's current distance from the anchor — the caller's length is measured
+ * from the hip, and starting taut from the wrong point would snap the figure.
+ *
+ * The energy baseline is taken here, so the swing conserves what the player
+ * arrived with rather than some canonical value.
+ */
+export function attachStickRangerGrapple(
+  body: StickRangerBody,
+  anchorXWorld: number,
+  anchorYWorld: number,
+  minLengthWorld: number,
+): number {
+  const dxL = body.x[SR_HAND_L] - anchorXWorld;
+  const dyL = body.y[SR_HAND_L] - anchorYWorld;
+  const dxR = body.x[SR_HAND_R] - anchorXWorld;
+  const dyR = body.y[SR_HAND_R] - anchorYWorld;
+  const distanceL = Math.sqrt(dxL * dxL + dyL * dyL);
+  const distanceR = Math.sqrt(dxR * dxR + dyR * dyR);
+  const useLeft = distanceL <= distanceR;
+
+  body.grappleHandIndex = useLeft ? SR_HAND_L : SR_HAND_R;
+  body.grappleAnchorXWorld = anchorXWorld;
+  body.grappleAnchorYWorld = anchorYWorld;
+  body.grappleLengthWorld = Math.max(minLengthWorld, useLeft ? distanceL : distanceR);
+  body.grappleHangFlag = 1;
+  body.grappleEnergyDirtyFlag = 0;
+  // A hang is not a landing and not a tumble: clear both so neither the pose
+  // bias nor the ragdoll countdown outlives the attach.
+  body.ragdollFrames = 0;
+  body.walkStepCounter = 0;
+  body.swingFrames = 0;
+  body.grappleEnergy = computeBodyEnergy(body);
+  return body.grappleLengthWorld;
+}
+
+/**
+ * Refreshes the anchor and rope length from the world's grapple state. Called
+ * every host tick because the anchor can move (carry blocks, rope wrapping) and
+ * the length changes while the player retracts.
+ *
+ * A length change is real work on the system, so it marks the energy baseline
+ * dirty rather than being undone by the restore.
+ */
+export function updateStickRangerGrapple(
+  body: StickRangerBody,
+  anchorXWorld: number,
+  anchorYWorld: number,
+  lengthWorld: number,
+): void {
+  if (body.grappleHangFlag === 0) return;
+  if (
+    anchorXWorld !== body.grappleAnchorXWorld ||
+    anchorYWorld !== body.grappleAnchorYWorld ||
+    lengthWorld !== body.grappleLengthWorld
+  ) {
+    body.grappleEnergyDirtyFlag = 1;
+  }
+  body.grappleAnchorXWorld = anchorXWorld;
+  body.grappleAnchorYWorld = anchorYWorld;
+  body.grappleLengthWorld = lengthWorld;
+}
+
+/** Lets go of the rope. The body keeps whatever velocity the swing gave it. */
+export function detachStickRangerGrapple(body: StickRangerBody): void {
+  const wasHanging = body.grappleHangFlag === 1;
+  body.grappleHangFlag = 0;
+  body.grappleEnergyDirtyFlag = 0;
+  body.grappleEnergy = 0;
+  // A released swing is a launch, not a landing: start the airborne pose bias's
+  // clock past the launch window so the figure is not driving its feet into
+  // nothing on the way out. Only when there was a swing to release — a plain
+  // reset must leave the gait window where it found it.
+  if (wasHanging) body.framesSinceGroundContact = LAUNCH_FRAMES;
+}
+
+/**
+ * Translates the whole body so that `pointIndex` lands on (targetX, targetY),
+ * carrying `prev` along so no velocity is created or destroyed.
+ *
+ * Used when a system outside the softbody owns the player's position for a
+ * while — the grapple zip is the one that does — so the figure rides along
+ * intact instead of being left behind by the cluster box.
+ */
+export function teleportStickRangerBody(
+  body: StickRangerBody,
+  pointIndex: number,
+  targetX: number,
+  targetY: number,
+): void {
+  const dx = targetX - body.x[pointIndex];
+  const dy = targetY - body.y[pointIndex];
+  if (dx === 0 && dy === 0) return;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    body.x[i] += dx;
+    body.y[i] += dy;
+    body.prevX[i] += dx;
+    body.prevY[i] += dy;
+    body.renderPrevX[i] += dx;
+    body.renderPrevY[i] += dy;
+  }
+  body.grappleEnergyDirtyFlag = 1;
+}
+
+/** True while the figure is hanging from a grapple rope. */
+export function isStickRangerGrappleHanging(body: StickRangerBody): boolean {
+  return body.grappleHangFlag === 1;
+}
+
+/**
+ * Point index of the hand on the rope, or -1 when not hanging. The rope's
+ * visible end is drawn here rather than at the cluster centre, which is the
+ * difference between a figure hanging by its hand and one with a rope growing
+ * out of its ribs.
+ */
+export function getStickRangerGrappleHandIndex(body: StickRangerBody): number {
+  return body.grappleHangFlag === 1 ? body.grappleHandIndex : -1;
+}
+
+/**
+ * Applies a whole-body velocity impulse, in world units per second, using the
+ * same mechanism as the jump: shifting `prev` rather than `x`, so no point
+ * teleports and the constraints have nothing to fight.
+ *
+ * Used by the grapple's jump-off, which has to express itself on the softbody
+ * rather than on the derived cluster box.
+ */
+export function applyStickRangerImpulse(
+  body: StickRangerBody,
+  velocityXWorldPerSec: number,
+  velocityYWorldPerSec: number,
+): void {
+  const perFrameX = velocityXWorldPerSec * SR_FRAME_MS / 1000;
+  const perFrameY = velocityYWorldPerSec * SR_FRAME_MS / 1000;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    body.prevX[i] -= perFrameX;
+    body.prevY[i] -= perFrameY;
+  }
+  body.grappleEnergyDirtyFlag = 1;
 }
 
 /**
@@ -870,6 +1150,56 @@ function isSolidAt(solid: SolidMask | null, x: number, y: number): boolean {
 }
 
 /**
+ * Advances a hanging body by one frame: gravity, the limb constraints, the rope
+ * pin on the roped hand, collision, and the energy restore.
+ *
+ * There is deliberately nothing else here. No gait, no steering, no pose bias —
+ * the figure is limp, and everything it does while hanging is a consequence of
+ * one point being held on a circle while the other ten fall.
+ */
+function stepGrappleHangFrame(body: StickRangerBody, solid: SolidMask | null): void {
+  const wasEnergyDirty = body.grappleEnergyDirtyFlag === 1;
+  body.grappleEnergyDirtyFlag = 0;
+
+  // Plain gravity for every point, and no damping — see GRAPPLE_HANG_DAMPING.
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    integratePoint(body, i, GRAVITY, GRAPPLE_HANG_DAMPING);
+  }
+
+  // Rope first in each pass so the limbs settle around where the hand ends up,
+  // then once more afterwards so the rope has the last word over the soft limb
+  // weights and the arm cannot be stretched off the circle.
+  for (let pass = 0; pass < GRAPPLE_ROPE_PASSES; pass++) {
+    applyRopeConstraint(body);
+    for (let c = 0; c < CONSTRAINTS.length; c++) {
+      const [ia, ib, rest, wa, wb] = CONSTRAINTS[c];
+      constrain(body, ia, ib, rest, wa, wb);
+    }
+    const kneeGap = Math.hypot(body.x[SR_KNEE_L] - body.x[SR_KNEE_R], body.y[SR_KNEE_L] - body.y[SR_KNEE_R]);
+    if (kneeGap < KNEE_SPREAD_MIN) {
+      constrain(body, SR_KNEE_L, SR_KNEE_R, KNEE_SPREAD_MIN, KNEE_SPREAD_WEIGHT, KNEE_SPREAD_WEIGHT);
+    }
+  }
+  applyRopeConstraint(body);
+
+  let contact = false;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    if (collidePoint(body, i, solid, SURFACE_TANGENT_RETENTION)) contact = true;
+  }
+  body.groundContactFlag = contact ? 1 : 0;
+  if (contact) body.framesSinceGroundContact = 0;
+
+  // Scraping a wall and reeling the rope in are both real energy changes, so
+  // those frames re-baseline instead of being undone. Every other frame's loss
+  // is the solver's, and the swing is supposed to keep it.
+  if (contact || wasEnergyDirty) {
+    body.grappleEnergy = computeBodyEnergy(body);
+  } else {
+    restoreGrappleEnergy(body);
+  }
+}
+
+/**
  * Advances the body by exactly one fixed 30Hz frame.
  *
  * `moveDirection` is -1, 0 or 1 from the left/right keys.
@@ -877,6 +1207,12 @@ function isSolidAt(solid: SolidMask | null, x: number, y: number): boolean {
 function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirection: number): void {
   body.framesSinceGroundContact += 1;
   body.jumpFiredFlag = 0;
+
+  // Hanging from the rope replaces the frame entirely — see stepGrappleHangFrame.
+  if (body.grappleHangFlag === 1) {
+    stepGrappleHangFrame(body, solid);
+    return;
+  }
 
   // ── 0. Jump ─────────────────────────────────────────────────────────────
   // Fires before integration so the impulse is part of this frame's motion.

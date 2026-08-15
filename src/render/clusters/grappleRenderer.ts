@@ -24,6 +24,12 @@ import {
   renderGrappleRechargeRing,
   renderZipJumpReadyRing,
 } from './grappleFxRenderers';
+import {
+  getStickRangerGrappleHandIndex,
+  getStickRangerRenderAlpha,
+  getStickRangerRenderX,
+  getStickRangerRenderY,
+} from '../../sim/clusters/stickRangerBody';
 
 // ── Grapple dust sprites ─────────────────────────────────────────────────────
 
@@ -72,7 +78,15 @@ export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnap
   // Grapple visually originates from right-middle (or left-middle when facing left) of the sprite
   let px = 0;
   let py = 0;
-  if (playerCluster !== undefined) {
+  const stickBody = snapshot.stickRangerBody;
+  const stickHandIndex = stickBody !== null ? getStickRangerGrappleHandIndex(stickBody) : -1;
+  if (stickBody !== null && stickHandIndex >= 0) {
+    // The stickman hangs by that hand, so the rope ends at the hand itself —
+    // interpolated on the body's own clock, the same as the figure is drawn.
+    const alpha = getStickRangerRenderAlpha(stickBody);
+    px = getStickRangerRenderX(stickBody, stickHandIndex, alpha) * scalePx + offsetXPx;
+    py = getStickRangerRenderY(stickBody, stickHandIndex, alpha) * scalePx + offsetYPx;
+  } else if (playerCluster !== undefined) {
     const halfW = playerCluster.halfWidthWorld * scalePx;
     const offsetDir = playerCluster.isFacingLeftFlag === 1 ? -1 : 1;
     px = playerCluster.positionXWorld * scalePx + offsetXPx + offsetDir * halfW;

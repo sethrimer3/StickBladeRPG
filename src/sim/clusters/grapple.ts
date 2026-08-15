@@ -88,6 +88,7 @@ import { isGrappleWallHitSlimed } from './slimeSnailAi';
 import { findGrappleCarryBlockRayHit } from '../grappleCarryBlocks';
 import { isVerdantDustEquipped } from './verdantMobility';
 import { isVoidDustEquipped, startVoidDash } from './voidDash';
+import { getStickRangerGrappleHandIndex } from './stickRangerBody';
 
 export { updateGrappleRopeAnchor } from './grappleRopeSupport';
 export { raycastRopeSegments } from './grappleRopeSupport';
@@ -544,8 +545,17 @@ export function updateGrappleChainParticles(world: WorldState): void {
   const player = world.clusters[0];
   if (player === undefined) return;
 
-  const px = player.positionXWorld;
-  const py = player.positionYWorld;
+  // The stickman hangs by a hand, so the chain has to start there — the cluster
+  // centre is its hip. Returns -1 for every other character.
+  const handIndex = world.stickRangerBody !== null
+    ? getStickRangerGrappleHandIndex(world.stickRangerBody)
+    : -1;
+  const px = handIndex >= 0 && world.stickRangerBody !== null
+    ? world.stickRangerBody.x[handIndex]
+    : player.positionXWorld;
+  const py = handIndex >= 0 && world.stickRangerBody !== null
+    ? world.stickRangerBody.y[handIndex]
+    : player.positionYWorld;
   const ax = world.grappleAnchorXWorld;
   const ay = world.grappleAnchorYWorld;
   const dx = ax - px;

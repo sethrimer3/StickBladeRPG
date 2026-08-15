@@ -25,6 +25,13 @@ import {
   canMoveGrappleCarryBlockToward,
   pullGrappleCarryBlockToward,
 } from '../grappleCarryBlocks';
+import { isStickRangerActive } from './stickRangerPlayer';
+import {
+  applyStickRangerImpulse,
+  detachStickRangerGrapple,
+  teleportStickRangerBody,
+  SR_HIP,
+} from './stickRangerBody';
 
 // ============================================================================
 // Tuning constants — used only by applyGrappleClusterConstraint
@@ -165,7 +172,20 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   //  needed by the old double-tap zip detection which has been replaced by RMB.)
   world.playerDownTriggeredFlag = 0;
 
+  // The stickman is a softbody, not an AABB: the cluster box is a derived view
+  // of it (see stickRangerPlayer.ts), so anything this function writes to the
+  // cluster is overwritten by the body's own mirror on the next tick. Its rope
+  // physics therefore lives in the body — this function keeps only the parts
+  // that are about the grapple *state*: input, retraction and release.
+  const isStickman = isStickRangerActive(world) && world.stickRangerBody !== null;
+
   if (tickGrappleZip(world, player, jumpJustPressed, dtSec)) {
+    // The zip owns the player's position outright, so the softbody is carried
+    // to wherever it put the cluster rather than left behind by it.
+    if (isStickman && world.stickRangerBody !== null) {
+      detachStickRangerGrapple(world.stickRangerBody);
+      teleportStickRangerBody(world.stickRangerBody, SR_HIP, player.positionXWorld, player.positionYWorld);
+    }
     // Zip owns jump handling internally (zip-jump window). If a quiet release
     // was also requested this tick and zip did not already end the grapple
     // (e.g. via the miss-window release), honor it now so mouse-up during a
@@ -195,10 +215,54 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   // Any jump press immediately releases the grapple and gives the player an
   // upward velocity boost so they can "jump off" the rope.
   if (jumpJustPressed) {
+    if (isStickman && world.stickRangerBody !== null) {
+      // The softbody carries its own momentum, so the jump-off is an impulse on
+      // every point rather than an edit of the derived cluster velocity.
+      applyStickRangerImpulse(world.stickRangerBody, 0, -GRAPPLE_JUMP_OFF_SPEED_WORLD);
+      detachStickRangerGrapple(world.stickRangerBody);
+    }
     player.velocityYWorld -= GRAPPLE_JUMP_OFF_SPEED_WORLD;
     player.varJumpTimerTicks = VAR_JUMP_TIME_TICKS;
     player.varJumpSpeedWorld = player.velocityYWorld;
     releaseGrapple(world, false, true);
+    return;
+  }
+
+  // ── Stickman: rope physics belongs to the softbody ────────────────────────
+  // Everything below this point moves the cluster box, which for the stickman
+  // is a mirror of the softbody and would simply be overwritten. The body pins
+  // its roped hand and swings itself (see stepGrappleHangFrame); the only rope
+  // state left to own here is the length, which retraction changes.
+  if (isStickman && world.stickRangerBody !== null) {
+    const body = world.stickRangerBody;
+
+    if (world.playerCrouchHeldFlag === 1) {
+      world.grappleRetractHeldTicks++;
+      const rampFactor = Math.max(
+        GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC / GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC,
+        Math.min(1.0, world.grappleRetractHeldTicks / GRAPPLE_PULL_IN_RAMP_TICKS),
+      );
+      const pullThisTick = GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC * rampFactor * dtSec;
+      const oldLength = world.grappleLengthWorld;
+      const newLength = Math.max(oldLength - pullThisTick, GRAPPLE_MIN_LENGTH_WORLD);
+      if (newLength < oldLength) {
+        world.grappleLengthWorld = newLength;
+        world.grapplePullInAmountWorld += oldLength - newLength;
+        // Same tension limit as the AABB path: reel in too far and the rope snaps.
+        if (world.grapplePullInAmountWorld >= GRAPPLE_MAX_PULL_IN_WORLD) {
+          detachStickRangerGrapple(body);
+          releaseGrapple(world);
+          return;
+        }
+      }
+    } else {
+      world.grappleRetractHeldTicks = 0;
+    }
+
+    if (quietReleaseRequested) {
+      detachStickRangerGrapple(body);
+      releaseGrapple(world);
+    }
     return;
   }
 
