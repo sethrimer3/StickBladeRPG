@@ -119,8 +119,8 @@ export function validateRoomJson(data: unknown): ValidationError[] {
   }
   if (obj.weather !== undefined) {
     const v = obj.weather;
-    if (v !== 'none' && v !== 'rain') {
-      errors.push({ path: 'weather', message: 'Must be none|rain' });
+    if (v !== 'none' && v !== 'rain' && v !== 'sunny' && v !== 'cloudy' && v !== 'thunderstorm') {
+      errors.push({ path: 'weather', message: 'Must be none|rain|sunny|cloudy|thunderstorm' });
     }
   }
   if (typeof obj.widthBlocks !== 'number' || (obj.widthBlocks as number) < 10) {

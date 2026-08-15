@@ -1,6 +1,6 @@
 import type { WorldState } from '../../../sim/world';
 import type { RoomDef } from '../../../levels/roomDef';
-import { computeOpenCeilingColumns } from '../weather/openCeilingColumns';
+import { computeOpenCeilingColumns, CELL_WORLD } from '../weather/openCeilingColumns';
 
 /**
  * Foreground rain: droplets fall through open-ceiling columns and splash

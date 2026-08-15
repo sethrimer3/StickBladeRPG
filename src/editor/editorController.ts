@@ -5,7 +5,8 @@
  * gameScreen.ts.
  */
 
-import { BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
+import { BLOCK_SIZE_MEDIUM, OPEN_CEILING_WEATHER_EFFECTS } from '../levels/roomDef';
+import { hasAnyOpenCeilingColumn } from '../render/effects/weather/openCeilingColumns';
 import { backgroundIdToBlurUrl } from '../render/backgroundCatalogue';
 import type { RoomDef } from '../levels/roomDef';
 import { parseCustomBlockSource, serializeCustomBlock, toNamespacedId, makeUniqueId, countCustomBlockUsage } from '../levels/customBlocks';
@@ -1137,6 +1138,20 @@ export function createEditorController(
         },
         onWeatherChange: (weather: WeatherEffect) => {
           runRoomFieldMutation('weather', room => { room.weather = weather; });
+          const room = state.roomData;
+          if (room && OPEN_CEILING_WEATHER_EFFECTS.includes(weather)) {
+            const walls = room.interiorWalls.map(w => ({
+              xWorld: w.xBlock * BLOCK_SIZE_MEDIUM,
+              yWorld: w.yBlock * BLOCK_SIZE_MEDIUM,
+              wWorld: w.wBlock * BLOCK_SIZE_MEDIUM,
+            }));
+            const hasOpening = hasAnyOpenCeilingColumn(
+              room.widthBlocks * BLOCK_SIZE_MEDIUM, room.heightBlocks * BLOCK_SIZE_MEDIUM, walls,
+            );
+            if (!hasOpening) {
+              showEditorToast(uiRoot, `This room has no opening in the ceiling — the "${weather}" effect won't be visible.`);
+            }
+          }
         },
         onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => {
           runRoomFieldMutation('ambientLightDirection', room => { room.ambientLightDirection = direction; });

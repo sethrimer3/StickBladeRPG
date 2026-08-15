@@ -48,6 +48,9 @@ import type { WebGLParticleRenderer } from '../render/particles/webglRenderer';
 import type { EnvironmentalDustLayer } from '../render/environmentalDust';
 import type { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
 import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
+import type { SunnyForegroundLayer } from '../render/effects/sunny/sunnyForegroundLayer';
+import type { ThunderstormLightning } from '../render/effects/weather/thunderstormLightning';
+import { renderWeatherSceneOverlay } from '../render/effects/weather/weatherOverlay';
 import type { SkidDebrisRenderer } from '../render/skidDebrisRenderer';
 import type { CrumbleDebrisRenderer } from '../render/crumbleDebrisRenderer';
 import type { CrackedBlockShatterRenderer } from '../render/crackedBlockShatterRenderer';
@@ -163,6 +166,8 @@ export interface RenderFrameContext {
   environmentalDust: EnvironmentalDustLayer;
   rainForegroundLayer: RainForegroundLayer;
   rainParallaxBackground: RainParallaxBackground;
+  sunnyForegroundLayer: SunnyForegroundLayer;
+  thunderstormLightning: ThunderstormLightning;
   skidDebris: SkidDebrisRenderer;
   crumbleDebris: CrumbleDebrisRenderer;
   /** Momentum-speed cracked-block shatter burst — sprite-palette-sampled fragments. */
@@ -359,7 +364,7 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+    webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
     playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
     sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
     world, currentRoom, snapshot,
@@ -478,6 +483,7 @@ export function renderFrame(r: RenderFrameContext): void {
     virtualWidthPx,
     virtualHeightPx,
     rainParallaxBackground,
+    thunderstormLightning,
     roomWidthWorld,
     roomHeightWorld,
     nowMs,
@@ -725,6 +731,7 @@ export function renderFrame(r: RenderFrameContext): void {
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_DUST);
   environmentalDust.render(ctx, ox, oy, zoom, isDebugMode);
   rainForegroundLayer.render(ctx, ox, oy, zoom);
+  sunnyForegroundLayer.render(ctx, ox, oy, zoom, nowMs);
   atmosphericLightDust.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   guideDustPathRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   skidDebris.render(ctx, ox, oy, zoom);
@@ -817,6 +824,11 @@ export function renderFrame(r: RenderFrameContext): void {
   if (world.timeStopField.visualIntensity > 0) {
     applyTimeStopInversionCompositor(ctx, world, ox, oy, zoom, virtualWidthPx, virtualHeightPx, qc);
   }
+
+  // ── Weather scene overlay (cloudy gray filter / thunderstorm darkening) ──
+  // Applied last, inside the room clip, so it covers gameplay entities too —
+  // not just the background.
+  renderWeatherSceneOverlay(ctx, currentRoom, virtualWidthPx, virtualHeightPx);
   } finally {
     // End room clip before any HUD/screen-space overlays are drawn. Runs
     // even on error so the clip never leaks into future frames.

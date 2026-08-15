@@ -13,6 +13,8 @@ import type { HudState } from '../render/hud/overlay';
 import { EnvironmentalDustLayer } from '../render/environmentalDust';
 import { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
 import { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
+import { SunnyForegroundLayer } from '../render/effects/sunny/sunnyForegroundLayer';
+import { ThunderstormLightning } from '../render/effects/weather/thunderstormLightning';
 import { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
 import { SunraysRenderer } from '../render/effects/sunraysRenderer';
 import { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
@@ -495,6 +497,8 @@ export function startGameScreen(
   const environmentalDust = new EnvironmentalDustLayer();
   const rainForegroundLayer = new RainForegroundLayer();
   const rainParallaxBackground = new RainParallaxBackground();
+  const sunnyForegroundLayer = new SunnyForegroundLayer();
+  const thunderstormLightning = new ThunderstormLightning();
   const sunbeamRenderer = new SunbeamRenderer();
   const sunraysRenderer = new SunraysRenderer();
   const atmosphericLightDust = new AtmosphericLightDust();
@@ -715,6 +719,8 @@ export function startGameScreen(
     environmentalDust,
     rainForegroundLayer,
     rainParallaxBackground,
+    sunnyForegroundLayer,
+    thunderstormLightning,
     sunbeamRenderer,
     sunraysRenderer,
     atmosphericLightDust,
@@ -1879,6 +1885,7 @@ export function startGameScreen(
       }
       environmentalDust.update(world, FIXED_DT_MS);
       rainForegroundLayer.update(world, FIXED_DT_MS);
+      thunderstormLightning.update(FIXED_DT_MS);
       atmosphericLightDust.update(FIXED_DT_MS);
       guideDustPathRenderer.update(FIXED_DT_MS);
       skidDebris.update(world, FIXED_DT_MS);
@@ -2101,7 +2108,7 @@ export function startGameScreen(
 
     const renderFrameArgs = {
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+      webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
       playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, darkRoomOverlay, decorationWaveState,
       sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
       world, currentRoom, isChallengeModeActive: world.challengeMode.isActive,

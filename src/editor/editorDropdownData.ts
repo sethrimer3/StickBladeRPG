@@ -146,6 +146,9 @@ export const LIGHTING_OPTIONS: readonly { id: LightingEffect; label: string }[] 
 export const WEATHER_OPTIONS: readonly { id: WeatherEffect; label: string }[] = [
   { id: 'none', label: 'None' },
   { id: 'rain', label: 'Rain' },
+  { id: 'sunny', label: 'Sunny' },
+  { id: 'cloudy', label: 'Cloudy' },
+  { id: 'thunderstorm', label: 'Thunderstorm' },
 ];
 
 /**

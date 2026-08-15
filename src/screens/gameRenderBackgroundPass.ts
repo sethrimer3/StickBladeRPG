@@ -1,6 +1,7 @@
 import { BLOCK_SIZE_MEDIUM, type RoomDef } from '../levels/roomDef';
 import { renderWorldBackground } from '../render/backgroundRenderer';
 import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
+import type { ThunderstormLightning } from '../render/effects/weather/thunderstormLightning';
 import {
   isTheroShowcaseRoom,
   renderTheroShowcaseEffect,
@@ -36,6 +37,7 @@ export interface BackgroundPassContext {
   nowMs: number;
   renderProfiler?: RenderProfiler;
   rainParallaxBackground?: RainParallaxBackground;
+  thunderstormLightning?: ThunderstormLightning;
 }
 
 /**
@@ -56,6 +58,7 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
     nowMs,
     renderProfiler,
     rainParallaxBackground,
+    thunderstormLightning,
   } = r;
 
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BACKGROUND);
@@ -132,6 +135,12 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
 
   if (rainParallaxBackground !== undefined) {
     rainParallaxBackground.render(ctx, relCameraOffsetXPx, relCameraOffsetYPx, virtualWidthPx, virtualHeightPx, nowMs);
+  }
+
+  // Thunderstorm lightning — background-only; walls/entities drawn after
+  // this pass occlude it, so it never brightens the foreground.
+  if (thunderstormLightning !== undefined) {
+    thunderstormLightning.render(ctx, virtualWidthPx, virtualHeightPx);
   }
 
   const renderedTheroBackground = renderTheroBackgroundEffect(

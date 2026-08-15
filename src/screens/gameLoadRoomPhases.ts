@@ -39,6 +39,8 @@ import type { PhantomCloakExtension } from '../render/clusters/phantomCloak';
 import type { EnvironmentalDustLayer } from '../render/environmentalDust';
 import type { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
 import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
+import type { SunnyForegroundLayer } from '../render/effects/sunny/sunnyForegroundLayer';
+import type { ThunderstormLightning } from '../render/effects/weather/thunderstormLightning';
 import type { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
 import type { SunraysRenderer } from '../render/effects/sunraysRenderer';
 import type { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
@@ -194,6 +196,8 @@ export interface LoadRoomCtx {
   environmentalDust: EnvironmentalDustLayer;
   rainForegroundLayer: RainForegroundLayer;
   rainParallaxBackground: RainParallaxBackground;
+  sunnyForegroundLayer: SunnyForegroundLayer;
+  thunderstormLightning: ThunderstormLightning;
   sunbeamRenderer: SunbeamRenderer;
   sunraysRenderer: SunraysRenderer;
   atmosphericLightDust: AtmosphericLightDust;
@@ -518,6 +522,8 @@ function applyRoomEnvironmentAndScheduling(
     environmentalDust,
     rainForegroundLayer,
     rainParallaxBackground,
+    sunnyForegroundLayer,
+    thunderstormLightning,
     sunbeamRenderer,
     sunraysRenderer,
     atmosphericLightDust,
@@ -542,6 +548,8 @@ function applyRoomEnvironmentAndScheduling(
     const _t0 = import.meta.env.DEV ? performance.now() : 0;
     rainForegroundLayer.initFromRoom(world, room);
     rainParallaxBackground.initFromRoom(room);
+    sunnyForegroundLayer.initFromRoom(world, room);
+    thunderstormLightning.initFromRoom(room);
     if (recordPhaseSteps) FP.recordLoadPhaseStep('F:rain', import.meta.env.DEV ? performance.now() - _t0 : 0);
   }
   {
