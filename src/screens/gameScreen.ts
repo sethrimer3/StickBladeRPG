@@ -36,7 +36,7 @@ import { handleGateRoomExit, handleGateSaveCompleted, interactWithNearbyChalleng
 import { PlayerProgress } from '../progression/playerProgress';
 import { createEditorController, EditorController } from '../editor/editorController';
 import { PlayerWeaveLoadout, createDefaultWeaveLoadout } from '../sim/weaves/playerLoadout';
-import { getMusicVolume, getSelectedRenderSize, getActiveWorldViewPreset, getGraphicsQuality, getCombatModeFromStorage, getEffectiveRenderAdjacentRooms } from '../ui/renderSettings';
+import { getMusicVolume, getSelectedRenderSize, getActiveWorldViewPreset, getGraphicsQuality, getCombatModeFromStorage, getEffectiveRenderAdjacentRooms, getCrispPixelScalingEnabled } from '../ui/renderSettings';
 import { AdjacentRoomRenderCoordinator } from './adjacentRoomRenderCoordinator';
 import { productionAdjacentRoomDrawImpl } from './gameRenderAdjacentRoomsImpl';
 import type { AdjacentRoomDrawPorts } from './gameRenderAdjacentRooms';
