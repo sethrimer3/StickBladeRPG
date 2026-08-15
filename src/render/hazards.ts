@@ -639,7 +639,33 @@ export function renderHazards(
   for (let i = 0; i < world.laserCount; i++) {
     const lx = world.laserXWorld[i];
     const ly = world.laserYWorld[i];
+    const dir = world.laserDirection[i];
     const phase = i * 2.4;
+
+    // Draw emitter housing block
+    const halfSizeWorld = BLOCK_SIZE_MEDIUM * 0.5;
+    const exPx = (lx - halfSizeWorld) * zoom + offsetXPx;
+    const eyPx = (ly - halfSizeWorld) * zoom + offsetYPx;
+    const ewPx = BLOCK_SIZE_MEDIUM * zoom;
+    const ehPx = BLOCK_SIZE_MEDIUM * zoom;
+
+    if (isScreenRectVisible(exPx, eyPx, ewPx, ehPx, vpW, vpH)) {
+      ctx.fillStyle = '#1c1c24';
+      ctx.fillRect(exPx, eyPx, ewPx, ehPx);
+      ctx.strokeStyle = '#ff5a1e';
+      ctx.lineWidth = Math.max(1, zoom * 0.5);
+      ctx.strokeRect(exPx, eyPx, ewPx, ehPx);
+
+      // Glowing emitter aperture
+      const faceThickness = Math.max(2, ehPx * 0.22);
+      ctx.fillStyle = '#ff963c';
+      switch (dir) {
+        case SPIKE_DIR_UP:    ctx.fillRect(exPx, eyPx, ewPx, faceThickness); break;
+        case SPIKE_DIR_DOWN:  ctx.fillRect(exPx, eyPx + ehPx - faceThickness, ewPx, faceThickness); break;
+        case SPIKE_DIR_LEFT:  ctx.fillRect(exPx, eyPx, faceThickness, ehPx); break;
+        case SPIKE_DIR_RIGHT: ctx.fillRect(exPx + ewPx - faceThickness, eyPx, faceThickness, ehPx); break;
+      }
+    }
 
     // Incoming leg: emitter origin to either the terrain hit or the shield
     // contact point (see traceLaserBeam).

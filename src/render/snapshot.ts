@@ -647,6 +647,12 @@ export function refreshSnapshotWorldArrayRefs(
   w.hWorld                = world.wallHWorld;
   w.isPlatformFlag        = world.wallIsPlatformFlag;
   w.platformEdge          = world.wallPlatformEdge;
+  w.themeIndex            = world.wallThemeIndex;
+  w.isInvisibleFlag       = world.wallIsInvisibleFlag;
+  w.rampOrientationIndex  = world.wallRampOrientationIndex;
+  w.isPillarHalfWidthFlag = world.wallIsPillarHalfWidthFlag;
+  w.surfaceRimStyleIndex  = world.wallSurfaceRimStyleIndex;
+  w.surfaceRimStyleTable  = world.wallSurfaceRimStyleTable;
   raw.squareStampedeTrailCount       = world.squareStampedeTrailCount;
   raw.slimeSnailTrailCol             = world.slimeSnailTrailCol;
   raw.slimeSnailTrailRow             = world.slimeSnailTrailRow;

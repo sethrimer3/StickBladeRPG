@@ -19,9 +19,12 @@ import type {
   RoomBreakableBlockDef,
   RoomDustBoostJarDef,
   RoomFireflyJarDef,
+  RopeDestructibility,
   SpikeDirection,
+  FallingBlockVariant,
 } from './roomDef';
-import { blockThemeRefToTheme } from './roomDef';
+import { blockThemeRefToTheme, DEFAULT_ROPE_SEGMENT_COUNT } from './roomDef';
+import { decodeSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
 import {
   validateRoomJson,
   stringToParticleKind,
@@ -53,17 +56,26 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
   // Complete boundary walls — no holes for transitions (BUILD 420+)
   const boundaryWalls = buildCompleteBoundaryWalls(json.widthBlocks, json.heightBlocks);
 
-  const interiorWalls: RoomWallDef[] = json.interiorWalls.map(w => ({
-    xBlock: w.xBlock,
-    yBlock: w.yBlock,
-    wBlock: w.wBlock,
-    hBlock: w.hBlock,
-    isPlatformFlag: w.isPlatform ? (1 as const) : (0 as const),
-    platformEdge: w.platformEdge,
-    blockTheme: blockThemeRefToTheme(w.blockThemeId) ?? w.blockTheme,
-    rampOrientation: w.rampOrientation,
-    isPillarHalfWidthFlag: w.isPillarHalfWidth ? (1 as const) : (0 as const),
-  }));
+  const rimStylesTable = json.rimStyles;
+  const interiorWalls: RoomWallDef[] = json.interiorWalls.map(w => {
+    const wall: RoomWallDef = {
+      xBlock: w.xBlock,
+      yBlock: w.yBlock,
+      wBlock: w.wBlock,
+      hBlock: w.hBlock,
+      isPlatformFlag: w.isPlatform ? (1 as const) : (0 as const),
+      platformEdge: w.platformEdge,
+      blockTheme: blockThemeRefToTheme(w.blockThemeId) ?? w.blockTheme,
+      rampOrientation: w.rampOrientation,
+      stairsOrientation: w.stairsOrientation,
+      smoothRampOrientation: w.smoothRampOrientation,
+      isPillarHalfWidthFlag: w.isPillarHalfWidth ? (1 as const) : (0 as const),
+    };
+    if (w.r !== undefined && rimStylesTable !== undefined && rimStylesTable[w.r] !== undefined) {
+      wall.surfaceRim = decodeSurfaceRimStyle(rimStylesTable[w.r]);
+    }
+    return wall;
+  });
 
   const allWalls: RoomWallDef[] = [...boundaryWalls, ...interiorWalls];
 
@@ -435,6 +447,95 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
         moteSpeedFactor: p.moteSpeedFactor ?? 1.0,
         opacityPct: p.opacityPct ?? 100,
       }));
+  }
+
+  if (json.dustContainerPieces && json.dustContainerPieces.length > 0) {
+    room.dustContainerPieces = json.dustContainerPieces.map(c => ({ xBlock: c.xBlock, yBlock: c.yBlock }));
+  }
+  if (json.crumbleBlocks && json.crumbleBlocks.length > 0) {
+    room.crumbleBlocks = json.crumbleBlocks.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+      wBlock: b.wBlock !== 1 ? b.wBlock : undefined,
+      hBlock: b.hBlock !== 1 ? b.hBlock : undefined,
+      rampOrientation: b.rampOrientation,
+      stairsOrientation: b.stairsOrientation,
+      smoothRampOrientation: b.smoothRampOrientation,
+      isPillarHalfWidthFlag: b.isPillarHalfWidthFlag,
+      variant: b.variant !== 'normal' ? b.variant : undefined,
+      isSecretFlag: b.isSecretFlag,
+      blockTheme: blockThemeRefToTheme(b.blockThemeId) ?? b.blockTheme,
+      spikeDirection: b.spikeDirection,
+      spikeSize: b.spikeDirection !== undefined ? (b.spikeSize ?? '1x1') : undefined,
+    }));
+  }
+  if (json.bouncePads && json.bouncePads.length > 0) {
+    room.bouncePads = json.bouncePads.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+      wBlock: b.wBlock !== 1 ? b.wBlock : undefined,
+      hBlock: b.hBlock !== 1 ? b.hBlock : undefined,
+      rampOrientation: b.rampOrientation,
+      speedFactorIndex: b.speedFactorIndex !== 0 ? b.speedFactorIndex : undefined,
+    }));
+  }
+  if (json.kineticBlocks && json.kineticBlocks.length > 0) {
+    room.kineticBlocks = json.kineticBlocks.map(kb => ({
+      xBlock: kb.xBlock,
+      yBlock: kb.yBlock,
+      wBlock: kb.wBlock !== 1 ? kb.wBlock : undefined,
+      hBlock: kb.hBlock !== 1 ? kb.hBlock : undefined,
+    }));
+  }
+  if (json.grappleCarryBlocks && json.grappleCarryBlocks.length > 0) {
+    room.grappleCarryBlocks = json.grappleCarryBlocks.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+    }));
+  }
+  if (json.zipMoveBlocks && json.zipMoveBlocks.length > 0) {
+    room.zipMoveBlocks = json.zipMoveBlocks.map(b => ({
+      ...b,
+      wBlock: Math.max(3, Number.isFinite(b.wBlock) ? Math.floor(b.wBlock) : 3),
+      hBlock: Math.max(3, Number.isFinite(b.hBlock) ? Math.floor(b.hBlock) : 3),
+      variant: b.variant === 'away' ? 'away' as const : 'toward' as const,
+    }));
+  }
+  if (json.phantasmalTiles && json.phantasmalTiles.length > 0) {
+    room.phantasmalTiles = json.phantasmalTiles.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+    }));
+  }
+  if (json.ropes && json.ropes.length > 0) {
+    room.ropes = json.ropes.map(r => ({
+      anchorAXBlock: r.aax,
+      anchorAYBlock: r.aay,
+      anchorBXBlock: r.abx,
+      anchorBYBlock: r.aby,
+      segmentCount: r.segs ?? DEFAULT_ROPE_SEGMENT_COUNT,
+      isAnchorBFixed: r.fixed !== false,
+      destructibility: (r.destr ?? 'indestructible') as RopeDestructibility,
+      thicknessIndex: (r.thick === 1 ? 1 : r.thick === 2 ? 2 : 0) as 0 | 1 | 2,
+    }));
+  }
+  if (json.fallingBlocks && json.fallingBlocks.length > 0) {
+    room.fallingBlocks = json.fallingBlocks.map(fb => ({
+      xBlock: fb.xBlock,
+      yBlock: fb.yBlock,
+      variant: (fb.variant ?? 'tough') as FallingBlockVariant,
+      blockTheme: fb.blockTheme ?? null,
+    }));
+  }
+  if (json.backgroundBlocks && json.backgroundBlocks.length > 0) {
+    room.backgroundBlocks = json.backgroundBlocks.map(b => ({
+      xBlock: b.xBlock,
+      yBlock: b.yBlock,
+      wBlock: b.wBlock,
+      hBlock: b.hBlock,
+      blockTheme: b.blockTheme ?? null,
+      isLightBlockingFlag: b.isLightBlocking ? 1 : 0,
+    }));
   }
 
   // ── Baked wall template (optional) ──────────────────────────────────────
