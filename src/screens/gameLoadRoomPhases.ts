@@ -46,6 +46,27 @@ import type { SunraysRenderer } from '../render/effects/sunraysRenderer';
 import type { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
 import type { GuideDustPathRenderer } from '../render/effects/guideDustPathRenderer';
 import { RoomDef, BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL } from '../levels/roomDef';
+import type { WeatherEffect } from '../levels/roomDef';
+
+/**
+ * Picks the effective weather for this room entry. When `randomWeather` is
+ * set and `weatherWeights` is non-empty, re-rolls a weighted-random pick
+ * every call (not cached) so repeat visits can land on a different weather.
+ * An empty `weatherWeights` while `randomWeather` is true is treated as
+ * "none" rather than falling back to the (possibly stale) `weather` field.
+ */
+function pickEffectiveWeather(room: RoomDef): WeatherEffect {
+  if (!room.randomWeather) return room.weather ?? 'none';
+  const weights = room.weatherWeights ?? [];
+  if (weights.length === 0) return 'none';
+  const total = weights.reduce((sum, w) => sum + w.percent, 0);
+  let roll = Math.random() * total;
+  for (const w of weights) {
+    roll -= w.percent;
+    if (roll <= 0) return w.weather;
+  }
+  return weights[weights.length - 1].weather;
+}
 import { buildRoomAmbientBlockerKeys } from '../levels/roomAmbientBlockers';
 import { ROOM_REGISTRY, getWorldDifficultyMultiplier } from '../levels/rooms';
 import type { CameraState } from '../render/camera';
@@ -546,6 +567,12 @@ function applyRoomEnvironmentAndScheduling(
   }
   {
     const _t0 = import.meta.env.DEV ? performance.now() : 0;
+    // Re-roll Random Weather every room entry (not cached) and overwrite
+    // `room.weather` in place so both the one-time init below and the
+    // per-frame cloudy/thunderstorm overlay (renderWeatherSceneOverlay in
+    // gameRender.ts, which reads the same room reference) agree on the same
+    // pick for this visit.
+    room.weather = pickEffectiveWeather(room);
     rainForegroundLayer.initFromRoom(world, room);
     rainParallaxBackground.initFromRoom(room);
     sunnyForegroundLayer.initFromRoom(world, room);

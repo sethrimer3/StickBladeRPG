@@ -43,6 +43,7 @@ import type {
   RoomJsonPixelMaterial,
   RoomJsonWall,
   RoomJsonTransition,
+  RoomJsonWeatherWeight,
   ValidationError,
 } from './roomJsonSchema';
 export {

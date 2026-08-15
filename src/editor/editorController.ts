@@ -1153,6 +1153,34 @@ export function createEditorController(
             }
           }
         },
+        onRandomWeatherToggle: (enabled: boolean) => {
+          runRoomFieldMutation('randomWeather', room => {
+            room.randomWeather = enabled;
+            if (enabled && (room.weatherWeights ?? []).length === 0 && room.weather && room.weather !== 'none') {
+              // Seed the multi-select with the room's current single weather so
+              // enabling the checkbox doesn't silently collapse to "none".
+              room.weatherWeights = [{ weather: room.weather, percent: 100 }];
+            }
+          });
+        },
+        onWeatherWeightsChange: (weights: { weather: WeatherEffect; percent: number }[]) => {
+          runRoomFieldMutation('weatherWeights', room => { room.weatherWeights = weights; });
+          const room = state.roomData;
+          const needsOpenCeiling = weights.some(w => OPEN_CEILING_WEATHER_EFFECTS.includes(w.weather));
+          if (room && needsOpenCeiling) {
+            const walls = room.interiorWalls.map(w => ({
+              xWorld: w.xBlock * BLOCK_SIZE_MEDIUM,
+              yWorld: w.yBlock * BLOCK_SIZE_MEDIUM,
+              wWorld: w.wBlock * BLOCK_SIZE_MEDIUM,
+            }));
+            const hasOpening = hasAnyOpenCeilingColumn(
+              room.widthBlocks * BLOCK_SIZE_MEDIUM, room.heightBlocks * BLOCK_SIZE_MEDIUM, walls,
+            );
+            if (!hasOpening) {
+              showEditorToast(uiRoot, `This room has no opening in the ceiling — some of the selected weather effects won't be visible.`);
+            }
+          }
+        },
         onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => {
           runRoomFieldMutation('ambientLightDirection', room => { room.ambientLightDirection = direction; });
         },

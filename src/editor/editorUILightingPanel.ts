@@ -18,6 +18,12 @@ import type {
 } from './editorState';
 import { LIGHTING_OPTIONS, AMBIENT_LIGHT_DIRECTION_OPTIONS, WEATHER_OPTIONS } from './editorState';
 import { PANEL_BORDER, TEXT_COLOR } from './editorStyles';
+import { createMultiHandleSlider, normalizeWeatherWeightPercents } from './editorMultiHandleSlider';
+
+/** Serializes a weatherWeights list into a stable string for change detection. */
+function weatherWeightsSig(weights: readonly { weather: string; percent: number }[] | undefined): string {
+  return (weights ?? []).map(w => `${w.weather}:${w.percent}`).join(',');
+}
 
 /**
  * Deterministic value signature over every field syncInPlace() reads —
@@ -46,6 +52,8 @@ export function computeLightingValueSig(state: EditorState, currentLighting: str
     s?.rayCount ?? 6,
     s?.animationEnabled ?? true,
     room?.weather ?? 'none',
+    room?.randomWeather ?? false,
+    weatherWeightsSig(room?.weatherWeights),
   ].join('|');
 }
 
@@ -161,6 +169,66 @@ export function createEditorLightingPanel(
   });
   weatherSelect.addEventListener('click', (e) => e.stopPropagation());
   lightingDiv.appendChild(weatherSelect);
+
+  // ── Random Weather checkbox + multi-select + split slider ─────────────────
+  const randomWeatherRow = document.createElement('label');
+  randomWeatherRow.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(241,231,203,0.7); cursor: pointer; margin-top: 6px;';
+  const randomWeatherCheckbox = document.createElement('input');
+  randomWeatherCheckbox.type = 'checkbox';
+  randomWeatherRow.appendChild(randomWeatherCheckbox);
+  const randomWeatherText = document.createElement('span');
+  randomWeatherText.textContent = 'Random Weather';
+  randomWeatherRow.appendChild(randomWeatherText);
+  randomWeatherRow.addEventListener('click', (e) => e.stopPropagation());
+  lightingDiv.appendChild(randomWeatherRow);
+
+  const weatherMultiSelectDiv = document.createElement('div');
+  weatherMultiSelectDiv.style.cssText = 'display: none; margin-top: 4px; flex-direction: column; gap: 2px;';
+  const weatherCheckboxes = new Map<WeatherEffect, HTMLInputElement>();
+  for (const opt of WEATHER_OPTIONS) {
+    const row = document.createElement('label');
+    row.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(241,231,203,0.7); cursor: pointer;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    row.appendChild(cb);
+    const span = document.createElement('span');
+    span.textContent = opt.label;
+    row.appendChild(span);
+    row.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => emitWeatherWeightsChange());
+    weatherCheckboxes.set(opt.id, cb);
+    weatherMultiSelectDiv.appendChild(row);
+  }
+  lightingDiv.appendChild(weatherMultiSelectDiv);
+
+  const weatherSlider = createMultiHandleSlider((percents) => {
+    const selected = WEATHER_OPTIONS.filter(opt => weatherCheckboxes.get(opt.id)?.checked);
+    getCallbacks()?.onWeatherWeightsChange(selected.map((opt, i) => ({ weather: opt.id, percent: percents[i] })));
+  });
+  weatherMultiSelectDiv.appendChild(weatherSlider.el);
+
+  randomWeatherCheckbox.addEventListener('change', () => {
+    getCallbacks()?.onRandomWeatherToggle(randomWeatherCheckbox.checked);
+  });
+
+  /** Reads current checkbox selection, rebalances percents (preserving
+   *  proportions of weathers that stay selected, splitting the rest evenly
+   *  among newly-added ones), and reports the result. */
+  function emitWeatherWeightsChange(): void {
+    const room = getCallbacks() ? _lastRoomDataForWeights : null;
+    const prevWeights = room?.weatherWeights ?? [];
+    const selected = WEATHER_OPTIONS.filter(opt => weatherCheckboxes.get(opt.id)?.checked);
+    const rawPercents = selected.map(opt => {
+      const prev = prevWeights.find(w => w.weather === opt.id);
+      return prev ? prev.percent : 100 / selected.length;
+    });
+    const percents = normalizeWeatherWeightPercents(rawPercents);
+    getCallbacks()?.onWeatherWeightsChange(selected.map((opt, i) => ({ weather: opt.id, percent: percents[i] })));
+  }
+  // Room data snapshot used only by emitWeatherWeightsChange() above to read
+  // prior percents when the checkbox selection changes (avoids threading
+  // `state` through every checkbox's change handler).
+  let _lastRoomDataForWeights: { weatherWeights?: { weather: WeatherEffect; percent: number }[] } | null = null;
 
   // ── Ambient Light Direction dropdown ──────────────────────────────────────
   const ambientDirLabel = document.createElement('div');
@@ -358,9 +426,35 @@ export function createEditorLightingPanel(
 
   // ── Sync helpers ──────────────────────────────────────────────────────────
 
+  function syncWeatherControls(state: EditorState): void {
+    const room = state.roomData;
+    _lastRoomDataForWeights = room;
+    const randomWeather = room?.randomWeather ?? false;
+    if (document.activeElement !== randomWeatherCheckbox) {
+      randomWeatherCheckbox.checked = randomWeather;
+    }
+    weatherSelect.style.display = randomWeather ? 'none' : '';
+    weatherMultiSelectDiv.style.display = randomWeather ? 'flex' : 'none';
+    if (!randomWeather) return;
+    const weights = room?.weatherWeights ?? [];
+    const selectedIds = new Set(weights.map(w => w.weather));
+    for (const [id, cb] of weatherCheckboxes) {
+      if (document.activeElement !== cb) cb.checked = selectedIds.has(id);
+    }
+    if (weights.length >= 2) {
+      weatherSlider.setSegments(weights.map(w => ({
+        label: WEATHER_OPTIONS.find(opt => opt.id === w.weather)?.label ?? w.weather,
+        percent: w.percent,
+      })));
+    } else {
+      weatherSlider.setSegments([]);
+    }
+  }
+
   function syncOnRebuild(state: EditorState, currentLighting: string, paletteDiv: HTMLElement): void {
     lightingSelect.value = currentLighting;
     weatherSelect.value = state.roomData?.weather ?? 'none';
+    syncWeatherControls(state);
     ambientDirSelect.value = state.roomData?.ambientLightDirection ?? '';
     dirBiasSlider.value = String(state.roomData?.directionalBias ?? 0.65);
     dirBiasValLabel.textContent  = (state.roomData?.directionalBias  ?? 0.65).toFixed(2);
@@ -402,6 +496,7 @@ export function createEditorLightingPanel(
     if (document.activeElement !== weatherSelect) {
       weatherSelect.value = state.roomData?.weather ?? 'none';
     }
+    syncWeatherControls(state);
     if (document.activeElement !== ambientDirSelect) {
       ambientDirSelect.value = state.roomData?.ambientLightDirection ?? '';
     }
@@ -447,6 +542,7 @@ export function createEditorLightingPanel(
   function resetState(): void {
     _lastRenderedLightingEffect = '';
     _lastSyncInPlaceSig = '';
+    _lastRoomDataForWeights = null;
   }
 
   return { lightingDiv, syncOnRebuild, syncInPlace, resetState };
