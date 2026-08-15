@@ -4,7 +4,9 @@ type ArrayValuedKey<T> = {
   [K in keyof T]-?: NonNullable<T[K]> extends readonly unknown[] ? K : never;
 }[keyof T];
 
-export type EditorRoomElementCollectionKey = Exclude<ArrayValuedKey<EditorRoomData>, 'playerSpawnBlock'>;
+/** `weatherWeights` is room-level config, not a placed-element collection. */
+export type EditorRoomElementCollectionKey =
+  Exclude<ArrayValuedKey<EditorRoomData>, 'playerSpawnBlock' | 'weatherWeights'>;
 
 /**
  * Authoritative collection list for persistence contract tests.
