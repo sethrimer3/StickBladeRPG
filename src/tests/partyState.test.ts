@@ -202,8 +202,8 @@ describe('equipment rules', () => {
     assert.equal(equipment.offHand, null);
   });
 
-  test('all three donor subslots exist', () => {
-    assert.deepEqual([...EQUIPMENT_SUBSLOTS], ['mainHand', 'offHand', 'armor']);
+  test('all four subslots exist', () => {
+    assert.deepEqual([...EQUIPMENT_SUBSLOTS], ['mainHand', 'offHand', 'armor', 'shoes']);
   });
 });
 

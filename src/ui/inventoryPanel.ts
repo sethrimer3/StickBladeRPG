@@ -1,27 +1,30 @@
 /**
  * Inventory screen — the STICK-RPG inventory, opened with the `I` key.
  *
- * Layout, top to bottom:
- *   1. **Status bar** — the active member's identity, level, XP progress, health,
- *      derived attack/defense, coins, and the three equipment slots. Always
- *      visible; it is the "top bar" the screen is built around.
- *   2. Member tabs, when more than one member is recruited.
- *   3. The carried-item grid.
- *
- * Unlike `partyPanel.ts` / `skillPanel.ts`, which edit a deep clone and commit
- * on Confirm, this screen mutates the live `PlayerInventory` / `PartyState`
- * records directly: equipping is a *move* between the item pool and a slot, and
- * a toggle-open-toggle-closed screen with no Confirm button should not silently
- * discard what the player just did. `onClose` is where the caller re-equips the
- * live weapon and saves.
+ * Layout:
+ *   1. **Status Bar** — active party member's identity, level, XP progress, health,
+ *      attack/defense, coins, and quick stats.
+ *   2. **Member Tabs** — when multiple party members are recruited.
+ *   3. **Main Content (Two Columns)**:
+ *      - **Left: Equipment & Character Paperdoll** — Live physical canvas preview
+ *        of the stickman player standing in place, surrounded by actual equipment
+ *        slots:
+ *          - Armor Slot (1 square, chest icon watermark)
+ *          - Hand Slot (1 square divided into Left/Main Hand and Right/Off Hand, or
+ *            whole square for 2-handed weapons)
+ *          - Shoes Slot (1 square, boot icon watermark)
+ *      - **Right: Carried Items Grid** — Grid of actual square slots.
+ *        - Two-handed items take up a whole square.
+ *        - One-handed items take up half a square (width is half the height, centered).
+ *        - Armor and shoes take up square slots.
+ *        - Full drag-and-drop and click-to-unequip support.
+ *   4. **Footer** — Instructions and Close button.
  */
 
 import {
-  EQUIPMENT_SUBSLOTS,
   canEquipInSubslot,
   computeEquipmentModifiers,
   getRecruitedCount,
-  isTwoHandedWeapon,
   setActiveMember,
   type EquipmentSubslot,
   type PartyMember,
@@ -34,12 +37,17 @@ import {
   type PlayerInventory,
 } from '../sim/party/inventory';
 import { computeDerivedStats } from '../sim/stats/characterStats';
+import { getWeaponDef } from '../sim/weapons/weaponDefs';
 import {
-  getWeaponDef,
-  isWeaponRuntimeImplemented,
-  resolveWeaponGrip,
-  type WeaponDef,
-} from '../sim/weapons/weaponDefs';
+  getItemDef,
+  getItemCategory,
+  isTwoHandedItem,
+  isOneHandedItem,
+  isArmorItem,
+  isShoeItem,
+} from '../sim/items/itemCatalog';
+import { CharacterPreviewController } from './characterPreviewRenderer';
+import { getItemIconSvg, getSlotWatermarkSvg } from './inventoryIcons';
 
 export interface InventoryPanelCallbacks {
   /** Called once when the screen closes, after all edits have been applied. */
@@ -59,22 +67,10 @@ export interface InventoryPanelInputs {
 const GOLD = '#ffd700';
 const GOLD_DIM = '#d4a84b';
 const PANEL_BG = 'rgba(10,8,6,0.96)';
-const SLOT_LABELS: Record<EquipmentSubslot, string> = {
-  mainHand: 'Main Hand',
-  offHand: 'Off Hand',
-  armor: 'Armor',
-};
+const SLOT_BG = 'rgba(22, 18, 14, 0.9)';
+const SLOT_BORDER = 'rgba(212, 168, 75, 0.35)';
 
-/**
- * Which mouse button fires each hand. Shown on the slot itself, because the
- * hands are the control scheme: left button swings the main hand, right button
- * the off hand, and a two-handed weapon claims both.
- */
-const SLOT_BUTTON_HINTS: Record<EquipmentSubslot, string> = {
-  mainHand: 'LMB',
-  offHand: 'RMB',
-  armor: '',
-};
+type CategoryFilter = 'all' | 'weapon' | 'armor' | 'shoes';
 
 /**
  * Opens the inventory screen. Returns a cleanup function that removes it
@@ -87,22 +83,16 @@ export function showInventoryPanel(
 ): () => void {
   const { inventory, party } = inputs;
   let selectedMemberIndex = party.activeIndex;
+  let activeCategory: CategoryFilter = 'all';
+  let itemFilter = '';
 
-  /**
-   * What is currently under the cursor mid-drag.
-   *
-   * Held here rather than read from `DataTransfer`, because `dragover` — where
-   * a slot decides whether it will accept the drop — is forbidden from reading
-   * transfer data. The payload is still written to `DataTransfer` as well so the
-   * browser treats the gesture as a real drag.
-   */
+  /** Drag payload tracking. */
   type DragPayload =
     | { from: 'inventory'; itemId: string }
     | { from: 'slot'; itemId: string; subslot: EquipmentSubslot };
   let dragPayload: DragPayload | null = null;
-  /** Text filter over the carried-item grid. */
-  let itemFilter = '';
 
+  // Root UI container
   const el = document.createElement('div');
   el.id = 'inventory-panel-screen';
   el.style.cssText = `
@@ -110,32 +100,69 @@ export function showInventoryPanel(
     background: ${PANEL_BG};
     color: #eee; font-family: 'Cinzel', serif;
     display: flex; flex-direction: column; align-items: center;
-    overflow-y: auto; box-sizing: border-box; padding: 0 0 72px;
+    overflow-y: auto; box-sizing: border-box; padding: 0 0 76px;
     z-index: 1500;
   `;
   root.appendChild(el);
 
-  // ── Status bar (sticky) ───────────────────────────────────────────────────
+  // ── 1. Status Bar ─────────────────────────────────────────────────────────
   const statusBar = document.createElement('div');
   statusBar.id = 'inventory-status-bar';
   statusBar.style.cssText = `
     position: sticky; top: 0; width: 100%;
-    background: linear-gradient(180deg, rgba(18,14,10,0.98), rgba(12,10,8,0.98));
+    background: linear-gradient(180deg, rgba(20,16,12,0.98), rgba(14,11,9,0.98));
     border-bottom: 2px solid ${GOLD_DIM};
-    padding: 12px 20px; box-sizing: border-box; z-index: 2;
+    padding: 10px 24px; box-sizing: border-box; z-index: 10;
     display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
   `;
   el.appendChild(statusBar);
 
+  // ── 2. Member Tabs ────────────────────────────────────────────────────────
   const memberTabs = document.createElement('div');
-  memberTabs.style.cssText = 'display:flex; gap:8px; justify-content:center; margin:16px 0 4px;';
+  memberTabs.style.cssText = 'display:flex; gap:8px; justify-content:center; margin:12px 0 4px;';
   el.appendChild(memberTabs);
 
-  const itemsSection = document.createElement('div');
-  itemsSection.style.cssText = `
-    width: 100%; max-width: 900px; padding: 8px 16px 0; box-sizing: border-box;
+  // ── 3. Main Workspace (Two-Column) ────────────────────────────────────────
+  const workspace = document.createElement('div');
+  workspace.style.cssText = `
+    display: flex; flex-wrap: wrap; gap: 24px; justify-content: center;
+    width: 100%; max-width: 1060px; padding: 12px 20px; box-sizing: border-box;
+    align-items: flex-start;
   `;
-  el.appendChild(itemsSection);
+  el.appendChild(workspace);
+
+  // Left Column: Paperdoll & Equipment Slots
+  const paperdollColumn = document.createElement('div');
+  paperdollColumn.style.cssText = `
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    background: rgba(18, 14, 10, 0.7);
+    border: 1px solid rgba(212, 168, 75, 0.25);
+    border-radius: 8px; padding: 16px 20px; box-sizing: border-box;
+    min-width: 320px;
+  `;
+  workspace.appendChild(paperdollColumn);
+
+  // Right Column: Carried Items
+  const itemsColumn = document.createElement('div');
+  itemsColumn.style.cssText = `
+    flex: 1; min-width: 440px; max-width: 640px;
+    display: flex; flex-direction: column; gap: 12px;
+    background: rgba(18, 14, 10, 0.7);
+    border: 1px solid rgba(212, 168, 75, 0.25);
+    border-radius: 8px; padding: 16px 20px; box-sizing: border-box;
+  `;
+  workspace.appendChild(itemsColumn);
+
+  // Floating tooltip container
+  const tooltipEl = document.createElement('div');
+  tooltipEl.style.cssText = `
+    position: fixed; display: none; z-index: 2000; pointer-events: none;
+    background: rgba(14, 10, 8, 0.96); border: 1px solid ${GOLD};
+    border-radius: 6px; padding: 10px 14px; max-width: 260px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.8); color: #eee; font-family: 'Cinzel', serif;
+  `;
+  document.body.appendChild(tooltipEl);
 
   function selectedMember(): PartyMember {
     return party.members[selectedMemberIndex] ?? party.members[0];
@@ -145,7 +172,10 @@ export function showInventoryPanel(
     if (callbacks.onEquipmentChanged) callbacks.onEquipmentChanged();
   }
 
-  // ── Status bar contents ───────────────────────────────────────────────────
+  // Character preview controller instance
+  let previewController: CharacterPreviewController | null = null;
+
+  // ── Render Status Bar ─────────────────────────────────────────────────────
   function renderStatusBar(): void {
     const member = selectedMember();
     const stats = member.stats;
@@ -163,22 +193,22 @@ export function showInventoryPanel(
 
     // Identity + XP
     const identity = document.createElement('div');
-    identity.style.cssText = 'display:flex; flex-direction:column; gap:4px; min-width:200px;';
+    identity.style.cssText = 'display:flex; flex-direction:column; gap:3px; min-width:190px;';
     identity.innerHTML = `
       <div style="display:flex; align-items:baseline; gap:8px;">
-        <span style="color:${GOLD}; font-size:1.15rem;">${escapeHtml(member.name)}</span>
+        <span style="color:${GOLD}; font-size:1.15rem; font-weight:bold;">${escapeHtml(member.name)}</span>
         <span style="color:#aaa; font-size:0.8rem;">Level ${stats.level}</span>
       </div>
-      <div style="height:8px; width:200px; background:#1a1a24; border:1px solid #444; border-radius:4px; overflow:hidden;">
-        <div style="height:100%; width:${(xpRatio * 100).toFixed(1)}%; background:${GOLD_DIM};"></div>
+      <div style="height:7px; width:190px; background:#1a1a24; border:1px solid #444; border-radius:3px; overflow:hidden;">
+        <div style="height:100%; width:${(xpRatio * 100).toFixed(1)}%; background:linear-gradient(90deg, #d4a84b, #ffd700);"></div>
       </div>
-      <div style="color:#888; font-size:0.7rem;">XP ${Math.round(stats.xp)} / ${Math.round(stats.xpToNextLevel)}</div>
+      <div style="color:#888; font-size:0.68rem;">XP ${Math.round(stats.xp)} / ${Math.round(stats.xpToNextLevel)}</div>
     `;
     statusBar.appendChild(identity);
 
-    // Derived stats + coins
+    // Derived stats + Coins
     const statsBlock = document.createElement('div');
-    statsBlock.style.cssText = 'display:flex; gap:18px; align-items:center;';
+    statsBlock.style.cssText = 'display:flex; gap:16px; align-items:center;';
     statsBlock.appendChild(statChip('Health', healthText, '#ff6b6b'));
     statsBlock.appendChild(statChip('Attack', derived.attack.toFixed(2), '#ffa94d'));
     statsBlock.appendChild(statChip('Defense', derived.defense.toFixed(2), '#74c0fc'));
@@ -187,14 +217,6 @@ export function showInventoryPanel(
       statsBlock.appendChild(statChip('Skill Points', String(stats.skillPoints), '#b197fc'));
     }
     statusBar.appendChild(statsBlock);
-
-    // Equipment slots
-    const slots = document.createElement('div');
-    slots.style.cssText = 'display:flex; gap:10px; align-items:stretch;';
-    for (const subslot of EQUIPMENT_SUBSLOTS) {
-      slots.appendChild(equipmentSlotChip(member, subslot));
-    }
-    statusBar.appendChild(slots);
   }
 
   function statChip(label: string, value: string, color: string): HTMLElement {
@@ -202,21 +224,497 @@ export function showInventoryPanel(
     chip.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:2px;';
     chip.innerHTML = `
       <span style="color:#888; font-size:0.65rem; letter-spacing:0.08em; text-transform:uppercase;">${escapeHtml(label)}</span>
-      <span style="color:${color}; font-size:1rem;">${escapeHtml(value)}</span>
+      <span style="color:${color}; font-size:0.95rem; font-weight:bold;">${escapeHtml(value)}</span>
     `;
     return chip;
   }
 
-  /**
-   * Resolves a drop onto `subslot`, returning true when anything moved.
-   *
-   * A slot-to-slot drag unequips the source first: a two-hander in the main
-   * hand blocks the off hand while it is still worn, so asking
-   * `equipFromInventory` before releasing it would always be refused. If the
-   * equip then fails anyway, the source is put back, leaving the drag a no-op
-   * rather than dumping the item on the floor.
-   */
-  function applyDropOnSlot(
+  // ── Render Member Tabs ────────────────────────────────────────────────────
+  function renderMemberTabs(): void {
+    memberTabs.innerHTML = '';
+    if (getRecruitedCount(party) <= 1) return;
+
+    party.members.forEach((member, index) => {
+      if (!member.isRecruited) return;
+      const isSelected = selectedMemberIndex === index;
+      const isLeader = party.activeIndex === index;
+      const tab = document.createElement('button');
+      tab.textContent = isLeader ? `${member.name} ★` : member.name;
+      tab.title = isLeader ? 'Active party leader' : 'Click to inspect; double-click to switch active leader';
+      tab.style.cssText = `
+        font-family: 'Cinzel', serif; font-size: 0.82rem; padding: 5px 14px;
+        background: ${isSelected ? 'rgba(212,168,75,0.2)' : 'rgba(20,20,25,0.6)'};
+        color: ${isSelected ? GOLD : '#999'};
+        border: 1px solid ${isSelected ? GOLD : '#444'};
+        border-radius: 4px; cursor: pointer; transition: all 0.15s;
+      `;
+      tab.addEventListener('click', () => {
+        selectedMemberIndex = index;
+        render();
+      });
+      tab.addEventListener('dblclick', () => {
+        if (setActiveMember(party, index)) {
+          selectedMemberIndex = index;
+          notifyEquipmentChanged();
+        }
+        render();
+      });
+      memberTabs.appendChild(tab);
+    });
+  }
+
+  // ── Render Paperdoll & Equipment Slots ────────────────────────────────────
+  function renderPaperdoll(): void {
+    const member = selectedMember();
+    paperdollColumn.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.style.cssText = `
+      color:${GOLD}; font-size:1.05rem; font-weight:bold; width:100%; text-align:center;
+      border-bottom:1px solid rgba(212,168,75,0.25); padding-bottom:6px; margin-bottom:2px;
+      letter-spacing: 0.05em;
+    `;
+    title.textContent = `${member.name}'s Equipment`;
+    paperdollColumn.appendChild(title);
+
+    // Paperdoll Stage (Preview Canvas + Slots on sides/bottom)
+    const stage = document.createElement('div');
+    stage.style.cssText = `
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      position: relative; width: 100%;
+    `;
+    paperdollColumn.appendChild(stage);
+
+    // Center Preview Canvas Frame
+    const previewFrame = document.createElement('div');
+    previewFrame.style.cssText = `
+      position: relative; width: 180px; height: 220px;
+      border: 1.5px solid rgba(212, 168, 75, 0.4);
+      border-radius: 6px; overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.8);
+    `;
+    stage.appendChild(previewFrame);
+
+    if (previewController) {
+      previewController.destroy();
+      previewController = null;
+    }
+    previewController = new CharacterPreviewController(previewFrame, member.equipment, {
+      width: 180,
+      height: 220,
+      scale: 5.5,
+    });
+
+    // Slots Container
+    const slotsGrid = document.createElement('div');
+    slotsGrid.style.cssText = `
+      display: flex; flex-direction: column; gap: 12px; width: 100%; align-items: center;
+    `;
+    stage.appendChild(slotsGrid);
+
+    // Row 1: Armor Slot
+    const armorRow = document.createElement('div');
+    armorRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px;';
+    armorRow.appendChild(createArmorSlot(member));
+    slotsGrid.appendChild(armorRow);
+
+    // Row 2: Hand Slot (Single Square divided into Left/Main and Right/Off or full square 2H)
+    const handRow = document.createElement('div');
+    handRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px;';
+    handRow.appendChild(createHandSlot(member));
+    slotsGrid.appendChild(handRow);
+
+    // Row 3: Shoes Slot
+    const shoesRow = document.createElement('div');
+    shoesRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px;';
+    shoesRow.appendChild(createShoesSlot(member));
+    slotsGrid.appendChild(shoesRow);
+  }
+
+  // ── Armor Slot ────────────────────────────────────────────────────────────
+  function createArmorSlot(member: PartyMember): HTMLElement {
+    const slot = document.createElement('div');
+    const itemId = member.equipment.armor;
+    const isEquipped = itemId !== null;
+
+    slot.style.cssText = `
+      width: 76px; height: 76px; box-sizing: border-box;
+      background: ${isEquipped ? 'rgba(35, 28, 18, 0.9)' : SLOT_BG};
+      border: 1.5px ${isEquipped ? 'solid' : 'dashed'} ${isEquipped ? GOLD : SLOT_BORDER};
+      border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      position: relative; cursor: ${isEquipped ? 'pointer' : 'default'}; transition: all 0.15s;
+    `;
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size: 0.62rem; color: #888; position: absolute; top: 3px; letter-spacing: 0.05em;';
+    label.textContent = 'ARMOR';
+    slot.appendChild(label);
+
+    if (isEquipped) {
+      slot.innerHTML += getItemIconSvg(itemId, 38, 38);
+      const name = document.createElement('span');
+      name.style.cssText = `
+        font-size: 0.65rem; color: #eee; margin-top: 2px; text-align: center;
+        max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      `;
+      name.textContent = getItemDisplayName(itemId);
+      slot.appendChild(name);
+
+      attachTooltip(slot, itemId);
+
+      slot.addEventListener('click', () => {
+        unequipToInventory(inventory, member.equipment, 'armor');
+        notifyEquipmentChanged();
+        render();
+      });
+
+      slot.draggable = true;
+      slot.addEventListener('dragstart', e => {
+        dragPayload = { from: 'slot', itemId, subslot: 'armor' };
+        e.dataTransfer?.setData('text/plain', itemId);
+        slot.style.opacity = '0.5';
+      });
+      slot.addEventListener('dragend', () => {
+        dragPayload = null;
+        slot.style.opacity = '1';
+      });
+    } else {
+      const watermark = document.createElement('div');
+      watermark.innerHTML = getSlotWatermarkSvg('armor', 32);
+      watermark.style.cssText = 'opacity: 0.4; margin-top: 6px;';
+      slot.appendChild(watermark);
+    }
+
+    // Drop target
+    slot.addEventListener('dragover', e => {
+      if (!dragPayload || !canDropOnSubslot(member, 'armor', dragPayload)) return;
+      e.preventDefault();
+      slot.style.borderColor = GOLD;
+      slot.style.background = 'rgba(255, 215, 0, 0.2)';
+    });
+    slot.addEventListener('dragleave', () => {
+      slot.style.borderColor = isEquipped ? GOLD : SLOT_BORDER;
+      slot.style.background = isEquipped ? 'rgba(35, 28, 18, 0.9)' : SLOT_BG;
+    });
+    slot.addEventListener('drop', e => {
+      e.preventDefault();
+      const payload = dragPayload;
+      dragPayload = null;
+      if (!payload) return;
+      applyDrop(member, 'armor', payload);
+      notifyEquipmentChanged();
+      render();
+    });
+
+    return slot;
+  }
+
+  // ── Hand Slot (Single Square with Left / Right sides, or 2H full square) ──
+  function createHandSlot(member: PartyMember): HTMLElement {
+    const handSlot = document.createElement('div');
+    const mainId = member.equipment.mainHand;
+    const offId = member.equipment.offHand;
+    const is2H = mainId !== null && isTwoHandedItem(mainId);
+
+    handSlot.style.cssText = `
+      width: 80px; height: 80px; box-sizing: border-box;
+      background: ${SLOT_BG};
+      border: 1.5px solid ${(mainId || offId) ? GOLD : SLOT_BORDER};
+      border-radius: 6px; display: flex; position: relative; overflow: hidden;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    `;
+
+    const label = document.createElement('span');
+    label.style.cssText = `
+      font-size: 0.58rem; color: #888; position: absolute; top: 2px; width: 100%;
+      text-align: center; letter-spacing: 0.05em; z-index: 3; pointer-events: none;
+    `;
+    label.textContent = is2H ? 'HANDS (2H)' : 'HANDS (L / R)';
+    handSlot.appendChild(label);
+
+    if (is2H) {
+      // ── Two-Handed: Takes up the whole square ─────────────────────────────
+      const twoHandCard = document.createElement('div');
+      twoHandCard.style.cssText = `
+        width: 100%; height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; padding-top: 10px; box-sizing: border-box;
+        background: rgba(45, 35, 20, 0.85); cursor: pointer;
+      `;
+      twoHandCard.innerHTML = getItemIconSvg(mainId, 42, 42);
+      const nameSpan = document.createElement('span');
+      nameSpan.style.cssText = `
+        font-size: 0.62rem; color: #eee; margin-top: 2px; text-align: center;
+        max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      `;
+      nameSpan.textContent = getItemDisplayName(mainId);
+      twoHandCard.appendChild(nameSpan);
+
+      attachTooltip(twoHandCard, mainId);
+
+      twoHandCard.addEventListener('click', () => {
+        unequipToInventory(inventory, member.equipment, 'mainHand');
+        notifyEquipmentChanged();
+        render();
+      });
+
+      twoHandCard.draggable = true;
+      twoHandCard.addEventListener('dragstart', e => {
+        dragPayload = { from: 'slot', itemId: mainId, subslot: 'mainHand' };
+        e.dataTransfer?.setData('text/plain', mainId);
+        twoHandCard.style.opacity = '0.5';
+      });
+      twoHandCard.addEventListener('dragend', () => {
+        dragPayload = null;
+        twoHandCard.style.opacity = '1';
+      });
+
+      handSlot.appendChild(twoHandCard);
+    } else {
+      // ── One-Handed: Left Half (Main Hand) & Right Half (Off Hand) ─────────
+      // Left side: Main Hand (LMB)
+      const leftHalf = document.createElement('div');
+      leftHalf.style.cssText = `
+        width: 50%; height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; padding-top: 10px; box-sizing: border-box;
+        border-right: 1px dashed rgba(212, 168, 75, 0.35); position: relative;
+        background: ${mainId ? 'rgba(35, 28, 18, 0.8)' : 'transparent'};
+        cursor: ${mainId ? 'pointer' : 'default'};
+      `;
+
+      if (mainId) {
+        leftHalf.innerHTML = getItemIconSvg(mainId, 28, 28);
+        const lmbTag = document.createElement('span');
+        lmbTag.style.cssText = `font-size: 0.55rem; color: ${GOLD_DIM}; font-weight: bold; margin-top: 1px;`;
+        lmbTag.textContent = 'LMB';
+        leftHalf.appendChild(lmbTag);
+
+        attachTooltip(leftHalf, mainId);
+
+        leftHalf.addEventListener('click', () => {
+          unequipToInventory(inventory, member.equipment, 'mainHand');
+          notifyEquipmentChanged();
+          render();
+        });
+
+        leftHalf.draggable = true;
+        leftHalf.addEventListener('dragstart', e => {
+          dragPayload = { from: 'slot', itemId: mainId, subslot: 'mainHand' };
+          e.dataTransfer?.setData('text/plain', mainId);
+          leftHalf.style.opacity = '0.5';
+        });
+        leftHalf.addEventListener('dragend', () => {
+          dragPayload = null;
+          leftHalf.style.opacity = '1';
+        });
+      } else {
+        const watermark = document.createElement('div');
+        watermark.innerHTML = getSlotWatermarkSvg('handLeft', 24);
+        watermark.style.cssText = 'opacity: 0.35; margin-top: 4px;';
+        leftHalf.appendChild(watermark);
+        const sub = document.createElement('span');
+        sub.style.cssText = 'font-size: 0.5rem; color: #666; margin-top: 2px;';
+        sub.textContent = 'LMB';
+        leftHalf.appendChild(sub);
+      }
+
+      // Right side: Off Hand (RMB)
+      const rightHalf = document.createElement('div');
+      rightHalf.style.cssText = `
+        width: 50%; height: 100%; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; padding-top: 10px; box-sizing: border-box;
+        position: relative;
+        background: ${offId ? 'rgba(35, 28, 18, 0.8)' : 'transparent'};
+        cursor: ${offId ? 'pointer' : 'default'};
+      `;
+
+      if (offId) {
+        rightHalf.innerHTML = getItemIconSvg(offId, 28, 28);
+        const rmbTag = document.createElement('span');
+        rmbTag.style.cssText = `font-size: 0.55rem; color: ${GOLD_DIM}; font-weight: bold; margin-top: 1px;`;
+        rmbTag.textContent = 'RMB';
+        rightHalf.appendChild(rmbTag);
+
+        attachTooltip(rightHalf, offId);
+
+        rightHalf.addEventListener('click', () => {
+          unequipToInventory(inventory, member.equipment, 'offHand');
+          notifyEquipmentChanged();
+          render();
+        });
+
+        rightHalf.draggable = true;
+        rightHalf.addEventListener('dragstart', e => {
+          dragPayload = { from: 'slot', itemId: offId, subslot: 'offHand' };
+          e.dataTransfer?.setData('text/plain', offId);
+          rightHalf.style.opacity = '0.5';
+        });
+        rightHalf.addEventListener('dragend', () => {
+          dragPayload = null;
+          rightHalf.style.opacity = '1';
+        });
+      } else {
+        const watermark = document.createElement('div');
+        watermark.innerHTML = getSlotWatermarkSvg('handRight', 24);
+        watermark.style.cssText = 'opacity: 0.35; margin-top: 4px;';
+        rightHalf.appendChild(watermark);
+        const sub = document.createElement('span');
+        sub.style.cssText = 'font-size: 0.5rem; color: #666; margin-top: 2px;';
+        sub.textContent = 'RMB';
+        rightHalf.appendChild(sub);
+      }
+
+      handSlot.appendChild(leftHalf);
+      handSlot.appendChild(rightHalf);
+
+      // Subslot drop handling
+      setupSubslotDrop(leftHalf, member, 'mainHand');
+      setupSubslotDrop(rightHalf, member, 'offHand');
+    }
+
+    // Whole handSlot dragover for 2H drops
+    handSlot.addEventListener('dragover', e => {
+      if (!dragPayload) return;
+      if (isTwoHandedItem(dragPayload.itemId)) {
+        if (!canDropOnSubslot(member, 'mainHand', dragPayload)) return;
+        e.preventDefault();
+        handSlot.style.borderColor = GOLD;
+        handSlot.style.background = 'rgba(255, 215, 0, 0.2)';
+      }
+    });
+    handSlot.addEventListener('dragleave', () => {
+      handSlot.style.borderColor = (mainId || offId) ? GOLD : SLOT_BORDER;
+      handSlot.style.background = SLOT_BG;
+    });
+    handSlot.addEventListener('drop', e => {
+      if (!dragPayload || !isTwoHandedItem(dragPayload.itemId)) return;
+      e.preventDefault();
+      const payload = dragPayload;
+      dragPayload = null;
+      applyDrop(member, 'mainHand', payload);
+      notifyEquipmentChanged();
+      render();
+    });
+
+    return handSlot;
+  }
+
+  function setupSubslotDrop(targetEl: HTMLElement, member: PartyMember, subslot: EquipmentSubslot): void {
+    targetEl.addEventListener('dragover', e => {
+      if (!dragPayload || isTwoHandedItem(dragPayload.itemId)) return;
+      if (!canDropOnSubslot(member, subslot, dragPayload)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      targetEl.style.background = 'rgba(255, 215, 0, 0.25)';
+    });
+    targetEl.addEventListener('dragleave', () => {
+      const isEquipped = member.equipment[subslot] !== null;
+      targetEl.style.background = isEquipped ? 'rgba(35, 28, 18, 0.8)' : 'transparent';
+    });
+    targetEl.addEventListener('drop', e => {
+      if (!dragPayload || isTwoHandedItem(dragPayload.itemId)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const payload = dragPayload;
+      dragPayload = null;
+      applyDrop(member, subslot, payload);
+      notifyEquipmentChanged();
+      render();
+    });
+  }
+
+  // ── Shoes Slot ────────────────────────────────────────────────────────────
+  function createShoesSlot(member: PartyMember): HTMLElement {
+    const slot = document.createElement('div');
+    const itemId = member.equipment.shoes;
+    const isEquipped = itemId !== null;
+
+    slot.style.cssText = `
+      width: 76px; height: 76px; box-sizing: border-box;
+      background: ${isEquipped ? 'rgba(35, 28, 18, 0.9)' : SLOT_BG};
+      border: 1.5px ${isEquipped ? 'solid' : 'dashed'} ${isEquipped ? GOLD : SLOT_BORDER};
+      border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      position: relative; cursor: ${isEquipped ? 'pointer' : 'default'}; transition: all 0.15s;
+    `;
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size: 0.62rem; color: #888; position: absolute; top: 3px; letter-spacing: 0.05em;';
+    label.textContent = 'SHOES';
+    slot.appendChild(label);
+
+    if (isEquipped) {
+      slot.innerHTML += getItemIconSvg(itemId, 38, 38);
+      const name = document.createElement('span');
+      name.style.cssText = `
+        font-size: 0.65rem; color: #eee; margin-top: 2px; text-align: center;
+        max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      `;
+      name.textContent = getItemDisplayName(itemId);
+      slot.appendChild(name);
+
+      attachTooltip(slot, itemId);
+
+      slot.addEventListener('click', () => {
+        unequipToInventory(inventory, member.equipment, 'shoes');
+        notifyEquipmentChanged();
+        render();
+      });
+
+      slot.draggable = true;
+      slot.addEventListener('dragstart', e => {
+        dragPayload = { from: 'slot', itemId, subslot: 'shoes' };
+        e.dataTransfer?.setData('text/plain', itemId);
+        slot.style.opacity = '0.5';
+      });
+      slot.addEventListener('dragend', () => {
+        dragPayload = null;
+        slot.style.opacity = '1';
+      });
+    } else {
+      const watermark = document.createElement('div');
+      watermark.innerHTML = getSlotWatermarkSvg('shoes', 32);
+      watermark.style.cssText = 'opacity: 0.4; margin-top: 6px;';
+      slot.appendChild(watermark);
+    }
+
+    // Drop target
+    slot.addEventListener('dragover', e => {
+      if (!dragPayload || !canDropOnSubslot(member, 'shoes', dragPayload)) return;
+      e.preventDefault();
+      slot.style.borderColor = GOLD;
+      slot.style.background = 'rgba(255, 215, 0, 0.2)';
+    });
+    slot.addEventListener('dragleave', () => {
+      slot.style.borderColor = isEquipped ? GOLD : SLOT_BORDER;
+      slot.style.background = isEquipped ? 'rgba(35, 28, 18, 0.9)' : SLOT_BG;
+    });
+    slot.addEventListener('drop', e => {
+      e.preventDefault();
+      const payload = dragPayload;
+      dragPayload = null;
+      if (!payload) return;
+      applyDrop(member, 'shoes', payload);
+      notifyEquipmentChanged();
+      render();
+    });
+
+    return slot;
+  }
+
+  // ── Drag & Drop Resolution ────────────────────────────────────────────────
+  function canDropOnSubslot(
+    member: PartyMember,
+    subslot: EquipmentSubslot,
+    payload: DragPayload,
+  ): boolean {
+    if (payload.from === 'slot' && payload.subslot === subslot) return false;
+    if (payload.from === 'slot' && payload.subslot === 'mainHand' && subslot === 'offHand') {
+      const preview = { ...member.equipment, mainHand: null };
+      return canEquipInSubslot(preview, subslot, payload.itemId);
+    }
+    return canEquipInSubslot(member.equipment, subslot, payload.itemId);
+  }
+
+  function applyDrop(
     member: PartyMember,
     subslot: EquipmentSubslot,
     payload: DragPayload,
@@ -233,360 +731,379 @@ export function showInventoryPanel(
     return equipFromInventory(inventory, member.equipment, subslot, payload.itemId);
   }
 
-  /** True when a drop of `payload` onto `subslot` would be accepted. */
-  function canDropOnSlot(
-    member: PartyMember,
-    subslot: EquipmentSubslot,
-    payload: DragPayload,
-  ): boolean {
-    if (payload.from === 'slot' && payload.subslot === subslot) return false;
-    if (payload.from === 'slot' && payload.subslot === 'mainHand' && subslot === 'offHand') {
-      // The main hand is about to be emptied by the move, so judge the off hand
-      // against the equipment it will actually see.
-      const preview = { ...member.equipment, mainHand: null };
-      return canEquipInSubslot(preview, subslot, payload.itemId);
-    }
-    return canEquipInSubslot(member.equipment, subslot, payload.itemId);
-  }
-
-  function equipmentSlotChip(member: PartyMember, subslot: EquipmentSubslot): HTMLElement {
-    const itemId = member.equipment[subslot];
-    const isBlockedByTwoHander = subslot === 'offHand'
-      && isTwoHandedWeapon(getWeaponDef(member.equipment.mainHand));
-
-    const chip = document.createElement('div');
-    chip.style.cssText = `
-      min-width: 120px; padding: 6px 10px; box-sizing: border-box;
-      background: ${itemId === null ? 'rgba(25,25,35,0.85)' : 'rgba(212,168,75,0.12)'};
-      border: 1px solid ${itemId === null ? 'rgba(212,168,75,0.3)' : GOLD};
-      border-radius: 6px; display: flex; flex-direction: column; gap: 2px;
-      cursor: ${itemId === null ? 'default' : 'pointer'};
-    `;
-
-    const name = itemId !== null
-      ? getItemDisplayName(itemId)
-      : (isBlockedByTwoHander ? 'Both hands in use' : 'Empty');
-    // A two-hander in the main hand answers to both buttons, so say so there
-    // rather than leaving the off hand looking merely broken.
-    const hint = subslot === 'mainHand' && isTwoHandedWeapon(getWeaponDef(itemId))
-      ? 'LMB + RMB'
-      : (isBlockedByTwoHander ? '' : SLOT_BUTTON_HINTS[subslot]);
-    chip.innerHTML = `
-      <span style="color:#888; font-size:0.65rem; letter-spacing:0.08em; text-transform:uppercase;">
-        ${SLOT_LABELS[subslot]}${hint === '' ? '' : ` · <span style="color:${GOLD_DIM};">${hint}</span>`}
-      </span>
-      <span style="color:${itemId === null ? '#666' : '#eee'}; font-size:0.85rem;">${escapeHtml(name)}</span>
-    `;
-
-    if (itemId !== null) {
-      chip.title = 'Click to unequip · drag to another slot or back to the grid';
-      chip.addEventListener('click', () => {
-        unequipToInventory(inventory, member.equipment, subslot);
-        notifyEquipmentChanged();
-        render();
-      });
-      chip.draggable = true;
-      chip.addEventListener('dragstart', e => {
-        dragPayload = { from: 'slot', itemId, subslot };
-        e.dataTransfer?.setData('text/plain', itemId);
-        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-        chip.style.opacity = '0.5';
-      });
-      chip.addEventListener('dragend', () => {
-        dragPayload = null;
-        chip.style.opacity = '1';
-      });
-    }
-
-    // Drop target — the whole point of the screen's drag gesture.
-    chip.addEventListener('dragover', e => {
-      if (dragPayload === null || !canDropOnSlot(member, subslot, dragPayload)) return;
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      chip.style.background = 'rgba(255,215,0,0.28)';
-      chip.style.borderColor = GOLD;
-    });
-    chip.addEventListener('dragleave', () => {
-      chip.style.background = itemId === null ? 'rgba(25,25,35,0.85)' : 'rgba(212,168,75,0.12)';
-      chip.style.borderColor = itemId === null ? 'rgba(212,168,75,0.3)' : GOLD;
-    });
-    chip.addEventListener('drop', e => {
-      e.preventDefault();
-      const payload = dragPayload;
-      dragPayload = null;
-      if (payload === null) return;
-      if (!applyDropOnSlot(member, subslot, payload)) {
-        render();
-        return;
-      }
-      notifyEquipmentChanged();
-      render();
-    });
-
-    return chip;
-  }
-
-  // ── Member tabs ───────────────────────────────────────────────────────────
-  function renderMemberTabs(): void {
-    memberTabs.innerHTML = '';
-    if (getRecruitedCount(party) <= 1) return;
-
-    party.members.forEach((member, index) => {
-      if (!member.isRecruited) return;
-      const isSelected = selectedMemberIndex === index;
-      const isLeader = party.activeIndex === index;
-      const tab = document.createElement('button');
-      tab.textContent = isLeader ? `${member.name} ★` : member.name;
-      tab.title = isLeader ? 'Active member' : 'Click to view; double-click to make active';
-      tab.style.cssText = `
-        font-family: 'Cinzel', serif; font-size: 0.85rem; padding: 6px 16px;
-        background: ${isSelected ? 'rgba(212,168,75,0.18)' : 'transparent'};
-        color: ${isSelected ? GOLD : '#999'};
-        border: 1px solid ${isSelected ? GOLD : '#555'};
-        border-radius: 4px; cursor: pointer;
-      `;
-      tab.addEventListener('click', () => {
-        selectedMemberIndex = index;
-        render();
-      });
-      tab.addEventListener('dblclick', () => {
-        if (setActiveMember(party, index)) {
-          selectedMemberIndex = index;
-          // Switching who the player controls changes the equipped weapon.
-          notifyEquipmentChanged();
-        }
-        render();
-      });
-      memberTabs.appendChild(tab);
-    });
-  }
-
-  // ── Item grid ─────────────────────────────────────────────────────────────
+  // ── Render Carried Items Grid ─────────────────────────────────────────────
   function renderItems(): void {
     const member = selectedMember();
-    itemsSection.innerHTML = '';
+    itemsColumn.innerHTML = '';
 
-    const heading = document.createElement('div');
-    heading.style.cssText = `
-      display:flex; justify-content:space-between; align-items:baseline; gap:12px;
-      border-bottom:1px solid rgba(212,168,75,0.3); padding-bottom:6px; margin-bottom:12px;
+    // Header & Category Filter Tabs
+    const headerRow = document.createElement('div');
+    headerRow.style.cssText = `
+      display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+      border-bottom: 1px solid rgba(212,168,75,0.25); padding-bottom: 6px;
     `;
-    heading.innerHTML = `
-      <span style="color:${GOLD}; font-size:1.1rem;">Carried Items</span>
+    headerRow.innerHTML = `
+      <span style="color:${GOLD}; font-size:1.05rem; font-weight:bold; letter-spacing:0.05em;">Carried Items</span>
       <span style="color:#888; font-size:0.75rem;">${inventory.stacks.length} stack(s)</span>
     `;
-    itemsSection.appendChild(heading);
+    itemsColumn.appendChild(headerRow);
 
-    // With every weapon unlocked the grid runs to dozens of cards, so a filter
-    // is the difference between "pick a weapon" and "scroll for a while".
+    // Search and Category Tabs Row
+    const controlsRow = document.createElement('div');
+    controlsRow.style.cssText = 'display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 6px;';
+    itemsColumn.appendChild(controlsRow);
+
     const search = document.createElement('input');
     search.type = 'search';
     search.placeholder = 'Filter items…';
     search.value = itemFilter;
     search.style.cssText = `
-      width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 6px 10px;
-      font-family: 'Cinzel', serif; font-size: 0.8rem;
-      background: rgba(25,25,35,0.85); color: #eee;
+      flex: 1; min-width: 140px; box-sizing: border-box; padding: 6px 10px;
+      font-family: 'Cinzel', serif; font-size: 0.78rem;
+      background: rgba(25,22,18,0.85); color: #eee;
       border: 1px solid rgba(212,168,75,0.3); border-radius: 4px;
     `;
     search.addEventListener('input', () => {
       itemFilter = search.value;
-      renderItems();
-      // Re-rendering replaces the input, so focus and caret must be restored.
-      const next = itemsSection.querySelector('input');
+      renderItemsGrid();
+      const next = itemsColumn.querySelector('input');
       if (next instanceof HTMLInputElement) {
         next.focus();
         next.setSelectionRange(next.value.length, next.value.length);
       }
     });
-    // The panel's global handler closes on `i`; typing one here must not.
     search.addEventListener('keydown', e => {
       if (e.key !== 'Escape') e.stopPropagation();
     });
-    itemsSection.appendChild(search);
+    controlsRow.appendChild(search);
 
-    if (inventory.stacks.length === 0) {
-      const empty = document.createElement('p');
-      empty.style.cssText = 'color:#777; font-size:0.85rem; text-align:center; margin:24px 0;';
-      empty.textContent = 'Nothing carried. Everything you own is equipped.';
-      itemsSection.appendChild(empty);
-      return;
-    }
+    const categories: Array<{ id: CategoryFilter; label: string }> = [
+      { id: 'all', label: 'All' },
+      { id: 'weapon', label: 'Weapons' },
+      { id: 'armor', label: 'Armor' },
+      { id: 'shoes', label: 'Shoes' },
+    ];
 
-    const grid = document.createElement('div');
-    grid.style.cssText = `
-      display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px;
-      min-height: 80px;
+    categories.forEach(cat => {
+      const btn = document.createElement('button');
+      const isActive = activeCategory === cat.id;
+      btn.textContent = cat.label;
+      btn.style.cssText = `
+        font-family: 'Cinzel', serif; font-size: 0.72rem; padding: 4px 10px;
+        background: ${isActive ? 'rgba(212,168,75,0.25)' : 'rgba(25,22,18,0.6)'};
+        color: ${isActive ? GOLD : '#888'};
+        border: 1px solid ${isActive ? GOLD : '#444'};
+        border-radius: 4px; cursor: pointer; transition: all 0.15s;
+      `;
+      btn.addEventListener('click', () => {
+        activeCategory = cat.id;
+        renderItems();
+      });
+      controlsRow.appendChild(btn);
+    });
+
+    // Grid Container
+    const gridWrapper = document.createElement('div');
+    gridWrapper.id = 'carried-items-grid-wrapper';
+    gridWrapper.style.cssText = `
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(72px, 72px));
+      gap: 10px;
+      padding: 10px 4px;
+      min-height: 240px;
+      max-height: 380px;
+      overflow-y: auto;
+      box-sizing: border-box;
     `;
-    itemsSection.appendChild(grid);
+    itemsColumn.appendChild(gridWrapper);
 
-    // Dropping a worn item back on the grid unequips it — the inverse gesture.
-    grid.addEventListener('dragover', e => {
-      if (dragPayload === null || dragPayload.from !== 'slot') return;
+    // Dropping a worn item onto the inventory grid unequips it
+    gridWrapper.addEventListener('dragover', e => {
+      if (!dragPayload || dragPayload.from !== 'slot') return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      grid.style.outline = `1px dashed ${GOLD_DIM}`;
+      gridWrapper.style.outline = `1px dashed ${GOLD_DIM}`;
     });
-    grid.addEventListener('dragleave', () => { grid.style.outline = 'none'; });
-    grid.addEventListener('drop', e => {
+    gridWrapper.addEventListener('dragleave', () => { gridWrapper.style.outline = 'none'; });
+    gridWrapper.addEventListener('drop', e => {
       e.preventDefault();
       const payload = dragPayload;
       dragPayload = null;
-      grid.style.outline = 'none';
-      if (payload === null || payload.from !== 'slot') return;
+      gridWrapper.style.outline = 'none';
+      if (!payload || payload.from !== 'slot') return;
       if (unequipToInventory(inventory, member.equipment, payload.subslot) === null) return;
       notifyEquipmentChanged();
       render();
     });
 
+    renderItemsGrid();
+  }
+
+  function renderItemsGrid(): void {
+    const member = selectedMember();
+    const gridWrapper = itemsColumn.querySelector('#carried-items-grid-wrapper');
+    if (!gridWrapper) return;
+    gridWrapper.innerHTML = '';
+
     const needle = itemFilter.trim().toLowerCase();
-    let shown = 0;
-    inventory.stacks.forEach((stack, stackIndex) => {
-      if (needle !== '' && !getItemDisplayName(stack.id).toLowerCase().includes(needle)
-        && !stack.id.toLowerCase().includes(needle)) {
-        return;
+    const matchingStacks = inventory.stacks.filter(stack => {
+      const cat = getItemCategory(stack.id);
+      if (activeCategory !== 'all' && cat !== activeCategory) return false;
+      if (needle !== '') {
+        const name = getItemDisplayName(stack.id).toLowerCase();
+        if (!name.includes(needle) && !stack.id.toLowerCase().includes(needle)) return false;
       }
-      grid.appendChild(itemCard(member, stack.id, stack.count, stackIndex));
-      shown++;
+      return true;
     });
 
-    if (shown === 0) {
-      const none = document.createElement('p');
-      none.style.cssText = 'color:#777; font-size:0.85rem; text-align:center; margin:24px 0;';
-      none.textContent = `No carried item matches “${itemFilter.trim()}”.`;
-      itemsSection.appendChild(none);
+    if (matchingStacks.length === 0) {
+      const emptyMsg = document.createElement('div');
+      emptyMsg.style.cssText = 'grid-column: 1 / -1; color:#777; font-size:0.82rem; text-align:center; padding:32px 0;';
+      emptyMsg.textContent = inventory.stacks.length === 0
+        ? 'Carried inventory is empty. All owned gear is equipped.'
+        : 'No carried items match the current filter.';
+      gridWrapper.appendChild(emptyMsg);
+      return;
+    }
+
+    matchingStacks.forEach(stack => {
+      gridWrapper.appendChild(createInventorySlotCell(member, stack.id, stack.count));
+    });
+
+    // Pad out with empty square slots for a polished RPG grid look
+    const emptyCount = Math.max(0, 24 - matchingStacks.length);
+    for (let i = 0; i < emptyCount; i++) {
+      const emptySlot = document.createElement('div');
+      emptySlot.style.cssText = `
+        width: 72px; height: 72px; box-sizing: border-box;
+        background: rgba(16, 12, 10, 0.4);
+        border: 1px dashed rgba(212, 168, 75, 0.15);
+        border-radius: 6px;
+      `;
+      gridWrapper.appendChild(emptySlot);
     }
   }
 
-  function itemCard(
-    member: PartyMember,
-    itemId: string,
-    count: number,
-    stackIndex: number,
-  ): HTMLElement {
-    const def = getWeaponDef(itemId);
-    const card = document.createElement('div');
-    card.dataset.itemId = itemId;
-    card.dataset.stackIndex = String(stackIndex);
-    card.style.cssText = `
-      background: rgba(25,25,35,0.85); border: 1px solid rgba(212,168,75,0.3);
-      border-radius: 6px; padding: 10px; box-sizing: border-box;
-      display: flex; flex-direction: column; gap: 6px; cursor: grab;
+  // ── Inventory Slot Cell ───────────────────────────────────────────────────
+  function createInventorySlotCell(member: PartyMember, itemId: string, count: number): HTMLElement {
+    const is2H = isTwoHandedItem(itemId);
+    const is1H = !is2H && !isArmorItem(itemId) && !isShoeItem(itemId);
+
+    // The outer slot box is a square
+    const slotBox = document.createElement('div');
+    slotBox.style.cssText = `
+      width: 72px; height: 72px; box-sizing: border-box;
+      background: ${SLOT_BG};
+      border: 1.5px solid ${SLOT_BORDER};
+      border-radius: 6px; display: flex; align-items: center; justify-content: center;
+      position: relative; cursor: grab; transition: transform 0.1s, border-color 0.15s;
     `;
 
-    // Drag source. The equip buttons below stay as the keyboard/click path;
-    // dragging is the shortcut, not the only way in.
-    card.draggable = true;
-    card.addEventListener('dragstart', e => {
+    // Item card inside the square slot:
+    // - 2H: whole square
+    // - 1H: half-square width (width = height / 2, e.g. 36px wide by 68px tall), centered
+    // - Armor / Shoes: whole square
+    const itemCard = document.createElement('div');
+    itemCard.style.cssText = `
+      width: ${is1H ? '36px' : '100%'};
+      height: 100%;
+      box-sizing: border-box;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      position: relative;
+      background: ${is1H ? 'rgba(38, 30, 20, 0.85)' : 'transparent'};
+      border: ${is1H ? '1px solid rgba(212, 168, 75, 0.3)' : 'none'};
+      border-radius: ${is1H ? '4px' : '0'};
+    `;
+    slotBox.appendChild(itemCard);
+
+    // Grip / category badge
+    const badge = document.createElement('span');
+    badge.style.cssText = `
+      position: absolute; top: 2px; right: ${is1H ? '1px' : '3px'};
+      font-size: 0.52rem; color: ${GOLD_DIM}; font-weight: bold; line-height: 1;
+    `;
+    if (is2H) badge.textContent = '2H';
+    else if (is1H) badge.textContent = '1H';
+    else if (isArmorItem(itemId)) badge.textContent = 'ARM';
+    else if (isShoeItem(itemId)) badge.textContent = 'FT';
+    itemCard.appendChild(badge);
+
+    // Icon
+    const iconWrapper = document.createElement('div');
+    iconWrapper.innerHTML = getItemIconSvg(itemId, is1H ? 26 : 36, is1H ? 26 : 36);
+    itemCard.appendChild(iconWrapper);
+
+    // Count badge
+    if (count > 1) {
+      const countBadge = document.createElement('span');
+      countBadge.style.cssText = `
+        position: absolute; bottom: 2px; left: 3px;
+        font-size: 0.58rem; color: #aaa; font-weight: bold;
+      `;
+      countBadge.textContent = `×${count}`;
+      itemCard.appendChild(countBadge);
+    }
+
+    // Name abbreviation / label
+    const nameLabel = document.createElement('span');
+    nameLabel.style.cssText = `
+      font-size: 0.55rem; color: #ccc; margin-top: 1px; text-align: center;
+      max-width: ${is1H ? '34px' : '68px'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    `;
+    nameLabel.textContent = getItemDisplayName(itemId);
+    itemCard.appendChild(nameLabel);
+
+    // Tooltip
+    attachTooltip(slotBox, itemId);
+
+    // Drag-and-drop source
+    slotBox.draggable = true;
+    slotBox.addEventListener('dragstart', e => {
       dragPayload = { from: 'inventory', itemId };
       e.dataTransfer?.setData('text/plain', itemId);
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-      card.style.opacity = '0.5';
+      slotBox.style.opacity = '0.5';
     });
-    card.addEventListener('dragend', () => {
+    slotBox.addEventListener('dragend', () => {
       dragPayload = null;
-      card.style.opacity = '1';
+      slotBox.style.opacity = '1';
     });
 
-    const title = document.createElement('div');
-    title.style.cssText = 'display:flex; justify-content:space-between; align-items:baseline; gap:8px;';
-    title.innerHTML = `
-      <span style="color:#eee; font-size:0.9rem;">${escapeHtml(getItemDisplayName(itemId))}</span>
-      <span style="color:${GOLD_DIM}; font-size:0.8rem;">×${count}</span>
-    `;
-    card.appendChild(title);
-
-    const meta = document.createElement('div');
-    meta.style.cssText = 'color:#8a8a95; font-size:0.7rem;';
-    meta.textContent = def === null ? 'Unknown item' : describeWeapon(def);
-    card.appendChild(meta);
-
-    if (def !== null && !isWeaponRuntimeImplemented(def)) {
-      const note = document.createElement('div');
-      note.style.cssText = 'color:#c98a3a; font-size:0.65rem;';
-      note.textContent = 'No combat behavior in this build.';
-      card.appendChild(note);
-    }
-
-    const buttons = document.createElement('div');
-    buttons.style.cssText = 'display:flex; gap:6px; margin-top:2px;';
-    for (const subslot of EQUIPMENT_SUBSLOTS) {
-      // Armor has no item table yet, so nothing in the pool can legally go
-      // there; the button would always be dead. Hide it rather than tease it.
-      if (subslot === 'armor') continue;
-      buttons.appendChild(equipButton(member, subslot, itemId));
-    }
-    card.appendChild(buttons);
-
-    return card;
-  }
-
-  function equipButton(
-    member: PartyMember,
-    subslot: EquipmentSubslot,
-    itemId: string,
-  ): HTMLElement {
-    const allowed = canEquipInSubslot(member.equipment, subslot, itemId);
-    const button = document.createElement('button');
-    button.textContent = SLOT_LABELS[subslot];
-    button.disabled = !allowed;
-    button.style.cssText = `
-      flex: 1; font-family: 'Cinzel', serif; font-size: 0.75rem; padding: 5px 8px;
-      background: ${allowed ? 'rgba(212,168,75,0.14)' : 'transparent'};
-      color: ${allowed ? GOLD : '#555'};
-      border: 1px solid ${allowed ? GOLD_DIM : '#333'};
-      border-radius: 4px; cursor: ${allowed ? 'pointer' : 'not-allowed'};
-    `;
-    if (!allowed) {
-      button.title = subslot !== 'offHand'
-        ? 'This item cannot go in that slot.'
-        : (isTwoHandedWeapon(getWeaponDef(itemId))
-          ? 'Two-handed: it goes in the main hand and uses both mouse buttons.'
-          : 'Blocked: the two-handed weapon in the main hand needs both hands.');
-    }
-    button.addEventListener('click', () => {
-      if (!equipFromInventory(inventory, member.equipment, subslot, itemId)) return;
+    // Double-click to auto-equip shortcut
+    slotBox.addEventListener('dblclick', () => {
+      if (isArmorItem(itemId)) {
+        equipFromInventory(inventory, member.equipment, 'armor', itemId);
+      } else if (isShoeItem(itemId)) {
+        equipFromInventory(inventory, member.equipment, 'shoes', itemId);
+      } else if (isTwoHandedItem(itemId)) {
+        equipFromInventory(inventory, member.equipment, 'mainHand', itemId);
+      } else {
+        // If mainHand is empty, equip there; otherwise try offHand
+        if (member.equipment.mainHand === null) {
+          equipFromInventory(inventory, member.equipment, 'mainHand', itemId);
+        } else if (member.equipment.offHand === null && canEquipInSubslot(member.equipment, 'offHand', itemId)) {
+          equipFromInventory(inventory, member.equipment, 'offHand', itemId);
+        } else {
+          equipFromInventory(inventory, member.equipment, 'mainHand', itemId);
+        }
+      }
       notifyEquipmentChanged();
       render();
     });
-    return button;
+
+    return slotBox;
   }
 
+  // ── Tooltip Helper ────────────────────────────────────────────────────────
+  function attachTooltip(element: HTMLElement, itemId: string): void {
+    element.addEventListener('mouseenter', e => {
+      const item = getItemDef(itemId);
+      if (!item) return;
+
+      const name = getItemDisplayName(itemId);
+      const is2H = isTwoHandedItem(itemId);
+      const is1H = isOneHandedItem(itemId);
+
+      let subline = '';
+      if ('kind' in item) {
+        if (item.kind === 'armor') subline = 'Armor';
+        else if (item.kind === 'shoes') subline = 'Footwear / Shoes';
+        else {
+          const gripText = is2H ? 'Two-Handed' : (is1H ? 'One-Handed' : 'Dual-Wield');
+          subline = `${gripText} ${item.kind.toUpperCase()}`;
+        }
+      }
+
+      let statsHtml = '';
+      const def = getWeaponDef(itemId);
+      if (def && typeof def.dmg === 'number') {
+        statsHtml += `<div style="color:#ffa94d; font-size:0.75rem;">Damage: ${def.dmg}</div>`;
+      }
+      if (def?.element && def.element !== 'physical') {
+        statsHtml += `<div style="color:#74c0fc; font-size:0.75rem;">Element: ${def.element}</div>`;
+      }
+      if (typeof item.defenseMultiplier === 'number' && item.defenseMultiplier > 1) {
+        const pct = Math.round((item.defenseMultiplier - 1) * 100);
+        statsHtml += `<div style="color:#74c0fc; font-size:0.75rem;">Defense: +${pct}%</div>`;
+      }
+      if (typeof item.healthMultiplier === 'number' && item.healthMultiplier > 1) {
+        const pct = Math.round((item.healthMultiplier - 1) * 100);
+        statsHtml += `<div style="color:#ff6b6b; font-size:0.75rem;">Health: +${pct}%</div>`;
+      }
+      if (typeof item.speedMultiplier === 'number' && item.speedMultiplier > 1) {
+        const pct = Math.round((item.speedMultiplier - 1) * 100);
+        statsHtml += `<div style="color:#51cf66; font-size:0.75rem;">Speed: +${pct}%</div>`;
+      }
+
+      let descHtml = '';
+      if (item.description) {
+        descHtml = `<div style="color:#999; font-size:0.7rem; margin-top:4px; font-style:italic;">${escapeHtml(item.description)}</div>`;
+      }
+
+      tooltipEl.innerHTML = `
+        <div style="font-weight:bold; color:${GOLD}; font-size:0.88rem; margin-bottom:2px;">${escapeHtml(name)}</div>
+        <div style="color:#aaa; font-size:0.7rem; margin-bottom:6px; letter-spacing:0.05em;">${escapeHtml(subline)}</div>
+        ${statsHtml}
+        ${descHtml}
+        <div style="color:#666; font-size:0.62rem; margin-top:6px; border-top:1px solid #333; padding-top:4px;">
+          Drag onto slot to equip · Click/Double-click shortcut
+        </div>
+      `;
+
+      tooltipEl.style.display = 'block';
+      positionTooltip(e);
+    });
+
+    element.addEventListener('mousemove', positionTooltip);
+
+    element.addEventListener('mouseleave', () => {
+      tooltipEl.style.display = 'none';
+    });
+  }
+
+  function positionTooltip(e: MouseEvent): void {
+    const x = Math.min(window.innerWidth - 270, e.clientX + 14);
+    const y = Math.min(window.innerHeight - 200, e.clientY + 14);
+    tooltipEl.style.left = `${x}px`;
+    tooltipEl.style.top = `${y}px`;
+  }
+
+  // ── Global Render Routine ─────────────────────────────────────────────────
   function render(): void {
     renderStatusBar();
     renderMemberTabs();
+    renderPaperdoll();
     renderItems();
   }
 
   render();
 
-  // ── Footer ────────────────────────────────────────────────────────────────
+  // ── Footer & Controls ─────────────────────────────────────────────────────
   const actionBar = document.createElement('div');
   actionBar.style.cssText = `
     position: fixed; bottom: 0; left: 0; right: 0;
-    display: flex; gap: 16px; justify-content: center; align-items: center;
-    background: rgba(5,4,3,0.95); border-top: 1px solid ${GOLD_DIM};
-    padding: 12px 16px; box-sizing: border-box; z-index: 1510;
+    display: flex; gap: 16px; justify-content: space-between; align-items: center;
+    background: rgba(8,6,4,0.97); border-top: 1px solid ${GOLD_DIM};
+    padding: 10px 24px; box-sizing: border-box; z-index: 1510;
   `;
   el.appendChild(actionBar);
 
   const hint = document.createElement('span');
-  hint.style.cssText = 'color:#777; font-size:0.75rem;';
-  hint.textContent = 'Drag an item onto a slot to equip · drag it back to unequip · I or Esc to close';
+  hint.style.cssText = 'color:#888; font-size:0.75rem;';
+  hint.textContent = 'Drag gear to equipment slots · Double-click to auto-equip · I or Esc to close';
   actionBar.appendChild(hint);
 
   const closeBtn = document.createElement('button');
   closeBtn.textContent = 'Close';
   closeBtn.style.cssText = `
-    font-family: 'Cinzel', serif; font-size: 0.9rem; padding: 8px 28px;
+    font-family: 'Cinzel', serif; font-size: 0.88rem; padding: 7px 26px;
     background: ${GOLD}; color: #111; font-weight: bold; border: 1px solid ${GOLD};
-    border-radius: 4px; cursor: pointer;
+    border-radius: 4px; cursor: pointer; transition: all 0.15s;
   `;
   closeBtn.addEventListener('click', () => closeAndNotify());
   actionBar.appendChild(closeBtn);
 
-  // The panel owns its own close keys. The game loop is frozen while it is
-  // open, so its input handler is not running and cannot do this for us.
+  // Keyboard navigation & closing
   function onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape' || e.key === 'i' || e.key === 'I') {
       e.preventDefault();
@@ -602,7 +1119,16 @@ export function showInventoryPanel(
     if (isClosed) return;
     isClosed = true;
     window.removeEventListener('keydown', onKeyDown, true);
-    if (el.parentNode) el.parentNode.removeChild(el);
+    if (previewController) {
+      previewController.destroy();
+      previewController = null;
+    }
+    if (tooltipEl.parentNode) {
+      tooltipEl.parentNode.removeChild(tooltipEl);
+    }
+    if (el.parentNode) {
+      el.parentNode.removeChild(el);
+    }
   }
 
   function closeAndNotify(): void {
@@ -614,19 +1140,7 @@ export function showInventoryPanel(
   return cleanup;
 }
 
-/** One-line summary of a weapon for the item card. */
-function describeWeapon(def: WeaponDef): string {
-  const parts: string[] = [def.kind];
-  // Resolved, not read raw: most donor weapons declare no grip, and the card
-  // must agree with the slot rules about which hands the weapon needs.
-  const grip = resolveWeaponGrip(def);
-  parts.push(grip === 'twoHand' ? 'two-handed' : grip === 'dual' ? 'dual' : 'one-handed');
-  if (typeof def.dmg === 'number') parts.push(`${def.dmg} dmg`);
-  if (def.element !== undefined && def.element !== 'physical') parts.push(def.element);
-  return parts.join(' · ');
-}
-
-/** Escapes text interpolated into the innerHTML templates above. */
+/** Escapes text interpolated into templates. */
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')

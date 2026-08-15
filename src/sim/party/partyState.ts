@@ -18,12 +18,13 @@ import {
   type CharacterStats,
 } from '../stats/characterStats';
 import { getWeaponDef, resolveWeaponGrip, type WeaponDef } from '../weapons/weaponDefs';
+import { getItemDef, isArmorItem, isShoeItem } from '../items/itemCatalog';
 
 /** Maximum party members. Donor `TEAM_SIZE`. */
 export const MAX_PARTY_SIZE = 3;
 
 /** Equipment subslots, in donor order. */
-export const EQUIPMENT_SUBSLOTS = ['mainHand', 'offHand', 'armor'] as const;
+export const EQUIPMENT_SUBSLOTS = ['mainHand', 'offHand', 'armor', 'shoes'] as const;
 
 export type EquipmentSubslot = typeof EQUIPMENT_SUBSLOTS[number];
 
@@ -37,6 +38,7 @@ export interface EquipmentSlots {
   mainHand: string | null;
   offHand: string | null;
   armor: string | null;
+  shoes: string | null;
 }
 
 /** A single party member. */
@@ -64,7 +66,7 @@ export interface PartyState {
 
 /** Returns an empty equipment record. */
 export function createEmptyEquipment(): EquipmentSlots {
-  return { mainHand: null, offHand: null, armor: null };
+  return { mainHand: null, offHand: null, armor: null, shoes: null };
 }
 
 /** Creates a level-1 member. */
@@ -213,6 +215,14 @@ export function canEquipInSubslot(
     return !isTwoHandedWeapon(getWeaponDef(equipment.mainHand));
   }
 
+  if (subslot === 'armor') {
+    return isArmorItem(weaponId) || (getWeaponDef(weaponId) === null && !isShoeItem(weaponId));
+  }
+
+  if (subslot === 'shoes') {
+    return isShoeItem(weaponId) || (getWeaponDef(weaponId) === null && !isArmorItem(weaponId));
+  }
+
   return true;
 }
 
@@ -245,19 +255,25 @@ export function applyMainHandConstraints(equipment: EquipmentSlots): void {
 /**
  * Combined stat modifiers contributed by a member's equipment.
  *
- * Reads the ported weapon fields (`defenseMultiplier`, `healthMultiplier`)
- * which currently only the Templarian Wall Shield sets. Multiplicative so two
- * pieces of gear compose rather than one overwriting the other.
+ * Reads the ported weapon, armor, and shoe fields (`defenseMultiplier`,
+ * `healthMultiplier`, `attackMultiplier`, `speedMultiplier`).
+ * Multiplicative so multiple pieces of gear compose cleanly.
  */
 export function computeEquipmentModifiers(equipment: EquipmentSlots): {
   defenseMultiplier: number;
   healthMultiplier: number;
+  attackMultiplier?: number;
+  speedMultiplier?: number;
 } {
   let defenseMultiplier = 1;
   let healthMultiplier = 1;
+  let attackMultiplier = 1;
+  let speedMultiplier = 1;
 
   for (const subslot of EQUIPMENT_SUBSLOTS) {
-    const def = getWeaponDef(equipment[subslot]);
+    const itemId = equipment[subslot];
+    if (itemId === null) continue;
+    const def = getItemDef(itemId);
     if (def === null) continue;
     if (typeof def.defenseMultiplier === 'number' && def.defenseMultiplier > 0) {
       defenseMultiplier *= def.defenseMultiplier;
@@ -265,9 +281,15 @@ export function computeEquipmentModifiers(equipment: EquipmentSlots): {
     if (typeof def.healthMultiplier === 'number' && def.healthMultiplier > 0) {
       healthMultiplier *= def.healthMultiplier;
     }
+    if (typeof def.attackMultiplier === 'number' && def.attackMultiplier > 0) {
+      attackMultiplier *= def.attackMultiplier;
+    }
+    if (typeof def.speedMultiplier === 'number' && def.speedMultiplier > 0) {
+      speedMultiplier *= def.speedMultiplier;
+    }
   }
 
-  return { defenseMultiplier, healthMultiplier };
+  return { defenseMultiplier, healthMultiplier, attackMultiplier, speedMultiplier };
 }
 
 /**
@@ -342,7 +364,7 @@ export function sanitizePartyState(value: unknown): PartyState {
   return party;
 }
 
-/** Rebuilds an equipment record, dropping ids that name no current weapon. */
+/** Rebuilds an equipment record, dropping ids that name no current item. */
 function sanitizeEquipment(value: unknown): EquipmentSlots {
   const equipment = createEmptyEquipment();
   if (value === null || typeof value !== 'object') return equipment;
@@ -350,10 +372,14 @@ function sanitizeEquipment(value: unknown): EquipmentSlots {
   const raw = value as Partial<EquipmentSlots>;
   for (const subslot of EQUIPMENT_SUBSLOTS) {
     const id = raw[subslot];
-    if (typeof id !== 'string') continue;
-    // Armor has no table yet, so it is accepted as-is; hands must name a real
-    // weapon or the reference is dropped.
-    if (subslot === 'armor' || getWeaponDef(id) !== null) equipment[subslot] = id;
+    if (typeof id !== 'string' || id === '') continue;
+    if (subslot === 'armor') {
+      if (isArmorItem(id) || getItemDef(id) !== null || typeof id === 'string') equipment[subslot] = id;
+    } else if (subslot === 'shoes') {
+      if (isShoeItem(id) || getItemDef(id) !== null || typeof id === 'string') equipment[subslot] = id;
+    } else if (getWeaponDef(id) !== null) {
+      equipment[subslot] = id;
+    }
   }
 
   applyMainHandConstraints(equipment);

@@ -31,6 +31,11 @@ import {
   type EquipmentSubslot,
   type PartyState,
 } from './partyState';
+import {
+  ARMOR_IDS,
+  SHOE_IDS,
+  getItemDef,
+} from '../items/itemCatalog';
 
 /** Most copies of one item a single stack holds. */
 export const MAX_STACK_COUNT = 99;
@@ -38,10 +43,9 @@ export const MAX_STACK_COUNT = 99;
 /**
  * Most distinct stacks the inventory holds.
  *
- * Sized to fit every player-equippable weapon at once, which is what
- * `PLAYTEST_GRANT_ALL_WEAPONS` currently hands out.
+ * Sized to fit every player-equippable weapon, armor, and shoe item at once.
  */
-export const MAX_INVENTORY_SLOTS = 160;
+export const MAX_INVENTORY_SLOTS = 200;
 
 /**
  * The item the player starts with.
@@ -100,9 +104,9 @@ export function hasInventoryItem(inventory: PlayerInventory, itemId: string): bo
   return getInventoryCount(inventory, itemId) > 0;
 }
 
-/** Display name for an item id, falling back to the raw id for untabled armor. */
+/** Display name for an item id, falling back to the raw id for untabled items. */
 export function getItemDisplayName(itemId: string): string {
-  return getWeaponDef(itemId)?.name ?? itemId;
+  return getItemDef(itemId)?.name ?? itemId;
 }
 
 // ---- Mutation -------------------------------------------------------------
@@ -124,7 +128,7 @@ export function addInventoryItem(
   // Refused rather than accepted-then-silently-dropped: `sanitizeInventory`
   // discards ids that name no current item, so anything allowed in here must
   // also survive a save round-trip.
-  if (getWeaponDef(itemId) === null) return 0;
+  if (getItemDef(itemId) === null) return 0;
 
   let remaining = Math.floor(count);
   let added = 0;
@@ -285,7 +289,7 @@ export function reconcileStarterEquipment(
 }
 
 /**
- * PLAYTEST ONLY — every weapon is unlocked from the first frame.
+ * PLAYTEST ONLY — every weapon, armor, and shoe item is unlocked from the first frame.
  *
  * Flip to false (or delete the flag and its call site in
  * `sanitizePlayerInventory`) to go back to earning weapons through play. Kept as
@@ -295,11 +299,11 @@ export function reconcileStarterEquipment(
 export const PLAYTEST_GRANT_ALL_WEAPONS = true;
 
 /**
- * Tops the inventory up with one of every player-equippable weapon.
+ * Tops the inventory up with one of every player-equippable weapon, armor, and shoe item.
  *
  * Skips anything already carried *or* already worn by a member, so the
  * "equipped items are not in the inventory" invariant survives, and so
- * equipping a sword does not silently duplicate it on the next load. Idempotent
+ * equipping gear does not silently duplicate it on the next load. Idempotent
  * — safe to run on every load, which is exactly what it does.
  */
 export function grantAllWeaponsForPlaytest(
@@ -319,6 +323,16 @@ export function grantAllWeaponsForPlaytest(
     if (equipped.has(id) || hasInventoryItem(inventory, id)) continue;
     addInventoryItem(inventory, id, 1);
   }
+
+  for (const id of ARMOR_IDS) {
+    if (equipped.has(id) || hasInventoryItem(inventory, id)) continue;
+    addInventoryItem(inventory, id, 1);
+  }
+
+  for (const id of SHOE_IDS) {
+    if (equipped.has(id) || hasInventoryItem(inventory, id)) continue;
+    addInventoryItem(inventory, id, 1);
+  }
 }
 
 // ---- Persistence ----------------------------------------------------------
@@ -327,7 +341,7 @@ export function grantAllWeaponsForPlaytest(
  * Rebuilds an inventory record loaded from disk.
  *
  * Like `sanitizePartyState`, the shape is reconstructed rather than trusted:
- * counts are clamped, unknown ids are dropped (a weapon deleted from the game
+ * counts are clamped, unknown ids are dropped (an item deleted from the game
  * must not resurrect as a broken reference), duplicate ids are merged, and the
  * slot cap is enforced. Returns a new record; the input is never mutated.
  */
@@ -345,7 +359,7 @@ export function sanitizeInventory(value: unknown): PlayerInventory {
     const stack = entry as Partial<InventoryStack>;
     if (typeof stack.id !== 'string' || stack.id === '') continue;
     // Only real, player-usable items survive a load.
-    if (getWeaponDef(stack.id) === null) continue;
+    if (getItemDef(stack.id) === null) continue;
     if (!Number.isFinite(stack.count)) continue;
     const count = Math.floor(stack.count as number);
     if (count <= 0) continue;
