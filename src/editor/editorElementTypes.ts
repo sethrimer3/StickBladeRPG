@@ -12,7 +12,7 @@
  * so all existing import paths continue to work without change.
  */
 
-import type { TransitionDirection, BlockTheme, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle } from '../levels/roomDef';
+import type { TransitionDirection, BlockTheme, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle, WeatherEffect } from '../levels/roomDef';
 import type { LightType, LightBlendMode } from '../levels/lightingSchema';
 import type { RoomSongId } from '../audio/musicManager';
 import type { EditorCustomBlockPlacement } from '../levels/customBlocks';
@@ -694,6 +694,8 @@ export interface EditorRoomData {
   backgroundBlur?: true;
   /** Lighting model for this room. */
   lightingEffect: LightingEffect;
+  /** Weather effect for this room. Defaults to 'none' when unset. */
+  weather?: WeatherEffect;
   /**
    * Direction ambient/skylight arrives from. Undefined means "use whatever
    * the legacy `lightingEffect` value implies" (omni for `DEFAULT`/`Ambient`,

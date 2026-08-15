@@ -343,6 +343,7 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
     backgroundId: data.backgroundId,
     backgroundBlur: data.backgroundBlur,
     lightingEffect: data.lightingEffect,
+    weather: data.weather !== 'none' ? data.weather : undefined,
     songId: data.songId !== '_continue' ? data.songId : undefined,
     widthBlocks: data.widthBlocks,
     heightBlocks: data.heightBlocks,

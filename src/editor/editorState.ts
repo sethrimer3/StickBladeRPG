@@ -11,7 +11,7 @@
 
 import { WEAVE_LIST } from '../sim/weaves/weaveDefinition';
 import { loadBlockThemeSlots } from './editorThemeSlotPreferences';
-import type { BlockTheme, BackgroundId, LightingEffect, AmbientLightDirection, CrumbleVariant, FallingBlockVariant, BlockSeamBlending, VoidEdgeStyle } from '../levels/roomDef';
+import type { BlockTheme, BackgroundId, LightingEffect, AmbientLightDirection, CrumbleVariant, FallingBlockVariant, BlockSeamBlending, VoidEdgeStyle, WeatherEffect } from '../levels/roomDef';
 import type { LightType } from '../levels/lightingSchema';
 import type { RoomSongId } from '../audio/musicManager';
 import type { BrushMode, PaletteCategory, PaletteItem } from './editorDropdownData';
@@ -40,7 +40,7 @@ export type {
 } from './editorElementTypes';
 
 // Re-export for convenience in editor modules
-export type { BlockTheme, BlockThemeId, BlockSoundHardness, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle } from '../levels/roomDef';
+export type { BlockTheme, BlockThemeId, BlockSoundHardness, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle, WeatherEffect } from '../levels/roomDef';
 export type { LightType, LightBlendMode } from '../levels/lightingSchema';
 export type { RoomSongId } from '../audio/musicManager';
 // Re-export dropdown data so existing consumers don't need to change their imports.
@@ -49,7 +49,7 @@ export {
   SONG_OPTIONS, CRUMBLE_VARIANT_OPTIONS, SCENE_LIGHT_TYPE_OPTIONS,
   DUST_KIND_OPTIONS, ROPE_DESTRUCTIBILITY_OPTIONS, ROPE_THICKNESS_OPTIONS,
   PALETTE_CATEGORIES, PALETTE_CATEGORY_LABELS, PALETTE_ITEMS,
-  BLOCK_THEMES, BACKGROUND_OPTIONS, LIGHTING_OPTIONS,
+  BLOCK_THEMES, BACKGROUND_OPTIONS, LIGHTING_OPTIONS, WEATHER_OPTIONS,
   AMBIENT_LIGHT_DIRECTION_OPTIONS, FADE_COLOR_OPTIONS,
 } from './editorDropdownData';
 
@@ -342,6 +342,7 @@ export interface EditorUICallbacks {
   /** Called when the user picks a theme from the full palette opened via a slot's replace icon. */
   onBlockThemeSlotAssign: (slotIndex: number, theme: BlockTheme) => void;
   onLightingEffectChange: (effect: LightingEffect) => void;
+  onWeatherChange: (weather: WeatherEffect) => void;
   onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => void;
   onDirectionalBiasChange: (value: number) => void;
   onSideExposureStrengthChange: (value: number) => void;

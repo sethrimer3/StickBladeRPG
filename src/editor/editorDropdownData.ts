@@ -6,7 +6,7 @@
  * effects, no runtime state).
  */
 
-import type { BlockTheme, BlockThemeId, LightingEffect, AmbientLightDirection, CrumbleVariant } from '../levels/roomDef';
+import type { BlockTheme, BlockThemeId, LightingEffect, AmbientLightDirection, CrumbleVariant, WeatherEffect } from '../levels/roomDef';
 import type { LightType } from '../levels/lightingSchema';
 import type { RoomSongId } from '../audio/musicManager';
 import { AVAILABLE_SONGS, SONG_DISPLAY_NAMES } from '../audio/musicManager';
@@ -140,6 +140,12 @@ export const LIGHTING_OPTIONS: readonly { id: LightingEffect; label: string }[] 
   { id: 'FullyLit', label: 'Fully Lit' },
   { id: 'DEFAULT',  label: 'Legacy: Default (omni)' },
   { id: 'Above',    label: 'Legacy: Above (down)' },
+];
+
+/** Options for the per-room "Weather" dropdown. */
+export const WEATHER_OPTIONS: readonly { id: WeatherEffect; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'rain', label: 'Rain' },
 ];
 
 /**

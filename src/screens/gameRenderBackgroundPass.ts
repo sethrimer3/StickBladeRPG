@@ -1,5 +1,6 @@
 import { BLOCK_SIZE_MEDIUM, type RoomDef } from '../levels/roomDef';
 import { renderWorldBackground } from '../render/backgroundRenderer';
+import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
 import {
   isTheroShowcaseRoom,
   renderTheroShowcaseEffect,
@@ -34,6 +35,7 @@ export interface BackgroundPassContext {
   roomHeightWorld: number;
   nowMs: number;
   renderProfiler?: RenderProfiler;
+  rainParallaxBackground?: RainParallaxBackground;
 }
 
 /**
@@ -53,6 +55,7 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
     roomHeightWorld,
     nowMs,
     renderProfiler,
+    rainParallaxBackground,
   } = r;
 
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BACKGROUND);
@@ -126,6 +129,10 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
   const roomCenterOffsetYPx = virtualHeightPx * 0.5 - roomHeightWorld * 0.5 * zoom;
   const relCameraOffsetXPx = ox - roomCenterOffsetXPx;
   const relCameraOffsetYPx = oy - roomCenterOffsetYPx;
+
+  if (rainParallaxBackground !== undefined) {
+    rainParallaxBackground.render(ctx, relCameraOffsetXPx, relCameraOffsetYPx, virtualWidthPx, virtualHeightPx, nowMs);
+  }
 
   const renderedTheroBackground = renderTheroBackgroundEffect(
     ctx,

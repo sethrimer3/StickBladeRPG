@@ -596,6 +596,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
       blockTheme: room.blockTheme ?? 'blackRock',
       backgroundId: room.backgroundId ?? 'brownRock',
       lightingEffect: room.lightingEffect ?? 'Ambient',
+      weather: room.weather ?? 'none',
       ambientLightDirection: room.ambientLightDirection,
       directionalBias:       room.directionalBias,
       sideExposureStrength:  room.sideExposureStrength,

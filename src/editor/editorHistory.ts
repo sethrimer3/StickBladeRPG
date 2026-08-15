@@ -125,7 +125,7 @@ const ROOM_FIELDS = [
   'lightingEffect', 'ambientLightDirection', 'directionalBias',
   'sideExposureStrength', 'minimumWallLight', 'falloffPower',
   'backgroundLightSpill', 'solidLightSoftness', 'blockSeamBlending',
-  'voidEdgeStyle', 'songId', 'playerSpawnBlock', 'sunrays',
+  'voidEdgeStyle', 'songId', 'playerSpawnBlock', 'sunrays', 'weather',
 ] as const satisfies readonly (keyof EditorRoomData)[];
 export type RoomFieldKey = typeof ROOM_FIELDS[number];
 

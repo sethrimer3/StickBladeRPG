@@ -25,7 +25,7 @@ import { buildEdgeExtensionCache } from '../render/transitions/edgeExtensionCach
 import type { EdgeExtensionCache } from '../render/transitions/edgeExtensionCache';
 
 import { EditorState, createEditorState, EditorTool,
-  BackgroundId, LightingEffect, RoomSongId, AmbientLightDirection,
+  BackgroundId, LightingEffect, RoomSongId, AmbientLightDirection, WeatherEffect,
   BlockTheme,
   EditorTransition, EditorRoomData,
   selectBlockTheme,
@@ -1134,6 +1134,9 @@ export function createEditorController(
         },
         onLightingEffectChange: (lightingEffect: LightingEffect) => {
           runRoomFieldMutation('lightingEffect', room => { room.lightingEffect = lightingEffect; });
+        },
+        onWeatherChange: (weather: WeatherEffect) => {
+          runRoomFieldMutation('weather', room => { room.weather = weather; });
         },
         onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => {
           runRoomFieldMutation('ambientLightDirection', room => { room.ambientLightDirection = direction; });

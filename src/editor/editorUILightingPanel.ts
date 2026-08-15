@@ -14,8 +14,9 @@ import type {
   AmbientLightDirection,
   BlockSeamBlending,
   VoidEdgeStyle,
+  WeatherEffect,
 } from './editorState';
-import { LIGHTING_OPTIONS, AMBIENT_LIGHT_DIRECTION_OPTIONS } from './editorState';
+import { LIGHTING_OPTIONS, AMBIENT_LIGHT_DIRECTION_OPTIONS, WEATHER_OPTIONS } from './editorState';
 import { PANEL_BORDER, TEXT_COLOR } from './editorStyles';
 
 /**
@@ -44,6 +45,7 @@ export function computeLightingValueSig(state: EditorState, currentLighting: str
     s?.intensity ?? 0.5,
     s?.rayCount ?? 6,
     s?.animationEnabled ?? true,
+    room?.weather ?? 'none',
   ].join('|');
 }
 
@@ -136,6 +138,29 @@ export function createEditorLightingPanel(
   });
   lightingSelect.addEventListener('click', (e) => e.stopPropagation());
   lightingDiv.appendChild(lightingSelect);
+
+  // ── Weather dropdown ───────────────────────────────────────────────────────
+  const weatherLabel = document.createElement('div');
+  weatherLabel.textContent = 'Weather';
+  weatherLabel.style.cssText = `font-size: 11px; color: rgba(241,231,203,0.7); margin-top: 6px; margin-bottom: 4px;`;
+  lightingDiv.appendChild(weatherLabel);
+  const weatherSelect = document.createElement('select');
+  weatherSelect.style.cssText = `
+    width: 100%; background: rgba(0,0,0,0.6); border: 1px solid ${PANEL_BORDER};
+    color: ${TEXT_COLOR}; padding: 4px 6px; font-size: 11px; font-family: monospace;
+    border-radius: 2px;
+  `;
+  for (const opt of WEATHER_OPTIONS) {
+    const o = document.createElement('option');
+    o.value = opt.id;
+    o.textContent = opt.label;
+    weatherSelect.appendChild(o);
+  }
+  weatherSelect.addEventListener('change', () => {
+    getCallbacks()?.onWeatherChange(weatherSelect.value as WeatherEffect);
+  });
+  weatherSelect.addEventListener('click', (e) => e.stopPropagation());
+  lightingDiv.appendChild(weatherSelect);
 
   // ── Ambient Light Direction dropdown ──────────────────────────────────────
   const ambientDirLabel = document.createElement('div');
@@ -335,6 +360,7 @@ export function createEditorLightingPanel(
 
   function syncOnRebuild(state: EditorState, currentLighting: string, paletteDiv: HTMLElement): void {
     lightingSelect.value = currentLighting;
+    weatherSelect.value = state.roomData?.weather ?? 'none';
     ambientDirSelect.value = state.roomData?.ambientLightDirection ?? '';
     dirBiasSlider.value = String(state.roomData?.directionalBias ?? 0.65);
     dirBiasValLabel.textContent  = (state.roomData?.directionalBias  ?? 0.65).toFixed(2);
@@ -372,6 +398,9 @@ export function createEditorLightingPanel(
     if (currentLighting !== _lastRenderedLightingEffect && document.activeElement !== lightingSelect) {
       _lastRenderedLightingEffect = currentLighting;
       lightingSelect.value = currentLighting;
+    }
+    if (document.activeElement !== weatherSelect) {
+      weatherSelect.value = state.roomData?.weather ?? 'none';
     }
     if (document.activeElement !== ambientDirSelect) {
       ambientDirSelect.value = state.roomData?.ambientLightDirection ?? '';
