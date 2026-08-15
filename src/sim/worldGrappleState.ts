@@ -383,6 +383,17 @@ export interface GrappleWorldState {
    */
   prevHasGrappleChargeFlag: 0 | 1;
 
+  /**
+   * Ticks remaining until the grapple charge auto-restores after the player
+   * lets go of a grapple.  Set to GRAPPLE_RECHARGE_COOLDOWN_TICKS by
+   * releaseGrapple() whenever the charge is spent; ticked down once per
+   * sim tick (tick.ts).  0 = inactive (either already charged, or the
+   * cooldown already finished and recharged the charge).  Other recharge
+   * triggers (ground contact, water surface) can still restore the charge
+   * earlier and leave this counting down harmlessly to 0.
+   */
+  grappleChargeCooldownTicksLeft: number;
+
   // ── Grapple geometric wrapping (Phase 2) ──────────────────────────────────
   /**
    * Debug/feature flag.  1 = geometric corner wrapping is active; 0 = disabled.
@@ -494,6 +505,7 @@ export function createGrappleWorldState(): GrappleWorldState {
     grappleRechargeRingTicksLeft:          0,
     grappleRechargeRingTotalTicks:         16,
     prevHasGrappleChargeFlag:              1, // starts charged; no ring on first tick
+    grappleChargeCooldownTicksLeft:        0,
     isGrappleWrappingEnabled:              0,
     grappleWrapPointCount:                 0,
     grappleWrapPointXWorld:                new Float32Array(MAX_GRAPPLE_WRAP_POINTS),

@@ -259,6 +259,12 @@ export function isSpecialZipGrapple(
 /** Minimum rope length to prevent degenerate zero-length rope attachment (world units). */
 export const GRAPPLE_MIN_LENGTH_WORLD = 20;
 
+/**
+ * Ticks until the grapple charge auto-restores after the player lets go of a
+ * grapple. 4 seconds at the fixed 60 Hz sim tick rate.
+ */
+export const GRAPPLE_RECHARGE_COOLDOWN_TICKS = 240;
+
 // ============================================================================
 // Release helpers (used by grapple.ts, grappleZip.ts, and gameCommandProcessor)
 // ============================================================================
@@ -409,6 +415,12 @@ export function releaseGrapple(world: WorldState, grantCoyoteTime = true, isJump
   world.grappleRopeIndex = -1; // detach from rope segment (if any)
   world.grappleCarryBlockIndex = -1;
   world.grappleWrapPointCount = 0;  // clear wrap corners
+  // Start the auto-recharge countdown so letting go of the grapple always
+  // restores the charge within GRAPPLE_RECHARGE_COOLDOWN_TICKS, even if the
+  // player never touches the ground or water surface again.
+  if (shouldRetractFromActiveGrapple && world.hasGrappleChargeFlag === 0) {
+    world.grappleChargeCooldownTicksLeft = GRAPPLE_RECHARGE_COOLDOWN_TICKS;
+  }
   // Clear surface-anchor state (no longer attached to any surface).
   world.grappleAnchorNormalXWorld = 0.0;
   world.grappleAnchorNormalYWorld = 0.0;
@@ -425,10 +437,23 @@ export function rechargeGrappleCharge(world: WorldState): void {
   const wasChargeDepleted =
     world.prevHasGrappleChargeFlag === 0 && world.hasGrappleChargeFlag === 0;
   world.hasGrappleChargeFlag = 1;
+  world.grappleChargeCooldownTicksLeft = 0; // charge restored — cooldown no longer needed
   if (wasChargeDepleted) {
     world.grappleRechargeRingTicksLeft = world.grappleRechargeRingTotalTicks;
   }
   world.prevHasGrappleChargeFlag = world.hasGrappleChargeFlag;
+}
+
+/**
+ * Ticks the post-release auto-recharge countdown, restoring the grapple
+ * charge once it reaches 0. Called once per sim tick from tick.ts.
+ */
+export function tickGrappleChargeCooldown(world: WorldState): void {
+  if (world.grappleChargeCooldownTicksLeft <= 0) return;
+  world.grappleChargeCooldownTicksLeft -= 1;
+  if (world.grappleChargeCooldownTicksLeft <= 0 && world.hasGrappleChargeFlag === 0) {
+    rechargeGrappleCharge(world);
+  }
 }
 
 // ============================================================================

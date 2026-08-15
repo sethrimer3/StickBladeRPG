@@ -14,11 +14,7 @@
 import { WorldState } from '../world';
 import { PLAYER_JUMP_SPEED_WORLD, VAR_JUMP_TIME_TICKS } from './movement';
 import { moveClusterByDelta } from './movementCollision';
-import {
-  GRAPPLE_MIN_LENGTH_WORLD,
-  raycastWalls,
-  releaseGrapple,
-} from './grappleShared';
+import { releaseGrapple } from './grappleShared';
 import { tickGrappleWrapping } from './grappleWrapping';
 import { tickGrappleZip } from './grappleZip';
 import {
@@ -37,54 +33,8 @@ import {
 // Tuning constants — used only by applyGrappleClusterConstraint
 // ============================================================================
 
-/**
- * Base speed at which the rope shortens while the down key is held (world units per second).
- * Applied at the start of a retraction hold before the ramp reaches full speed.
- * Tuned slightly below the old 60 wu/s value so hold-down retraction has
- * a little more readable wind-up.
- */
-const GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC = 54.0;
-
-/**
- * Full speed at which the rope shortens while the down key is held (world units per second).
- * Reached after GRAPPLE_PULL_IN_RAMP_TICKS ticks of continuous hold.
- * Shorter rope = tighter swing radius = faster rotation = bigger launch when released.
- */
-const GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC = 162.0;
-
-/**
- * Number of ticks over which the retraction speed ramps from the base speed
- * to the full speed.  At 60 fps this is 0.35 seconds.
- * Prevents an instantaneous velocity spike when the player starts retracting.
- */
-const GRAPPLE_PULL_IN_RAMP_TICKS = 21;
-
-/**
- * Maximum total rope that can be pulled in before the grapple breaks (world units).
- * This is a tension limit — pulling too hard snaps the rope and the player flies
- * off with their accumulated swing momentum.  Acts as the skill ceiling for the mechanic.
- * Raised from 100 to 150 to give more retraction time at the higher pull speed.
- */
-const GRAPPLE_MAX_PULL_IN_WORLD = 150.0;
-
-/**
- * Maximum ratio by which tangential velocity can increase in a single tick due
- * to rope shortening (conservation of angular momentum).  Prevents extreme
- * speed spikes when the rope is very short.  1.1 = max 10 % boost per tick.
- */
-const GRAPPLE_MAX_RETRACT_SPEED_RATIO = 1.1;
-
-/**
- * Maximum tangential speed (world units/second) the player can reach via rope
- * retraction.  Acts as a hard cap so unbounded speed cannot accumulate even
- * when the rope is very short and angular-momentum conservation would produce
- * extreme values.  540 wu/s ≈ 9 wu/tick at 60 fps — fast but safe.
- */
-const GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC = 540.0;
-
 const GRAPPLE_CARRY_TENSION_SLACK_WORLD = 1.0;
 const GRAPPLE_CARRY_TENSION_PULL_SPEED_WORLD_PER_SEC = 36.0;
-const GRAPPLE_CARRY_REEL_PULL_SPEED_WORLD_PER_SEC = 44.0;
 
 /**
  * Upward velocity impulse (world units/second) added to the player when they
@@ -236,28 +186,9 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   if (isStickman && world.stickRangerBody !== null) {
     const body = world.stickRangerBody;
 
-    if (world.playerCrouchHeldFlag === 1) {
-      world.grappleRetractHeldTicks++;
-      const rampFactor = Math.max(
-        GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC / GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC,
-        Math.min(1.0, world.grappleRetractHeldTicks / GRAPPLE_PULL_IN_RAMP_TICKS),
-      );
-      const pullThisTick = GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC * rampFactor * dtSec;
-      const oldLength = world.grappleLengthWorld;
-      const newLength = Math.max(oldLength - pullThisTick, GRAPPLE_MIN_LENGTH_WORLD);
-      if (newLength < oldLength) {
-        world.grappleLengthWorld = newLength;
-        world.grapplePullInAmountWorld += oldLength - newLength;
-        // Same tension limit as the AABB path: reel in too far and the rope snaps.
-        if (world.grapplePullInAmountWorld >= GRAPPLE_MAX_PULL_IN_WORLD) {
-          detachStickRangerGrapple(body);
-          releaseGrapple(world);
-          return;
-        }
-      }
-    } else {
-      world.grappleRetractHeldTicks = 0;
-    }
+    // Rope retraction (hold down / S) is disabled — rope length is fixed at
+    // fire time, so there is nothing to ramp here.
+    world.grappleRetractHeldTicks = 0;
 
     if (quietReleaseRequested) {
       detachStickRangerGrapple(body);
@@ -291,91 +222,9 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   const nx = dx * invDist;
   const ny = dy * invDist;
 
-  // ── Rope retraction (hold down / S) ───────────────────────────────────────
-  // While the down key is held the rope shortens, and angular momentum is
-  // conserved: v_tangential_new = v_tangential_old × (L_old / L_new).
-  // This is why figure skaters spin faster when they pull their arms in.
-  // A ramp-up over GRAPPLE_PULL_IN_RAMP_TICKS prevents an instant speed spike
-  // on the first tick of a retraction hold.
-  if (world.playerCrouchHeldFlag === 1) {
-    world.grappleRetractHeldTicks++;
-    // Ramp: starts at base speed on tick 1, reaches full speed at RAMP_TICKS.
-    const rampFactor = Math.max(
-      GRAPPLE_PULL_IN_SPEED_BASE_WORLD_PER_SEC / GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC,
-      Math.min(1.0, world.grappleRetractHeldTicks / GRAPPLE_PULL_IN_RAMP_TICKS),
-    );
-    const pullThisTick = GRAPPLE_PULL_IN_SPEED_WORLD_PER_SEC * rampFactor * dtSec;
-    const oldLength = world.grappleLengthWorld;
-    const newLength = Math.max(oldLength - pullThisTick, GRAPPLE_MIN_LENGTH_WORLD);
-
-    if (newLength < oldLength) {
-      // Wall obstruction check: shortening the rope snaps the player toward
-      // the anchor.  If a wall blocks that path, stop retraction rather than
-      // pulling the player through geometry.  Cast from the player toward the
-      // anchor; only check up to however far the player would actually move.
-      // When retractDistWorld <= 0 the player is already within the new rope
-      // length, so no snap occurs and no wall check is needed.
-      const retractDistWorld = dist - newLength;
-      const isRetractPathClear = retractDistWorld <= 0 || raycastWalls(
-        world,
-        player.positionXWorld, player.positionYWorld,
-        -nx, -ny,
-        retractDistWorld,
-      ) === null;
-
-      if (world.grappleCarryBlockIndex >= 0) {
-        const bi = world.grappleCarryBlockIndex;
-        const towardPlayerX = nx;
-        const towardPlayerY = ny;
-        if (canMoveGrappleCarryBlockToward(world, bi, towardPlayerX, towardPlayerY)) {
-          const pullSpeed = GRAPPLE_CARRY_REEL_PULL_SPEED_WORLD_PER_SEC * rampFactor;
-          pullGrappleCarryBlockToward(world, bi, towardPlayerX, towardPlayerY, pullSpeed);
-        } else if (isRetractPathClear) {
-          world.grappleLengthWorld = newLength;
-        }
-      } else if (isRetractPathClear) {
-        // Decompose velocity into radial and tangential components relative to
-        // the anchor→player axis.
-        const vRadial = player.velocityXWorld * nx + player.velocityYWorld * ny;
-        const vTangX  = player.velocityXWorld - vRadial * nx;
-        const vTangY  = player.velocityYWorld - vRadial * ny;
-
-        // Scale tangential velocity to conserve angular momentum (L = m·v·r).
-        // The ratio is clamped to prevent extreme spikes when the rope is very short.
-        const ratio = Math.min(oldLength / newLength, GRAPPLE_MAX_RETRACT_SPEED_RATIO);
-        let newVTangX = vTangX * ratio;
-        let newVTangY = vTangY * ratio;
-
-        // Hard cap on tangential speed to prevent unbounded acceleration when
-        // the rope becomes very short.  Clamp after the ratio is applied so the
-        // cap is consistent regardless of rope length.
-        const tangSpeedSq = newVTangX * newVTangX + newVTangY * newVTangY;
-        const maxTangSpeedSq = GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC;
-        if (tangSpeedSq > maxTangSpeedSq) {
-          const invTangSpeed = 1.0 / Math.sqrt(tangSpeedSq);
-          newVTangX *= GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * invTangSpeed;
-          newVTangY *= GRAPPLE_MAX_TANGENTIAL_SPEED_WORLD_PER_SEC * invTangSpeed;
-        }
-
-        player.velocityXWorld = vRadial * nx + newVTangX;
-        player.velocityYWorld = vRadial * ny + newVTangY;
-
-        world.grappleLengthWorld        = newLength;
-        world.grapplePullInAmountWorld += (oldLength - newLength);
-
-        // Snap limit: too much accumulated tension breaks the rope
-        if (world.grapplePullInAmountWorld >= GRAPPLE_MAX_PULL_IN_WORLD) {
-          releaseGrapple(world);
-          return;
-        }
-      }
-      // If a wall blocks retraction, or if newLength equals GRAPPLE_MIN_LENGTH_WORLD,
-      // no further pull occurs this tick.
-    }
-  } else {
-    // Crouch key released — reset ramp counter so the next press starts fresh.
-    world.grappleRetractHeldTicks = 0;
-  }
+  // Rope retraction (hold down / S) is disabled — the player cannot change
+  // the rope length after firing; it stays fixed until release or break.
+  world.grappleRetractHeldTicks = 0;
 
   // ── Enforce rope length constraint ────────────────────────────────────────
   // If the player has drifted beyond the current rope length (due to gravity,
