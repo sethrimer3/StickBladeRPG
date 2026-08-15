@@ -7,6 +7,7 @@
 
 import { getWeaponDef } from '../sim/weapons/weaponDefs';
 import { getItemDef, isArmorItem, isShoeItem, isTwoHandedItem } from '../sim/items/itemCatalog';
+import { getStatBoostItemDef, type StatBoostItemDef } from '../sim/items/statBoostItems';
 
 /**
  * Returns an inline SVG string for an item's icon.
@@ -16,6 +17,11 @@ export function getItemIconSvg(itemId: string, width = 36, height = 36): string 
   if (!item) return getFallbackIcon(width, height);
 
   const color = ('color' in item && typeof item.color === 'string') ? item.color : '#ffd700';
+
+  const boost = getStatBoostItemDef(itemId);
+  if (boost) {
+    return getStatBoostIconSvg(boost, width, height);
+  }
 
   if (isArmorItem(itemId)) {
     return getArmorIconSvg(itemId, color, width, height);

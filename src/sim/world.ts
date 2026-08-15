@@ -24,6 +24,7 @@ import { createSecondaryWeaveGestureState, type SecondaryWeaveGestureState } fro
 import { createVoidDashState, type VoidDashState } from './clusters/voidDash';
 import { createPlayerWeaponState, type PlayerWeaponState } from './weapons/playerWeaponState';
 import type { CharacterStats } from './stats/characterStats';
+import type { PlayerStatBoosts } from '../progression/statBoosts';
 import type { PartyState } from './party/partyState';
 import type { PlayerInventory } from './party/inventory';
 
@@ -478,6 +479,13 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    */
   playerCharacterStats: CharacterStats | null;
   /**
+   * Permanent stat boosts, mirrored from `PlayerProgress` on room load
+   * alongside `playerCharacterStats`. Drives Ammo / Dust / Mana pool capacity
+   * (`weapons/weaponResources.ts`). Null before it is supplied, in which case
+   * pools keep whatever capacity they already had.
+   */
+  playerStatBoosts: PlayerStatBoosts | null;
+  /**
    * The active party state, mirrored from `PlayerProgress` on room load.
    * Null when not initialized.
    */
@@ -779,6 +787,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     playerWeapon:                  createPlayerWeaponState(),
     playerOffHandWeapon:           createPlayerWeaponState(),
     playerCharacterStats:          null,
+    playerStatBoosts:              null,
     party:                         null,
     playerInventory:               null,
     newSwordActiveFlag:            0,

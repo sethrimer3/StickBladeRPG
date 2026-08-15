@@ -25,6 +25,11 @@ import {
   sanitizePartyState,
 } from '../sim/party/partyState';
 import {
+  type PlayerStatBoosts,
+  createEmptyStatBoosts,
+  sanitizeStatBoosts,
+} from './statBoosts';
+import {
   type PlayerInventory,
   PLAYTEST_GRANT_ALL_WEAPONS,
   createDefaultInventory,
@@ -191,6 +196,14 @@ export interface PlayerProgress {
   inventory?: PlayerInventory;
 
   /**
+   * Permanent stat boosts collected from boost pickup items (Ammo / Dust /
+   * Mana / Health / Attack / Defense, flat and percentage). Optional on the
+   * wire so saves written before this field existed still load;
+   * `sanitizePlayerStatBoosts` backfills and repairs it.
+   */
+  statBoosts?: PlayerStatBoosts;
+
+  /**
    * Completed world map stage IDs (e.g. 'world1Stage1', 'world1Stage2') ported
    * from STICK-RPG. Optional for backwards compatibility with legacy saves.
    */
@@ -259,6 +272,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     characterStats: createDefaultCharacterStats(),
     party: createDefaultParty(),
     inventory: createDefaultInventory(),
+    statBoosts: createEmptyStatBoosts(),
     completedStageIds: [],
   };
 }
@@ -305,6 +319,16 @@ export function sanitizePlayerInventory(progress: PlayerProgress): void {
       grantAllWeaponsForPlaytest(progress.inventory, progress.party);
     }
   }
+}
+
+/**
+ * Ensures `progress.statBoosts` is present and internally consistent.
+ *
+ * Saves written before boost pickups existed omit the field entirely, so this
+ * both backfills and repairs. Idempotent.
+ */
+export function sanitizePlayerStatBoosts(progress: PlayerProgress): void {
+  progress.statBoosts = sanitizeStatBoosts(progress.statBoosts);
 }
 
 /**

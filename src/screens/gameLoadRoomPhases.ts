@@ -463,6 +463,9 @@ function applyPlayerWeaveWorldFields(
   const activeMember                   = world.party ? getActiveMember(world.party) : null;
   world.playerCharacterStats           = activeMember ? activeMember.stats : (ctx.progress?.characterStats ?? null);
   world.playerInventory                = ctx.progress?.inventory ?? null;
+  // Ammo / Dust / Mana capacity is derived from these, so they must be mirrored
+  // before the first weapon tick of the new room.
+  world.playerStatBoosts               = ctx.progress?.statBoosts ?? null;
   // Both hands follow the active member's slots; an absent main hand falls back
   // to the starter weapon inside the sync.
   syncPlayerHandsFromEquipment(

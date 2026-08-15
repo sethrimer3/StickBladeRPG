@@ -19,6 +19,7 @@ import {
   preloadMenuAnimationFrames,
   type MenuAnimationLoadProgress,
 } from './ui/menuAnimationFrames';
+import { LOADING_BANNER_ASSETS } from './ui/animatedAssetPaths';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui-root') as HTMLDivElement;
@@ -36,28 +37,58 @@ function createStartupLoadingScreen(): {
   showError: (error: unknown) => void;
   destroy: () => void;
 } {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = [
-    'position:fixed', 'inset:0', 'z-index:10000', 'display:flex',
-    'flex-direction:column', 'align-items:center', 'justify-content:center',
-    'gap:1rem', 'background:#050403', 'color:#d4a84b',
-    "font-family:'Cinzel',serif", 'letter-spacing:0.12em',
-  ].join(';');
+  const existingOverlay = document.getElementById('startup-loading-overlay') as HTMLDivElement | null;
+  let overlay: HTMLDivElement;
+  let status: HTMLDivElement;
+  let track: HTMLDivElement;
+  let fill: HTMLDivElement;
 
-  const title = document.createElement('div');
-  title.textContent = 'StickBlade';
-  title.style.cssText = 'font-size:clamp(2rem,6vw,4.5rem);text-transform:uppercase;text-shadow:0 0 40px rgba(212,168,75,.35)';
+  if (existingOverlay !== null) {
+    overlay = existingOverlay;
+    const bannerImg = document.getElementById('startup-loading-banner') as HTMLImageElement | null;
+    status = (document.getElementById('startup-loading-status') as HTMLDivElement | null) ?? document.createElement('div');
+    track = (document.getElementById('startup-loading-track') as HTMLDivElement | null) ?? document.createElement('div');
+    fill = (document.getElementById('startup-loading-fill') as HTMLDivElement | null) ?? document.createElement('div');
+    if (bannerImg !== null && !bannerImg.getAttribute('src')) {
+      bannerImg.src = LOADING_BANNER_ASSETS.bannerUrl;
+    }
+  } else {
+    overlay = document.createElement('div');
+    overlay.id = 'startup-loading-overlay';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:10000', 'display:flex',
+      'flex-direction:column', 'align-items:center', 'justify-content:center',
+      'gap:1.5rem', 'background:#050403', 'color:#d4a84b',
+      "font-family:'Cinzel',serif", 'letter-spacing:0.12em',
+      'transition:opacity 0.3s ease-out', 'user-select:none',
+    ].join(';');
 
-  const status = document.createElement('div');
-  status.style.cssText = 'display:none;font-size:.9rem;color:rgba(212,168,75,.8);text-transform:uppercase';
+    const bannerContainer = document.createElement('div');
+    bannerContainer.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;max-width:min(90vw,840px);max-height:55vh;';
 
-  const track = document.createElement('div');
-  track.style.cssText = 'width:min(560px,75vw);height:4px;background:rgba(212,168,75,.15);overflow:hidden';
-  const fill = document.createElement('div');
-  fill.style.cssText = 'height:100%;width:0;background:#d4a84b;transition:width .1s linear;box-shadow:0 0 16px rgba(212,168,75,.7)';
-  track.appendChild(fill);
-  overlay.append(title, status, track);
-  uiRoot.appendChild(overlay);
+    const bannerImg = document.createElement('img');
+    bannerImg.id = 'startup-loading-banner';
+    bannerImg.src = LOADING_BANNER_ASSETS.bannerUrl;
+    bannerImg.alt = 'StickBlade';
+    bannerImg.style.cssText = 'max-width:100%;max-height:55vh;width:auto;height:auto;object-fit:contain;display:block;filter:drop-shadow(0 0 24px rgba(212,168,75,0.25));border-radius:4px;';
+    bannerContainer.appendChild(bannerImg);
+
+    status = document.createElement('div');
+    status.id = 'startup-loading-status';
+    status.style.cssText = 'display:none;font-size:.9rem;color:rgba(212,168,75,.8);text-transform:uppercase;';
+
+    track = document.createElement('div');
+    track.id = 'startup-loading-track';
+    track.style.cssText = 'width:min(480px,75vw);height:4px;background:rgba(212,168,75,.15);overflow:hidden;border-radius:2px;';
+
+    fill = document.createElement('div');
+    fill.id = 'startup-loading-fill';
+    fill.style.cssText = 'height:100%;width:0;background:#d4a84b;transition:width .1s linear;box-shadow:0 0 16px rgba(212,168,75,.7);';
+    track.appendChild(fill);
+
+    overlay.append(bannerContainer, status, track);
+    uiRoot.appendChild(overlay);
+  }
 
   return {
     update(progress): void {
@@ -71,7 +102,13 @@ function createStartupLoadingScreen(): {
       track.style.display = 'none';
     },
     destroy(): void {
-      overlay.remove();
+      overlay.style.transition = 'opacity 0.3s ease-out';
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        if (overlay.parentElement !== null) {
+          overlay.remove();
+        }
+      }, 300);
     },
   };
 }

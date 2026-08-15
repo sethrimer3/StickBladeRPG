@@ -35,7 +35,16 @@ export interface ShoeDef extends BaseItemDef {
   kind: 'shoes';
 }
 
-export type ItemDef = (WeaponDef & BaseItemDef) | ArmorDef | ShoeDef;
+/**
+ * Boost items carry no equipment multipliers, but are intersected with
+ * `BaseItemDef` so every member of `ItemDef` shares one property set and
+ * callers can read `item.defenseMultiplier` without narrowing the union first.
+ */
+export type ItemDef =
+  | (WeaponDef & BaseItemDef)
+  | ArmorDef
+  | ShoeDef
+  | (StatBoostItemDef & BaseItemDef);
 
 export const ARMOR_DEFS: Readonly<Record<string, ArmorDef>> = {
   leatherArmor: {
@@ -164,6 +173,8 @@ export function getItemDef(id: string): ItemDef | null {
   if (armor !== null) return armor;
   const shoe = getShoeDef(id);
   if (shoe !== null) return shoe;
+  const boost = getStatBoostItemDef(id);
+  if (boost !== null) return boost;
   return null;
 }
 
@@ -199,9 +210,10 @@ export function isOneHandedItem(id: string): boolean {
 }
 
 /** Item category for filtering in the inventory screen. */
-export function getItemCategory(id: string): 'weapon' | 'armor' | 'shoes' | 'other' {
+export function getItemCategory(id: string): 'weapon' | 'armor' | 'shoes' | 'boost' | 'other' {
   if (isWeaponItem(id)) return 'weapon';
   if (isArmorItem(id)) return 'armor';
   if (isShoeItem(id)) return 'shoes';
+  if (isStatBoostItem(id)) return 'boost';
   return 'other';
 }

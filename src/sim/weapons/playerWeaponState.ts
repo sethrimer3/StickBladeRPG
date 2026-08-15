@@ -32,6 +32,17 @@ import {
 } from './weaponSwing';
 import { applyWeaponSwingToClusters } from './weaponSwingClusters';
 import {
+  canAffordWeaponAttack,
+  createWeaponResourcePools,
+  drainChannelledMana,
+  getWeaponResourceKind,
+  refillWeaponResources,
+  spendWeaponResource,
+  syncWeaponResourceMaxes,
+  tickWeaponResourceRegen,
+  type WeaponResourcePools,
+} from './weaponResources';
+import {
   createStaffChannelState,
   getStaffAuraModifiers,
   getStaffAuraRadius,
@@ -155,6 +166,12 @@ export interface PlayerWeaponState {
   /** Purely visual rings marking where on-expiry effects landed. */
   expiryFlashes: ExpiryFlashPool;
   /**
+   * Ammo / Dust / Mana pools. Guns, weave weapons, and magic weapons each
+   * spend from one of these; every other family is unmetered. Capacity tracks
+   * the matching stat track — see `weaponResources.ts`.
+   */
+  resources: WeaponResourcePools;
+  /**
    * Where the held weapon actually sits this tick, tip resolved against solid
    * geometry. Renderers read this instead of re-deriving a pose, so what is
    * drawn and what the simulation believes is held can never disagree.
@@ -180,6 +197,7 @@ export function createPlayerWeaponState(): PlayerWeaponState {
     soulsCollected: 0,
     projectileShield: createProjectileShieldState(),
     expiryFlashes: createExpiryFlashPool(),
+    resources: createWeaponResourcePools(),
     heldPose: createHeldWeaponPose(),
   };
 }
@@ -202,6 +220,9 @@ export function resetPlayerWeaponRoomState(state: PlayerWeaponState): void {
   resetProjectileShieldState(state.projectileShield);
   resetExpiryFlashPool(state.expiryFlashes);
   seedHeldWeaponPose(state.heldPose, getWeaponDef(state.equippedWeaponId));
+  // Ammo/Dust/Mana are room-scoped in the same way health is: a new room (or a
+  // respawn) starts the player topped up rather than dry from the last fight.
+  refillWeaponResources(state.resources);
   state.burstShotsRemaining = 0;
   state.burstCooldownTicks = 0;
   state.attackStartedFlag = 0;
@@ -330,8 +351,16 @@ export function tryStartPlayerWeaponAttack(
 
   const attack = resolveAttackStat(world.playerCharacterStats, state);
 
+  // A dry gun / weave weapon / magic weapon cannot attack at all. Checked
+  // before any per-family branch so one gate covers every path below, and
+  // checked rather than spent because several branches can still decline to
+  // fire for their own reasons — the cost is only taken once an attack is
+  // committed.
+  if (!canAffordWeaponAttack(state.resources, def)) return false;
+
   // Staves channel for as long as the input is held rather than firing shots,
-  // so this is a request, not a one-shot trigger.
+  // so this is a request, not a one-shot trigger. Mana is charged per tick by
+  // `tickPlayerWeapon` while the beam is open, not here.
   if (def.kind === 'staff') {
     return requestStaffChannel(state.staff, def, aimXWorld, aimYWorld);
   }
@@ -383,6 +412,10 @@ export function tryStartPlayerWeaponAttack(
     );
     if (fired.projectileCount === 0) return false;
 
+    // Charged only now that the shot is committed. Covers guns (Ammo), magic
+    // weapons (Mana), and weave bows (Dust) — one branch, three pools.
+    spendWeaponResource(state.resources, def);
+
     // Ranged weapons reuse the swing state purely as the cooldown timer; they
     // never animate an arc.
     state.swing.cooldownRemainingTicks = Math.max(1, getRangedCooldownTicks(def));
@@ -405,6 +438,9 @@ export function tryStartPlayerWeaponAttack(
     player.isFacingLeftFlag === 1,
   );
   if (started) {
+    // Weave swords spend Dust per swing; ordinary melee is unmetered and this
+    // is a no-op for them.
+    spendWeaponResource(state.resources, def);
     state.attackStartedFlag = 1;
     // Weapons that throw slash waves launch them with the swing, not on hit —
     // the donor fans them out from the wielder as the arc begins.
@@ -610,9 +646,18 @@ export function tickPlayerWeapon(
     applyWeaponSwingToClusters(world, state.swing, def, player, attack, rng);
   }
 
+  // Capacity follows the player's stat tracks live, so a boost picked up mid-room
+  // widens the pool immediately rather than at the next room load.
+  syncWeaponResourceMaxes(state.resources, world.playerStatBoosts, world.playerCharacterStats);
+
   // Staves drain/regenerate every tick regardless of what is equipped, so a
   // swapped-away staff refills instead of freezing at its last charge.
   if (def !== null && def.kind === 'staff') {
+    // A staff pays for the beam by the second. Running the pool dry releases
+    // the channel rather than letting it burn for free.
+    if (state.staff.isChannellingFlag === 1 && !drainChannelledMana(state.resources, world.dtMs)) {
+      releaseStaffChannel(state.staff);
+    }
     tickStaffChannel(world, state.staff, def, player, resolveAttackStat(world.playerCharacterStats, state), rng);
   } else if (state.staff.isChannellingFlag === 1) {
     releaseStaffChannel(state.staff);
@@ -648,14 +693,29 @@ export function tickPlayerWeapon(
     if (state.burstCooldownTicks <= 0) {
       state.burstShotsRemaining--;
       state.burstCooldownTicks = BURST_SHOT_INTERVAL_TICKS;
-      fireRangedWeapon(
-        state.projectiles, def,
-        player.positionXWorld, player.positionYWorld,
-        state.burstAimXWorld, state.burstAimYWorld,
-        resolveAttackStat(world.playerCharacterStats), rng,
-      );
+      // Every shot in a burst costs, so a three-round burst on a nearly empty
+      // magazine fires only what it can pay for and then stops. Cancelling the
+      // remainder must not skip the projectile tick below — rounds already in
+      // flight keep flying.
+      if (spendWeaponResource(state.resources, def)) {
+        fireRangedWeapon(
+          state.projectiles, def,
+          player.positionXWorld, player.positionYWorld,
+          state.burstAimXWorld, state.burstAimYWorld,
+          resolveAttackStat(world.playerCharacterStats), rng,
+        );
+      } else {
+        state.burstShotsRemaining = 0;
+      }
     }
   }
+
+  // Passive refill. The pool a channelling staff is actively draining is held
+  // out, so a beam cannot regenerate into its own drain.
+  const channellingKind = def !== null && def.kind === 'staff' && state.staff.isChannellingFlag === 1
+    ? getWeaponResourceKind(def)
+    : null;
+  tickWeaponResourceRegen(state.resources, world.dtMs, channellingKind);
 
   // Projectiles keep flying after a weapon swap or unequip, so this runs
   // regardless of what is currently held.

@@ -51,3 +51,11 @@ test('the root URL resolves to index.html', () => {
   const resolved = resolveDistFilePath('stickblade://app/', electronDir);
   assert.equal(resolved, join(distDir, 'index.html'));
 });
+
+test('the GameLoadingBanner sprite URL resolves into dist/ with correct png content-type', () => {
+  const resolved = resolveDistFilePath('stickblade://app/SPRITES/GameLoadingBanner/StickBlade_Banner.png', electronDir);
+  assert.equal(resolved, join(distDir, 'SPRITES', 'GameLoadingBanner', 'StickBlade_Banner.png'));
+  assert.ok(resolved!.startsWith(distDir + sep));
+  assert.equal(getContentTypeForPath('StickBlade_Banner.png'), 'image/png');
+});
+

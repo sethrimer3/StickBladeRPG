@@ -110,6 +110,13 @@ export interface WeaponDef {
    */
   secondaryShieldWeave?: boolean;
 
+  /**
+   * Units of Ammo / Dust / Mana one attack costs, overriding the per-family
+   * default in `weaponResources.ts`. Which *pool* is spent is derived from the
+   * weapon's family, never authored here. Ignored by unmetered weapons.
+   */
+  resourceCost?: number;
+
   // ---- Core combat ----
   /** Base damage before attack-stat scaling (see `sim/stats/characterStats.ts`). */
   dmg?: number;

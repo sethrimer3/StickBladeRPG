@@ -13,3 +13,8 @@ export const LOADING_BACKGROUND_ASSETS = {
   caveBlurUrl: assetUrl('SPRITES/BACKGROUNDS/BrownCave_Variant1/BrownCave_Variant1_Blur.png'),
   caveBlurDarkUrl: assetUrl('SPRITES/BACKGROUNDS/BrownCave_Variant1/BrownCave_Variant1_Blur_Dark.png'),
 } as const;
+
+export const LOADING_BANNER_ASSETS = {
+  bannerUrl: assetUrl('SPRITES/GameLoadingBanner/StickBlade_Banner.png'),
+} as const;
+
