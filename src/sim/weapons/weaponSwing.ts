@@ -46,14 +46,15 @@ const SWING_WINDUP_FRACTION = 0.2;
  */
 const SWING_EDGE_TOLERANCE_WORLD = 1.5;
 
-// ---- Opening chop ---------------------------------------------------------
+// ---- Wide chop -------------------------------------------------------------
 //
-// A short or medium blade opens with a full overhead cut rather than the narrow
-// arc the donor gave every melee weapon. Angles below are absolute clock-face
-// positions, not offsets from the aim: the cut is a fixed animation the wielder
-// commits to, so it reads the same every time and the player can learn its
-// timing. Long weapons keep the donor's aim-centred arc — a claymore hurling
-// itself through 180° reads as a different animation entirely.
+// Short and medium blades cut a full overhead 180° on every swing rather than
+// the narrow arc the donor gave every melee weapon. Angles below are absolute
+// clock-face positions, not offsets from the aim: the cut is a fixed animation
+// the wielder commits to, so it reads the same every time and the player can
+// learn its timing. Long weapons and spears keep the donor arc — a claymore
+// hurling itself through 180° reads as a different animation entirely, and a
+// spear thrusts rather than cutting.
 //
 // Screen convention: Y grows downward, so 12 o'clock is -π/2 and each hour is
 // π/6. `atan2(dy, dx)` produces angles in this same frame.
@@ -64,27 +65,40 @@ export const SHORT_BLADE_MAX_RANGE_WORLD = 34;
 export const MEDIUM_BLADE_MAX_RANGE_WORLD = 62;
 
 /** 11 o'clock — where a right-facing cut begins. */
-const OPENING_CHOP_START_RIGHT_RAD = -Math.PI * (2 / 3);
+const WIDE_CHOP_START_RIGHT_RAD = -Math.PI * (2 / 3);
 /** 1 o'clock — where a left-facing cut begins. */
-const OPENING_CHOP_START_LEFT_RAD = -Math.PI * (1 / 3);
+const WIDE_CHOP_START_LEFT_RAD = -Math.PI * (1 / 3);
 /**
- * Sweep of the opening cut. Half a turn, signed by facing: clockwise from 11 to
- * 5 o'clock facing right, counter-clockwise from 1 to 7 facing left. The sweep
- * is interpolated linearly from start to end, so the sign is what makes the
+ * Sweep of the cut. Half a turn, signed by facing: clockwise from 11 to 5
+ * o'clock facing right, counter-clockwise from 1 to 7 facing left. The sweep is
+ * interpolated linearly from start to end, so the sign is what makes the
  * left-facing cut travel the long way round instead of mirroring into the wrong
  * half of the circle.
  */
-const OPENING_CHOP_SPAN_RAD = Math.PI;
+const WIDE_CHOP_SPAN_RAD = Math.PI;
 
 /**
- * Ticks the wielder may stand idle before the combo resets to its opening cut.
+ * How much faster a melee swing runs than the weapon data says.
  *
- * Counted only once the weapon is off cooldown and not mid-swing, so a slow
- * weapon does not lose its combo purely by being slow. Two seconds at 60fps:
- * long enough to reposition between cuts, short enough that walking away and
- * coming back starts the sequence over.
+ * Applied to the swing animation AND the swing's cooldown, so the whole action
+ * speeds up rather than finishing early and then standing still. Lives here
+ * rather than in the weapon table because `weaponData.ts` is a verbatim copy
+ * of the donor and has to stay diffable against it.
+ *
+ * Enemy stickmen pace their own attacks off `getWeaponCooldownTicks` directly
+ * and are deliberately untouched by this.
  */
-export const COMBO_RESET_IDLE_TICKS = 120;
+export const MELEE_SWING_SPEED_MULTIPLIER = 1.5;
+
+/** Swing animation length in ticks, after the melee speed multiplier. */
+export function getMeleeSwingDurationTicks(def: WeaponDef): number {
+  return Math.max(1, Math.round(getWeaponSwingDurationTicks(def) / MELEE_SWING_SPEED_MULTIPLIER));
+}
+
+/** Swing cooldown in ticks, after the melee speed multiplier. */
+export function getMeleeSwingCooldownTicks(def: WeaponDef): number {
+  return Math.round(getWeaponCooldownTicks(def) / MELEE_SWING_SPEED_MULTIPLIER);
+}
 
 /** How a melee weapon's reach classifies it. */
 export type MeleeLengthClass = 'short' | 'medium' | 'long';
@@ -103,22 +117,22 @@ export function getMeleeLengthClass(def: WeaponDef): MeleeLengthClass | null {
 }
 
 /**
- * True when `def` opens its combo with the 180° overhead cut.
+ * True when `def` cuts the wide 180° arc instead of its declared `arc`.
  *
  * Spears are excluded despite their reach: they declare a thrust pose
  * (`poseStyle`/`spearPose`) and lunge forward rather than cutting, so an
  * overhead arc would contradict the animation the weapon already asks for.
  */
-export function weaponHasOpeningChop(def: WeaponDef): boolean {
+export function weaponHasWideChop(def: WeaponDef): boolean {
   if (def.poseStyle === 'spear' || def.spearPose !== undefined) return false;
   const lengthClass = getMeleeLengthClass(def);
   return lengthClass === 'short' || lengthClass === 'medium';
 }
 
-/** Start and end angles of the opening cut for a given facing. */
-export function getOpeningChopArc(isFacingLeft: boolean): { startAngleRad: number; endAngleRad: number } {
-  const startAngleRad = isFacingLeft ? OPENING_CHOP_START_LEFT_RAD : OPENING_CHOP_START_RIGHT_RAD;
-  const span = isFacingLeft ? -OPENING_CHOP_SPAN_RAD : OPENING_CHOP_SPAN_RAD;
+/** Start and end angles of the wide cut for a given facing. */
+export function getWideChopArc(isFacingLeft: boolean): { startAngleRad: number; endAngleRad: number } {
+  const startAngleRad = isFacingLeft ? WIDE_CHOP_START_LEFT_RAD : WIDE_CHOP_START_RIGHT_RAD;
+  const span = isFacingLeft ? -WIDE_CHOP_SPAN_RAD : WIDE_CHOP_SPAN_RAD;
   return { startAngleRad, endAngleRad: startAngleRad + span };
 }
 
@@ -165,15 +179,8 @@ export interface WeaponSwingState {
   originYWorld: number;
   /** Effective reach for this swing (world units). */
   reachWorld: number;
-  /**
-   * Swings completed in the current combo. 0 means the next swing is the
-   * opening cut; `COMBO_RESET_IDLE_TICKS` of idleness returns it to 0.
-   */
-  comboIndex: number;
-  /** Ticks the wielder has stood ready without swinging. */
-  comboIdleTicks: number;
-  /** 1 when the swing in flight is the combo's opening 180° cut. */
-  isOpeningChopFlag: 0 | 1;
+  /** 1 when the swing in flight is the wide 180° cut rather than the donor arc. */
+  isWideChopFlag: 0 | 1;
   /** Per-swing hit registry, indexed by target index. */
   hitFlags: Uint8Array;
 }
@@ -273,9 +280,7 @@ export function createWeaponSwingState(): WeaponSwingState {
     originXWorld: 0,
     originYWorld: 0,
     reachWorld: 0,
-    comboIndex: 0,
-    comboIdleTicks: 0,
-    isOpeningChopFlag: 0,
+    isWideChopFlag: 0,
     hitFlags: new Uint8Array(MAX_HIT_REGISTRY_SLOTS),
   };
 }
@@ -294,28 +299,13 @@ export function resetWeaponSwingState(state: WeaponSwingState): void {
   state.originXWorld = 0;
   state.originYWorld = 0;
   state.reachWorld = 0;
-  // A reset means the next cut opens the combo again.
-  state.comboIndex = 0;
-  state.comboIdleTicks = 0;
-  state.isOpeningChopFlag = 0;
+  state.isWideChopFlag = 0;
   state.hitFlags.fill(0);
 }
 
 /** Advances the cooldown timer by one tick. Safe to call every tick. */
 export function tickWeaponCooldown(state: WeaponSwingState): void {
-  if (state.cooldownRemainingTicks > 0) {
-    state.cooldownRemainingTicks--;
-    return;
-  }
-  if (state.activeFlag === 1 || state.comboIndex === 0) return;
-
-  // Idle counts only once the weapon is genuinely ready again, so a slow weapon
-  // never loses its combo to its own cooldown.
-  state.comboIdleTicks++;
-  if (state.comboIdleTicks >= COMBO_RESET_IDLE_TICKS) {
-    state.comboIndex = 0;
-    state.comboIdleTicks = 0;
-  }
+  if (state.cooldownRemainingTicks > 0) state.cooldownRemainingTicks--;
 }
 
 /** True when a new swing may begin: nothing in flight and no cooldown pending. */
@@ -362,27 +352,24 @@ export function startWeaponSwing(
   const swingSign = isFacingLeft ? -1 : 1;
   const halfArc = (arc * 0.5) * swingSign;
 
-  // The combo's opening cut on a short or medium blade is the fixed overhead
-  // 180°, set by facing rather than by the aim: it is a committed animation,
-  // not a pointed one. Every later cut in the combo is the ordinary
-  // aim-centred arc, and so is every cut from a long weapon or a spear.
-  const isOpeningChop = state.comboIndex === 0 && weaponHasOpeningChop(def);
+  // A short or medium blade always cuts the full overhead 180°, set by facing
+  // rather than by the aim. Long weapons and spears keep the donor's narrow
+  // aim-centred arc, which is the only place `def.arc` still applies.
+  const isWideChop = weaponHasWideChop(def);
 
   state.activeFlag = 1;
   state.ticksElapsed = 0;
-  state.durationTicks = Math.max(1, getWeaponSwingDurationTicks(def));
+  state.durationTicks = Math.max(1, getMeleeSwingDurationTicks(def));
   state.aimAngleRad = aimAngleRad;
-  state.isOpeningChopFlag = isOpeningChop ? 1 : 0;
-  if (isOpeningChop) {
-    const chop = getOpeningChopArc(isFacingLeft);
+  state.isWideChopFlag = isWideChop ? 1 : 0;
+  if (isWideChop) {
+    const chop = getWideChopArc(isFacingLeft);
     state.startAngleRad = chop.startAngleRad;
     state.endAngleRad = chop.endAngleRad;
   } else {
     state.startAngleRad = aimAngleRad - halfArc;
     state.endAngleRad = aimAngleRad + halfArc;
   }
-  state.comboIndex++;
-  state.comboIdleTicks = 0;
   state.previousAngleRad = state.startAngleRad;
   state.currentAngleRad = state.startAngleRad;
   state.originXWorld = originXWorld;
@@ -392,7 +379,7 @@ export function startWeaponSwing(
 
   // The cooldown starts at the swing, not at its end, matching the donor's
   // `weaponCooldownUntil = now + cooldown` at attack time.
-  state.cooldownRemainingTicks = Math.max(state.durationTicks, getWeaponCooldownTicks(def));
+  state.cooldownRemainingTicks = Math.max(state.durationTicks, getMeleeSwingCooldownTicks(def));
 
   return true;
 }

@@ -4,6 +4,8 @@ import { describe, test } from 'node:test';
 import {
   canStartWeaponSwing,
   createWeaponSwingState,
+  getMeleeSwingCooldownTicks,
+  getMeleeSwingDurationTicks,
   getWeaponSwingProgress,
   isAngleWithinSweptInterval,
   isWeaponSwingInWindup,
@@ -16,7 +18,7 @@ import {
   type WeaponSwingState,
   type WeaponSwingTarget,
 } from '../sim/weapons/weaponSwing';
-import { WEAPONS, getWeaponCooldownTicks, getWeaponSwingDurationTicks } from '../sim/weapons/weaponDefs';
+import { WEAPONS } from '../sim/weapons/weaponDefs';
 import {
   GRIP_HAND_BOTH,
   GRIP_HAND_LEFT,
@@ -115,22 +117,18 @@ describe('swing lifecycle', () => {
     assert.equal(startWeaponSwing(state, SWORD, 50, 0, 0, 0, false), true);
     assert.equal(state.activeFlag, 1);
     assert.equal(state.reachWorld, SWORD.range);
-    assert.equal(state.durationTicks, getWeaponSwingDurationTicks(SWORD));
+    assert.equal(state.durationTicks, getMeleeSwingDurationTicks(SWORD));
     assert.ok(Math.abs(state.aimAngleRad) < 1e-9, 'aim right should be angle 0');
   });
 
-  test('a follow-up arc spans the weapon arc, centered on the aim', () => {
+  test('a long weapon spans its declared arc, centered on the aim', () => {
+    // Short and medium blades always cut the fixed 180° instead (see
+    // weaponWideChop.test.ts), so the aim-centred arc is a long-weapon case now.
     const state = createWeaponSwingState();
-    // The first cut of a combo is the fixed 180° chop on a blade this length,
-    // so advance past it to reach the ordinary aim-centred arc.
-    startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
-    state.activeFlag = 0;
-    state.cooldownRemainingTicks = 0;
-
-    startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
-    assert.equal(state.isOpeningChopFlag, 0);
+    startWeaponSwing(state, GREATSWORD, 50, 0, 0, 0, false);
+    assert.equal(state.isWideChopFlag, 0);
     const span = Math.abs(state.endAngleRad - state.startAngleRad);
-    assert.ok(Math.abs(span - (SWORD.arc as number)) < 1e-9, `span ${span}`);
+    assert.ok(Math.abs(span - (GREATSWORD.arc as number)) < 1e-9, `span ${span}`);
     assert.ok(Math.abs((state.startAngleRad + state.endAngleRad) * 0.5 - state.aimAngleRad) < 1e-9);
   });
 
@@ -166,7 +164,7 @@ describe('swing lifecycle', () => {
     const state = createWeaponSwingState();
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
     const { ticks } = runSwingToCompletion(state, []);
-    assert.equal(ticks, getWeaponSwingDurationTicks(SWORD));
+    assert.equal(ticks, getMeleeSwingDurationTicks(SWORD));
     assert.equal(state.activeFlag, 0);
   });
 
@@ -212,7 +210,7 @@ describe('cooldown gating', () => {
     const state = createWeaponSwingState();
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
     runSwingToCompletion(state, []);
-    for (let i = 0; i < getWeaponCooldownTicks(SWORD); i++) tickWeaponCooldown(state);
+    for (let i = 0; i < getMeleeSwingCooldownTicks(SWORD); i++) tickWeaponCooldown(state);
     assert.equal(canStartWeaponSwing(state), true);
     assert.equal(startWeaponSwing(state, SWORD, 50, 0, 0, 0, false), true);
   });
@@ -220,7 +218,7 @@ describe('cooldown gating', () => {
   test('cooldown starts at the swing, not at its end', () => {
     const state = createWeaponSwingState();
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
-    assert.equal(state.cooldownRemainingTicks, getWeaponCooldownTicks(SWORD));
+    assert.equal(state.cooldownRemainingTicks, getMeleeSwingCooldownTicks(SWORD));
   });
 
   test('cooldown never falls below zero', () => {
@@ -283,7 +281,7 @@ describe('hit resolution', () => {
     const targets = [createTarget(20, 0)];
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
     assert.equal(runSwingToCompletion(state, targets).hits, 1);
-    for (let i = 0; i < getWeaponCooldownTicks(SWORD); i++) tickWeaponCooldown(state);
+    for (let i = 0; i < getMeleeSwingCooldownTicks(SWORD); i++) tickWeaponCooldown(state);
     startWeaponSwing(state, SWORD, 50, 0, 0, 0, false);
     assert.equal(runSwingToCompletion(state, targets).hits, 1);
   });

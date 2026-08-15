@@ -140,8 +140,9 @@ describe('melee attack through the world', () => {
       if (tryStartPlayerWeaponAttack(world, player, 50, 0, world.rng)) attacks++;
       tickPlayerWeapon(world, player, world.rng);
     }
-    // 200 ticks at a 33-tick cooldown allows roughly six attacks.
-    assert.ok(attacks >= 5 && attacks <= 7, `expected ~6 attacks, got ${attacks}`);
+    // 200 ticks at a 22-tick cooldown — the 33-tick weapon cooldown sped up by
+    // MELEE_SWING_SPEED_MULTIPLIER — allows roughly nine attacks.
+    assert.ok(attacks >= 8 && attacks <= 10, `expected ~9 attacks, got ${attacks}`);
   });
 
   test('the player is never damaged by their own swing', () => {
