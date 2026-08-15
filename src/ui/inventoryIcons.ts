@@ -97,6 +97,73 @@ export function getSlotWatermarkSvg(type: 'handLeft' | 'handRight' | 'handBoth' 
   }
 }
 
+/**
+ * Icon for a permanent stat boost item.
+ *
+ * The *silhouette* says which stat track the item raises; the badge in the
+ * bottom-right corner says how it raises it — `+` for a flat item, `%` for a
+ * percentage one. Both are drawn inside the same 32×32 viewBox as every other
+ * item icon, with the track glyph inset to the top-left 26×26 so the badge
+ * never overlaps it at the small sizes the inventory grid uses.
+ */
+export function getStatBoostIconSvg(boost: StatBoostItemDef, w: number, h: number): string {
+  const { color } = boost;
+  const glyph = getStatTrackGlyphSvg(boost.track, color);
+  const badge = getBoostModeBadgeSvg(boost.mode, color);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    ${glyph}
+    ${badge}
+  </svg>`;
+}
+
+/** Track silhouette, drawn within the top-left 26×26 of the 32×32 viewBox. */
+function getStatTrackGlyphSvg(track: StatBoostItemDef['track'], color: string): string {
+  const fill = `fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="2" stroke-linejoin="round"`;
+  switch (track) {
+    case 'health':
+      // Heart
+      return `<path d="M13 23C7 19 3 15.5 3 11.5A5 5 0 0 1 13 9A5 5 0 0 1 23 11.5C23 15.5 19 19 13 23Z" ${fill}/>`;
+    case 'attack':
+      // Upward blade
+      return `<path d="M13 2L18 12V21H8V12L13 2Z" ${fill}/>
+        <path d="M8 21h10" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`;
+    case 'defense':
+      // Shield
+      return `<path d="M13 2L3 6V13C3 18.5 7.5 22 13 24C18.5 22 23 18.5 23 13V6L13 2Z" ${fill}/>`;
+    case 'dust':
+      // Four-point mote
+      return `<path d="M13 2L16 10L24 13L16 16L13 24L10 16L2 13L10 10L13 2Z" ${fill}/>`;
+    case 'ammo':
+      // Bullet / cartridge
+      return `<path d="M13 2L18 9V20H8V9L13 2Z" ${fill}/>
+        <path d="M8 14h10" stroke="${color}" stroke-width="1.5"/>
+        <path d="M6 20h14v3H6z" ${fill}/>`;
+    case 'mana':
+      // Droplet
+      return `<path d="M13 2C13 2 4 11 4 16A9 9 0 0 0 22 16C22 11 13 2 13 2Z" ${fill}/>`;
+  }
+}
+
+/**
+ * Bottom-right corner badge: `+` for additive boosts, `%` for percentage ones.
+ *
+ * Drawn as vector paths rather than a `<text>` element so it renders
+ * identically regardless of which fonts the host page has loaded — these SVGs
+ * are injected as raw markup into the inventory DOM, where font availability
+ * is not something this module controls.
+ */
+function getBoostModeBadgeSvg(mode: StatBoostItemDef['mode'], color: string): string {
+  const disc = `<circle cx="24" cy="24" r="7.5" fill="#0d0a08" stroke="${color}" stroke-width="1.5"/>`;
+  if (mode === 'flat') {
+    return `${disc}
+      <path d="M24 20v8M20 24h8" stroke="${color}" stroke-width="2.2" stroke-linecap="round"/>`;
+  }
+  return `${disc}
+    <path d="M21 27l6-6" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="21.2" cy="21.2" r="1.9" stroke="${color}" stroke-width="1.6"/>
+    <circle cx="26.8" cy="26.8" r="1.9" stroke="${color}" stroke-width="1.6"/>`;
+}
+
 function getSwordIconSvg(color: string, w: number, h: number): string {
   return `<svg width="${w}" height="${h}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M25 7L12 20M25 7L23 5L20 8L22 10M25 7L27 9L24 12L22 10" stroke="${color}" stroke-width="2" stroke-linecap="round"/>

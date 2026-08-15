@@ -11,6 +11,11 @@ import {
   resolveWeaponGrip,
   type WeaponDef,
 } from '../weapons/weaponDefs';
+import {
+  getStatBoostItemDef,
+  isStatBoostItem,
+  type StatBoostItemDef,
+} from './statBoostItems';
 
 export interface BaseItemDef {
   name: string;
