@@ -382,6 +382,27 @@ export function setAdvancedWallJumpsEnabled(enabled: boolean): void {
   localStorage.setItem(ADVANCED_WALL_JUMPS_STORAGE_KEY, enabled ? '1' : '0');
 }
 
+// ── Crisp Integer Pixel Scaling (experimental) ──────────────────────────────
+
+const CRISP_PIXEL_SCALING_STORAGE_KEY = 'stickblade-crisp-pixel-scaling-enabled';
+
+/**
+ * When enabled, the virtual→device upscale snaps to the largest whole-number
+ * multiple that fits the device canvas (instead of stretching to an
+ * arbitrary fractional scale) and letterboxes the remainder in black. Every
+ * virtual pixel then covers an exact N×N block of device pixels with no
+ * uneven nearest-neighbor sampling, eliminating the soft/blurry edges a
+ * fractional scale produces even with imageSmoothingEnabled off.
+ * Experimental — defaults to off while it's being tested.
+ */
+export function getCrispPixelScalingEnabled(): boolean {
+  return localStorage.getItem(CRISP_PIXEL_SCALING_STORAGE_KEY) === '1';
+}
+
+export function setCrispPixelScalingEnabled(enabled: boolean): void {
+  localStorage.setItem(CRISP_PIXEL_SCALING_STORAGE_KEY, enabled ? '1' : '0');
+}
+
 // ── Combat Mode ──────────────────────────────────────────────────────────────
 
 import type { CombatMode } from '../sim/combatMode';
