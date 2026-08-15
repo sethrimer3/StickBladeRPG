@@ -2,8 +2,9 @@
  * The weapon carry pose: a held weapon pulls its hand forward, on the side the
  * stickman faces, instead of letting it hang at the hip.
  *
- * Without it the drawn weapon reads as dropped — the rig's rest pose puts the
- * hands level with the hips, behind the body as often as in front of it.
+ * Without it the drawn weapon reads as dropped — the rig's rest pose leaves the
+ * hands behind the body as often as in front of it (measured: the two-hand grip
+ * point averages ~9 world units BEHIND the hip while walking).
  */
 
 import { test, describe } from 'node:test';
@@ -29,9 +30,10 @@ const DT_MS = 1000 / 60;
 const FLOOR_Y = 40;
 
 /**
- * Flat floor, matching `stickRangerBody.test.ts`. The figure has to be STANDING
- * for a carry pose to mean anything — run in free fall it tumbles, and the
- * hands read wherever the tumble happens to have thrown them.
+ * Flat floor, matching `stickRangerBody.test.ts`.
+ *
+ * The figure has to be STANDING for a carry pose to mean anything. Run in free
+ * fall it tumbles, and the hands read wherever the tumble threw them.
  */
 const FLOOR = {
   isSolid: (_x: number, y: number): boolean => y >= FLOOR_Y,
@@ -44,13 +46,25 @@ function makeWorld(): WorldState {
   return world;
 }
 
+/** A fresh world already holding a weapon, two-handed unless told otherwise. */
+function makeCarriedWorld(weaponId = 'woodenSword'): WorldState {
+  const world = makeWorld();
+  equipPlayerWeapon(world.playerWeapon, weaponId);
+  world.stickRangerBody!.facingDirection = 1;
+  syncStickmanCarryHands(world);
+  return world;
+}
+
 /**
- * Runs the rig standing still and returns the MEAN grip offset over the settled
- * window.
+ * Runs the rig and returns each hand's MEAN offset ahead of the hip, positive
+ * meaning "in the facing direction".
  *
- * A mean rather than a final sample: the arms are pendulums hanging off a soft
- * body and never fully stop, so any single frame is a phase reading rather than
- * the pose. Facing is re-asserted each frame because the gait owns it.
+ * A mean, not a final sample: the arms are pendulums on a soft body and never
+ * fully stop, so any one frame reads the swing phase rather than the pose.
+ *
+ * Both hands come from a SINGLE run — each call advances the simulation, so
+ * measuring two points with two calls would compare different moments in time.
+ * Facing is re-asserted every frame because the gait owns it.
  */
 function measureCarry(
   world: WorldState,
@@ -64,15 +78,13 @@ function measureCarry(
   for (let i = 0; i < 400; i++) {
     body.facingDirection = facing;
     stepStickRangerBody(body, FLOOR, moveDirection, DT_MS, false);
-    if (i < 60) continue;
+    if (i < 60) continue; // let the spawn pose fall out of the average
     left += (body.x[SR_HAND_L] - body.x[SR_HIP]) * facing;
     right += (body.x[SR_HAND_R] - body.x[SR_HIP]) * facing;
     samples++;
   }
   left /= samples;
   right /= samples;
-  // Every point measured in ONE run: each call advances the simulation, so
-  // measuring two hands with two calls compares different moments in time.
   return { left, right, grip: (left + right) * 0.5 };
 }
 
@@ -85,9 +97,7 @@ describe('which hands carry', () => {
   });
 
   test('a two-handed weapon claims both hands', () => {
-    const world = makeWorld();
-    equipPlayerWeapon(world.playerWeapon, 'woodenSword'); // grip: twoHand
-    syncStickmanCarryHands(world);
+    const world = makeCarriedWorld(); // woodenSword, grip: twoHand
     assert.equal(world.stickRangerBody!.carryHandLeftFlag, 1);
     assert.equal(world.stickRangerBody!.carryHandRightFlag, 1);
   });
@@ -118,9 +128,7 @@ describe('which hands carry', () => {
   });
 
   test('unequipping releases the hands again', () => {
-    const world = makeWorld();
-    equipPlayerWeapon(world.playerWeapon, 'woodenSword');
-    syncStickmanCarryHands(world);
+    const world = makeCarriedWorld();
     equipPlayerWeapon(world.playerWeapon, null);
     syncStickmanCarryHands(world);
     assert.equal(world.stickRangerBody!.carryHandLeftFlag, 0);
@@ -128,76 +136,55 @@ describe('which hands carry', () => {
   });
 });
 
-
 describe('the carried hand sits in front', () => {
   test('a two-handed grip is carried well ahead of the hip', () => {
     // The grip — the midpoint of the hands — is where the weapon is drawn from,
-    // so it is the number that decides whether the sword reads as carried.
-    const bare = meanForwardOffset(makeWorld(), 'grip');
-
-    const armed = makeWorld();
-    equipPlayerWeapon(armed.playerWeapon, 'woodenSword');
-    syncStickmanCarryHands(armed);
-    const carried = meanForwardOffset(armed, 'grip');
+    // so it is the number that decides whether the sword reads as held.
+    const bare = measureCarry(makeWorld()).grip;
+    const carried = measureCarry(makeCarriedWorld()).grip;
 
     assert.ok(carried > 4, `grip should be carried in front, got ${carried.toFixed(2)}`);
     assert.ok(carried > bare + 3, `armed ${carried.toFixed(2)} vs unarmed ${bare.toFixed(2)}`);
   });
 
   test('a one-handed weapon carries its own hand and leaves the other alone', () => {
-    const bare = meanForwardOffset(makeWorld(), SR_HAND_R);
+    const bare = measureCarry(makeWorld());
+    const carried = measureCarry(makeCarriedWorld('goldweaveBlade'));
 
-    const armed = makeWorld();
-    equipPlayerWeapon(armed.playerWeapon, 'goldweaveBlade'); // oneHand
-    armed.stickRangerBody!.facingDirection = 1;
-    syncStickmanCarryHands(armed);
-    const swordHand = meanForwardOffset(armed, SR_HAND_R);
-
-    assert.ok(swordHand > 4, `the sword hand should lead, got ${swordHand.toFixed(2)}`);
-    assert.ok(swordHand > bare + 3, `armed ${swordHand.toFixed(2)} vs unarmed ${bare.toFixed(2)}`);
-
-    const offHand = meanForwardOffset(armed, SR_HAND_L);
-    assert.ok(offHand < swordHand - 3, `the empty hand should stay back, got ${offHand.toFixed(2)}`);
+    assert.ok(carried.right > 4, `the sword hand should lead, got ${carried.right.toFixed(2)}`);
+    assert.ok(
+      carried.right > bare.right + 3,
+      `armed ${carried.right.toFixed(2)} vs unarmed ${bare.right.toFixed(2)}`,
+    );
+    // The empty hand is barely touched. Note the idle rig already rests one arm
+    // forward and one back on its own, so "left alone" means "close to where it
+    // was unarmed" — not "behind the body".
+    assert.ok(
+      Math.abs(carried.left - bare.left) < 2,
+      `the empty hand should be near its unarmed rest: ${carried.left.toFixed(2)} vs ${bare.left.toFixed(2)}`,
+    );
   });
 
   test('facing left carries to the left', () => {
-    const world = makeWorld();
-    equipPlayerWeapon(world.playerWeapon, 'woodenSword');
-    syncStickmanCarryHands(world);
-    // `meanForwardOffset` folds facing in, so a correct mirror stays positive.
-    const carried = meanForwardOffset(world, 'grip', -1);
+    // `measureCarry` folds facing in, so a correct mirror stays positive.
+    const carried = measureCarry(makeCarriedWorld(), -1).grip;
     assert.ok(carried > 4, `grip should lead leftward, got ${carried.toFixed(2)}`);
   });
 
   test('the carry survives walking, where the gait pulls hardest', () => {
-    const bare = meanForwardOffset(makeWorld(), 'grip', 1, 1);
-
-    const armed = makeWorld();
-    equipPlayerWeapon(armed.playerWeapon, 'woodenSword');
-    syncStickmanCarryHands(armed);
-    const carried = meanForwardOffset(armed, 'grip', 1, 1);
+    const bare = measureCarry(makeWorld(), 1, 1).grip;
+    const carried = measureCarry(makeCarriedWorld(), 1, 1).grip;
 
     assert.ok(carried > bare + 5, `walking: armed ${carried.toFixed(2)} vs unarmed ${bare.toFixed(2)}`);
     assert.ok(carried > 0, 'a walking figure should still lead with the weapon');
   });
 
   test('the two hands of a two-hander are spaced along the grip', () => {
-    const world = makeWorld();
-    equipPlayerWeapon(world.playerWeapon, 'woodenSword');
-    syncStickmanCarryHands(world);
-    const left = meanForwardOffset(world, SR_HAND_L);
-    const right = meanForwardOffset(makeCarriedWorld(), SR_HAND_R);
-    assert.ok(Math.abs(right - left) > 0.3, `hands should not stack, gap ${Math.abs(right - left).toFixed(2)}`);
+    const carried = measureCarry(makeCarriedWorld());
+    const gap = Math.abs(carried.right - carried.left);
+    assert.ok(gap > 0.3, `hands should not stack, gap ${gap.toFixed(2)}`);
   });
 });
-
-/** A fresh two-handed world, for comparisons that need an untouched run. */
-function makeCarriedWorld(): WorldState {
-  const world = makeWorld();
-  equipPlayerWeapon(world.playerWeapon, 'woodenSword');
-  syncStickmanCarryHands(world);
-  return world;
-}
 
 describe('the bias stays out of the way', () => {
   test('it does not push the body across the room', () => {
@@ -223,10 +210,12 @@ describe('the bias stays out of the way', () => {
     assert.ok(Math.abs(after - before) < 0.5, 'the carry must not run while ragdolling');
   });
 
-  test('the rig stays finite under a long carry', () => {
+  test('the rig stays finite under a long carry, walking and stopping', () => {
     const world = makeCarriedWorld();
     const body = world.stickRangerBody!;
-    for (let i = 0; i < 900; i++) stepStickRangerBody(body, FLOOR, i % 120 < 60 ? 1 : 0, DT_MS, false);
+    for (let i = 0; i < 900; i++) {
+      stepStickRangerBody(body, FLOOR, i % 120 < 60 ? 1 : 0, DT_MS, false);
+    }
     for (let i = 0; i < body.x.length; i++) {
       assert.ok(Number.isFinite(body.x[i]) && Number.isFinite(body.y[i]), `point ${i} went non-finite`);
     }
