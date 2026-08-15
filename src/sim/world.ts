@@ -441,6 +441,12 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
   secondaryWeaveGesture: SecondaryWeaveGestureState;
   secondaryWeaveHandledCancellationId: number;
 
+  // ── Player mobility abilities (Double Jump & Swim) ─────────────────────────
+  /** 1 if the player has unlocked Double Jump. Active by default for development. */
+  hasDoubleJumpAbilityFlag: 0 | 1;
+  /** 1 if the player has unlocked Swim. Active by default for development. */
+  hasSwimAbilityFlag: 0 | 1;
+
   // ── Canonical Mote Ownership & Ability State ────────────────────────────────
   /** Authoritative ownership state per canonical mote (0..MAX_CANONICAL_MOTES-1). */
   canonicalMoteOwnership: Uint8Array;
@@ -763,6 +769,8 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     shieldWeaveIndependentActiveFlag: 0,
     secondaryWeaveGesture:         createSecondaryWeaveGestureState(),
     secondaryWeaveHandledCancellationId: 0,
+    hasDoubleJumpAbilityFlag:      1,
+    hasSwimAbilityFlag:            1,
     canonicalMoteOwnership:        new Uint8Array(MAX_CANONICAL_MOTES),
     canonicalMoteXWorld:           new Float32Array(MAX_CANONICAL_MOTES),
     canonicalMoteYWorld:           new Float32Array(MAX_CANONICAL_MOTES),

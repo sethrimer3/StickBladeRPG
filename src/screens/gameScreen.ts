@@ -1812,7 +1812,9 @@ export function startGameScreen(
       if (player !== undefined) {
         // Suppress horizontal movement during active dialogue.
         world.playerMoveInputDxWorld = (!isDialogueBlockingInput && moveDx !== 0) ? (moveDx > 0 ? 1.0 : -1.0) : 0.0;
-        world.playerMoveInputDyWorld = (!isDialogueBlockingInput && isDownHeld) ? 1.0 : 0.0;
+        const isUpHeld = !isDialogueBlockingInput && (inputState.isJumpHeldFlag || inputState.isGamepadJumpHeldFlag);
+        const isDown = !isDialogueBlockingInput && isDownHeld;
+        world.playerMoveInputDyWorld = isDown ? 1.0 : (isUpHeld ? -1.0 : 0.0);
       }
       // Pass crouch input to the sim
       world.playerCrouchHeldFlag = (!isDialogueBlockingInput && isDownHeld) ? 1 : 0;

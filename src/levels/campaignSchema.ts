@@ -88,6 +88,11 @@ export interface CampaignSpawnData {
    * (e.g., "cycle"). Unknown IDs are silently ignored.
    */
   startingPassives?: string[];
+  /**
+   * Optional list of player ability IDs unlocked at campaign start
+   * (e.g. "doubleJump", "swim").
+   */
+  startingAbilities?: string[];
 }
 
 export interface SavedCampaignMetadata {

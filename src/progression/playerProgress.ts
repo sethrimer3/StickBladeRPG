@@ -54,6 +54,14 @@ export function getDustSlots(level: number): number {
 
 // ---- State type ----------------------------------------------------------
 
+export type PlayerAbilityId = 'doubleJump' | 'swim';
+
+export const ALL_PLAYER_ABILITY_IDS: readonly PlayerAbilityId[] = ['doubleJump', 'swim'];
+
+export function isPlayerAbilityId(value: unknown): value is PlayerAbilityId {
+  return typeof value === 'string' && (value === 'doubleJump' || value === 'swim');
+}
+
 export interface PlayerProgress {
   /**
    * Current dust-slot level (1–MAX_LEVEL).
@@ -108,6 +116,8 @@ export interface PlayerProgress {
   unlockedPassiveTechniques: PassiveTechniqueId[];
   /** Active weave IDs the player has unlocked and can equip. */
   unlockedActiveWeaves: WeaveId[];
+  /** Unlockable movement and mobility abilities (e.g. 'doubleJump', 'swim'). */
+  unlockedAbilities: PlayerAbilityId[];
   /** Number of dust containers the player owns. Total capacity = dustContainerCount × 4. */
   dustContainerCount: number;
   /** Dust container pieces collected; 4 pieces forge 1 container. */
@@ -237,6 +247,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     // Legacy compatibility field; new progression never adds entries.
     unlockedPassiveTechniques: [],
     unlockedActiveWeaves: [],
+    unlockedAbilities: ['doubleJump', 'swim'],
     dustContainerCount: 0,
     dustContainerPieces: 0,
     disabledPassiveWeaves: [],
@@ -356,6 +367,30 @@ export function migrateStarterFireDustUnlock(progress: PlayerProgress): void {
   if (hasFullPreFireStarterKit) {
     progress.unlockedDustKinds.push(ParticleKind.FireDust);
   }
+}
+
+/**
+ * Ensures `progress.unlockedAbilities` is present and valid.
+ * For development, defaults to granting active abilities (['doubleJump', 'swim']).
+ */
+export function sanitizePlayerAbilities(progress: PlayerProgress): void {
+  if (!Array.isArray(progress.unlockedAbilities)) {
+    progress.unlockedAbilities = ['doubleJump', 'swim'];
+    return;
+  }
+  const sanitized: PlayerAbilityId[] = [];
+  for (const item of progress.unlockedAbilities) {
+    if (isPlayerAbilityId(item) && !sanitized.includes(item)) {
+      sanitized.push(item);
+    }
+  }
+  // During development, ensure default unlocked abilities are present if absent
+  for (const defaultAbility of ALL_PLAYER_ABILITY_IDS) {
+    if (!sanitized.includes(defaultAbility)) {
+      sanitized.push(defaultAbility);
+    }
+  }
+  progress.unlockedAbilities = sanitized;
 }
 
 /**

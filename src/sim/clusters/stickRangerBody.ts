@@ -596,10 +596,25 @@ export interface StickRangerBody {
    * instead of undoing it.
    */
   grappleEnergyDirtyFlag: 0 | 1;
+  /** Whether the double jump ability is unlocked. */
+  hasDoubleJumpUnlock: boolean;
+  /** Whether the swim ability is unlocked. */
+  hasSwimUnlock: boolean;
+  /** Jumps remaining before touching the ground is required again. */
+  jumpsRemaining: number;
+  /** 1 while actively swimming in water. */
+  isSwimmingFlag: 0 | 1;
+  /** Timer tracking body frames spent swimming for stroke cycle animation. */
+  swimStrokeTimer: number;
 }
 
 /** Allocates a body with its hip at (hipX, hipY), in its rest pose. */
-export function createStickRangerBody(hipX: number, hipY: number): StickRangerBody {
+export function createStickRangerBody(
+  hipX: number,
+  hipY: number,
+  hasDoubleJump = false,
+  hasSwim = false,
+): StickRangerBody {
   const body: StickRangerBody = {
     x: new Float32Array(SR_POINT_COUNT),
     y: new Float32Array(SR_POINT_COUNT),
@@ -626,6 +641,11 @@ export function createStickRangerBody(hipX: number, hipY: number): StickRangerBo
     grappleLengthWorld: 0,
     grappleEnergy: 0,
     grappleEnergyDirtyFlag: 0,
+    hasDoubleJumpUnlock: hasDoubleJump,
+    hasSwimUnlock: hasSwim,
+    jumpsRemaining: hasDoubleJump ? 2 : 1,
+    isSwimmingFlag: 0,
+    swimStrokeTimer: 0,
   };
   resetStickRangerBody(body, hipX, hipY);
   return body;
@@ -655,6 +675,9 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.swingFoot = SR_FOOT_L;
   body.swingFrames = 0;
   body.ragdollFrames = 0;
+  body.jumpsRemaining = body.hasDoubleJumpUnlock ? 2 : 1;
+  body.isSwimmingFlag = 0;
+  body.swimStrokeTimer = 0;
   detachStickRangerGrapple(body);
 }
 
@@ -1337,12 +1360,180 @@ function stepGrappleHangFrame(body: StickRangerBody, solid: SolidMask | null): v
   }
 }
 
+// ── Swimming Tuning Constants ─────────────────────────────────────────────
+const SWIM_WATER_DAMPING = 0.94;
+const SWIM_IDLE_DAMPING = 0.90;
+const SWIM_CRUISE_PUSH = 0.30;
+const SWIM_BOOST_PUSH = 0.65;
+const SWIM_STROKE_PERIOD_FRAMES = 24;
+
+/**
+ * Biases the stickman's body points for directional swimming and stroke cycle animation.
+ * Head and chest lead along the movement vector u; arms and legs flare outward on recovery,
+ * sweep backward and snap together on power kick, then trail streamlined in a glide.
+ */
+function applySwimmingPoseBias(
+  body: StickRangerBody,
+  ux: number,
+  uy: number,
+  px: number,
+  py: number,
+  strokePhase: number,
+  len: number,
+): void {
+  const applied = { x: 0, y: 0 };
+  const hipX = body.x[SR_HIP];
+  const hipY = body.y[SR_HIP];
+  const chestX = body.x[SR_CHEST];
+  const chestY = body.y[SR_CHEST];
+
+  if (len > 0) {
+    // Torso leading forward along u
+    biasPointToward(body, SR_HEAD, hipX + ux * 6.5, hipY + uy * 6.5, 0.45, applied);
+    biasPointToward(body, SR_CHEST, hipX + ux * 3.2, hipY + uy * 3.2, 0.45, applied);
+
+    if (strokePhase < 10) {
+      // Phase 1: Recovery / Reach — limbs flare out to the sides
+      biasPointToward(body, SR_HAND_L, chestX + ux * 1.5 + px * 4.5, chestY + uy * 1.5 + py * 4.5, 0.35, applied);
+      biasPointToward(body, SR_HAND_R, chestX + ux * 1.5 - px * 4.5, chestY + uy * 1.5 - py * 4.5, 0.35, applied);
+      biasPointToward(body, SR_SHOULDER_L, chestX + px * 2.5, chestY + py * 2.5, 0.30, applied);
+      biasPointToward(body, SR_SHOULDER_R, chestX - px * 2.5, chestY - py * 2.5, 0.30, applied);
+      biasPointToward(body, SR_KNEE_L, hipX - ux * 1.5 + px * 3.5, hipY - uy * 1.5 + py * 3.5, 0.35, applied);
+      biasPointToward(body, SR_KNEE_R, hipX - ux * 1.5 - px * 3.5, hipY - uy * 1.5 - py * 3.5, 0.35, applied);
+      biasPointToward(body, SR_FOOT_L, hipX - ux * 3.5 + px * 2.5, hipY - uy * 3.5 + py * 2.5, 0.35, applied);
+      biasPointToward(body, SR_FOOT_R, hipX - ux * 3.5 - px * 2.5, hipY - uy * 3.5 - py * 2.5, 0.35, applied);
+    } else if (strokePhase < 16) {
+      // Phase 2: Power Stroke / Push Back — limbs sweep backward and close together
+      biasPointToward(body, SR_HAND_L, hipX - ux * 2.5 + px * 1.2, hipY - uy * 2.5 + py * 1.2, 0.45, applied);
+      biasPointToward(body, SR_HAND_R, hipX - ux * 2.5 - px * 1.2, hipY - uy * 2.5 - py * 1.2, 0.45, applied);
+      biasPointToward(body, SR_KNEE_L, hipX - ux * 4.5 + px * 0.8, hipY - uy * 4.5 + py * 0.8, 0.45, applied);
+      biasPointToward(body, SR_KNEE_R, hipX - ux * 4.5 - px * 0.8, hipY - uy * 4.5 - py * 0.8, 0.45, applied);
+      biasPointToward(body, SR_FOOT_L, hipX - ux * 8.5 + px * 0.6, hipY - uy * 8.5 + py * 0.6, 0.45, applied);
+      biasPointToward(body, SR_FOOT_R, hipX - ux * 8.5 - px * 0.6, hipY - uy * 8.5 - py * 0.6, 0.45, applied);
+    } else {
+      // Phase 3: Glide / Streamlined Drag — limbs trail directly behind
+      biasPointToward(body, SR_HAND_L, hipX - ux * 1.5 + px * 1.0, hipY - uy * 1.5 + py * 1.0, 0.30, applied);
+      biasPointToward(body, SR_HAND_R, hipX - ux * 1.5 - px * 1.0, hipY - uy * 1.5 - py * 1.0, 0.30, applied);
+      biasPointToward(body, SR_KNEE_L, hipX - ux * 4.0 + px * 0.5, hipY - uy * 4.0 + py * 0.5, 0.30, applied);
+      biasPointToward(body, SR_KNEE_R, hipX - ux * 4.0 - px * 0.5, hipY - uy * 4.0 - py * 0.5, 0.30, applied);
+      biasPointToward(body, SR_FOOT_L, hipX - ux * 8.0 + px * 0.4, hipY - uy * 8.0 + py * 0.4, 0.30, applied);
+      biasPointToward(body, SR_FOOT_R, hipX - ux * 8.0 - px * 0.4, hipY - uy * 8.0 - py * 0.4, 0.30, applied);
+    }
+  } else {
+    // Idle float pose
+    biasPointToward(body, SR_HEAD, hipX, hipY - 6.5, 0.15, applied);
+    biasPointToward(body, SR_CHEST, hipX, hipY - 3.2, 0.15, applied);
+    biasPointToward(body, SR_KNEE_L, hipX - 1.2, hipY + 4.5, 0.15, applied);
+    biasPointToward(body, SR_KNEE_R, hipX + 1.2, hipY + 4.5, 0.15, applied);
+    biasPointToward(body, SR_FOOT_L, hipX - 1.4, hipY + 8.5, 0.15, applied);
+    biasPointToward(body, SR_FOOT_R, hipX + 1.4, hipY + 8.5, 0.15, applied);
+  }
+  cancelNetTranslation(body, applied);
+}
+
+/**
+ * Advances the stickman by one frame when swimming in water.
+ */
+function stepSwimFrame(
+  body: StickRangerBody,
+  solid: SolidMask | null,
+  moveDirection: number,
+  moveDy: number,
+): void {
+  body.framesSinceGroundContact += 1;
+  body.jumpFiredFlag = 0;
+  body.isSwimmingFlag = 1;
+
+  if (canStickmanJump(body, solid)) {
+    body.jumpsRemaining = body.hasDoubleJumpUnlock ? 2 : 1;
+  }
+
+  // Direction vector
+  let ux = 0;
+  let uy = 0;
+  let px = 0;
+  let py = 0;
+  const inputLen = Math.hypot(moveDirection, moveDy);
+  if (inputLen > 0.05) {
+    ux = moveDirection / inputLen;
+    uy = moveDy / inputLen;
+    px = -uy;
+    py = ux;
+    if (moveDirection !== 0) {
+      body.facingDirection = moveDirection < 0 ? -1 : 1;
+    }
+    body.swimStrokeTimer += 1;
+  } else {
+    body.swimStrokeTimer = 0;
+  }
+
+  const strokePhase = body.swimStrokeTimer % SWIM_STROKE_PERIOD_FRAMES;
+
+  // 1. Integrate with water damping
+  const damping = inputLen > 0 ? SWIM_WATER_DAMPING : SWIM_IDLE_DAMPING;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    integratePoint(body, i, 0, damping);
+  }
+
+  // 2. Swim propulsion (applied to head, chest, hip)
+  if (inputLen > 0) {
+    const isPowerKick = strokePhase >= 10 && strokePhase < 16;
+    const push = isPowerKick ? SWIM_BOOST_PUSH : SWIM_CRUISE_PUSH;
+    for (const p of [SR_HEAD, SR_CHEST, SR_HIP]) {
+      body.x[p] += ux * push;
+      body.y[p] += uy * push;
+    }
+  }
+
+  // 3. Pose bias for swimming animation
+  if (body.ragdollFrames > 0) {
+    body.ragdollFrames -= 1;
+  } else {
+    applySwimmingPoseBias(body, ux, uy, px, py, strokePhase, inputLen);
+  }
+
+  // 4. Constraints (2 passes)
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 0; c < CONSTRAINTS.length; c++) {
+      const [ia, ib, rest, wa, wb] = CONSTRAINTS[c];
+      constrain(body, ia, ib, rest, wa, wb);
+    }
+    const kneeGap = Math.hypot(body.x[SR_KNEE_L] - body.x[SR_KNEE_R], body.y[SR_KNEE_L] - body.y[SR_KNEE_R]);
+    if (kneeGap < KNEE_SPREAD_MIN) {
+      constrain(body, SR_KNEE_L, SR_KNEE_R, KNEE_SPREAD_MIN, KNEE_SPREAD_WEIGHT, KNEE_SPREAD_WEIGHT);
+    }
+  }
+
+  // 5. Solid collision
+  let contact = false;
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    if (collidePoint(body, i, solid, SURFACE_TANGENT_RETENTION)) contact = true;
+  }
+  body.groundContactFlag = contact ? 1 : 0;
+  if (contact) {
+    body.framesSinceGroundContact = 0;
+  }
+}
+
 /**
  * Advances the body by exactly one fixed 30Hz frame.
  *
  * `moveDirection` is -1, 0 or 1 from the left/right keys.
  */
-function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirection: number): void {
+function stepBodyFrame(
+  body: StickRangerBody,
+  solid: SolidMask | null,
+  moveDirection: number,
+  moveDy = 0,
+  isInWater = false,
+): void {
+  // Free movement swimming replaces ordinary walking/falling while in water with swim unlocked
+  if (isInWater && body.hasSwimUnlock) {
+    stepSwimFrame(body, solid, moveDirection, moveDy);
+    return;
+  }
+
+  body.isSwimmingFlag = 0;
   body.framesSinceGroundContact += 1;
   body.jumpFiredFlag = 0;
 
@@ -1352,24 +1543,42 @@ function stepBodyFrame(body: StickRangerBody, solid: SolidMask | null, moveDirec
     return;
   }
 
+  // Ground check and jump recharge:
+  // Touching the ground or resting in the 2px space above floor recharges jumps (2 for double jump, 1 otherwise).
+  // Recharge is suppressed while actively rising from a jump.
+  const canGroundJump = canStickmanJump(body, solid);
+  const isRising = body.y[SR_HIP] < body.prevY[SR_HIP] - 0.1;
+  if (canGroundJump && !isRising) {
+    body.jumpsRemaining = body.hasDoubleJumpUnlock ? 2 : 1;
+  }
+
   // ── 0. Jump ─────────────────────────────────────────────────────────────
   // Fires before integration so the impulse is part of this frame's motion.
   // Applied to every point equally by adjusting prevY (velocity impulse in Verlet)
   // so points do not teleport into solid ceilings before integration and collision.
-  // Requires at least one foot in a 2px rectangle space above a solid surface,
-  // and not inside a block ("Inside a block does not count").
   if (body.jumpBufferFrames > 0) {
     body.jumpBufferFrames -= 1;
-    if (canStickmanJump(body, solid)) {
+    if (canGroundJump) {
       for (let i = 0; i < SR_POINT_COUNT; i++) {
-        body.prevY[i] += JUMP_IMPULSE;
+        body.prevY[i] = body.y[i] + JUMP_IMPULSE;
       }
+      body.jumpsRemaining = body.hasDoubleJumpUnlock ? 1 : 0;
       body.jumpBufferFrames = 0;
       body.jumpFiredFlag = 1;
       // Push the gait counter past the launch window so the feet stop being
       // driven down into the ground mid-takeoff, which otherwise cancels
       // most of the impulse on the very next frame.
       body.framesSinceGroundContact = LAUNCH_FRAMES;
+    } else if (body.hasDoubleJumpUnlock && body.jumpsRemaining > 0) {
+      // Double-jump from mid-air as if launching from the ground:
+      for (let i = 0; i < SR_POINT_COUNT; i++) {
+        body.prevY[i] = body.y[i] + JUMP_IMPULSE;
+      }
+      body.jumpsRemaining -= 1;
+      body.jumpBufferFrames = 0;
+      body.jumpFiredFlag = 1;
+      body.framesSinceGroundContact = LAUNCH_FRAMES;
+      if (body.ragdollFrames > 0) body.ragdollFrames = 0;
     }
   }
 
@@ -1535,6 +1744,8 @@ export function stepStickRangerBody(
   solid: SolidMask | null,
   moveDirection: number,
   dtMs: number,
+  moveDy = 0,
+  isInWater = false,
 ): void {
   body.accumulatorMs += dtMs;
   let frames = 0;
@@ -1542,7 +1753,7 @@ export function stepStickRangerBody(
     // Snapshot before the frame so the renderer can interpolate across it.
     body.renderPrevX.set(body.x);
     body.renderPrevY.set(body.y);
-    stepBodyFrame(body, solid, moveDirection);
+    stepBodyFrame(body, solid, moveDirection, moveDy, isInWater);
     body.accumulatorMs -= SR_FRAME_MS;
     frames += 1;
   }

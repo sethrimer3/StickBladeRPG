@@ -145,6 +145,8 @@ export interface ClusterState {
    * (jump cut is now implemented via an extra gravity multiplier, not velocity clamping).
    */
   prevJumpHeldFlag: 0 | 1;
+  /** Jumps remaining before touching ground is required. */
+  jumpsRemaining: number;
 
   // ---- Variable jump sustain (Celeste-style) --------------------------------
   /**
@@ -1198,6 +1200,7 @@ export function createClusterState(
     coyoteTimeTicks: 0,
     jumpBufferTicks: 0,
     prevJumpHeldFlag: 0,
+    jumpsRemaining: 2,
     varJumpTimerTicks: 0,
     varJumpSpeedWorld: 0,
     isFastFallModeFlag: 0,

@@ -8,10 +8,41 @@
  * After the initial auto-assignment, future customization happens at save tombs.
  */
 
-import { PlayerProgress } from './playerProgress';
+import { PlayerProgress, PlayerAbilityId, isPlayerAbilityId } from './playerProgress';
 import { ParticleKind, isEquippableParticleKind } from '../sim/particles/kinds';
 import { CAPACITY_PER_CONTAINER, getMaxParticlesForDust } from './dustCapacity';
 import { WeaveId } from '../sim/weaves/weaveDefinition';
+
+// ---- Ability unlocks -------------------------------------------------------
+
+/**
+ * Unlocks a movement or mobility ability if not already unlocked.
+ * Returns true if the ability was newly unlocked.
+ */
+export function unlockAbility(
+  progress: PlayerProgress,
+  ability: PlayerAbilityId,
+): boolean {
+  if (!isPlayerAbilityId(ability)) return false;
+  if (!Array.isArray(progress.unlockedAbilities)) {
+    progress.unlockedAbilities = [];
+  }
+  if (progress.unlockedAbilities.includes(ability)) {
+    return false;
+  }
+  progress.unlockedAbilities.push(ability);
+  return true;
+}
+
+/**
+ * Returns true if the player has unlocked the given ability.
+ */
+export function hasAbility(
+  progress: PlayerProgress | null | undefined,
+  ability: PlayerAbilityId,
+): boolean {
+  return progress?.unlockedAbilities?.includes(ability) ?? false;
+}
 
 // ---- Dust type unlocks -----------------------------------------------------
 

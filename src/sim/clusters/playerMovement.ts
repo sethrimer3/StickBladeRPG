@@ -87,9 +87,10 @@ export function tickPlayerMovement(
   if (cluster.hurtTicks > 0) {
     cluster.hurtTicks -= 1;
   }
-  // Clear committed fast-fall mode when the player is on the ground.
+  // Clear committed fast-fall mode and recharge jumps when the player is on the ground.
   if (cluster.isGroundedFlag === 1) {
     cluster.isFastFallModeFlag = 0;
+    cluster.jumpsRemaining = world.hasDoubleJumpAbilityFlag === 1 ? 2 : 1;
   }
   // Grappling resets the "first wall jump" bonus state.
   if (world.isGrappleActiveFlag === 1 || world.isGrappleStuckFlag === 1) {

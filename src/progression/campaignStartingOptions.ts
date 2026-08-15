@@ -10,9 +10,9 @@
  * Mutates `progress` in place. Does NOT mutate `spawn`.
  */
 
-import { PlayerProgress } from './playerProgress';
+import { PlayerProgress, isPlayerAbilityId } from './playerProgress';
 import { CampaignSpawnData } from '../levels/campaignSchema';
-import { unlockDustType, unlockActiveWeave } from './unlocks';
+import { unlockDustType, unlockActiveWeave, unlockAbility } from './unlocks';
 import { stringToParticleKind } from '../editor/roomJsonSchema';
 import { WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
 import { expandLegacyWeaveId } from './weaveMigration';
@@ -71,6 +71,14 @@ export function applyCampaignStartingOptions(
       // forward. Non-legacy ids (storm/shield/arrow) expand to themselves.
       for (const expandedId of expandLegacyWeaveId(weaveId)) {
         unlockActiveWeave(progress, expandedId);
+      }
+    }
+  }
+
+  if (Array.isArray(spawn.startingAbilities)) {
+    for (const ability of spawn.startingAbilities) {
+      if (isPlayerAbilityId(ability)) {
+        unlockAbility(progress, ability);
       }
     }
   }

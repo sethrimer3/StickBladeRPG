@@ -170,6 +170,10 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
   }
 
   if (world.playerAutoMoveTargetBlock === null) {
+    body.hasDoubleJumpUnlock = world.hasDoubleJumpAbilityFlag === 1;
+    body.hasSwimUnlock = world.hasSwimAbilityFlag === 1;
+    const isInWater = world.isPlayerInWaterFlag === 1;
+
     // Latch the one-shot jump input. The body runs on its own fixed accumulator
     // (30Hz x STICKMAN_TIME_SCALE), so a host tick may advance no body frame at
     // all — queueing here rather than applying an impulse directly means the
@@ -191,6 +195,8 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
       // the only thing acting on it besides gravity.
       isHanging ? 0 : world.playerMoveInputDxWorld,
       world.dtMs,
+      isHanging ? 0 : world.playerMoveInputDyWorld,
+      isInWater,
     );
   }
 

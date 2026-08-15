@@ -230,6 +230,7 @@ export function applyPlayerGravityAndJump(
       cluster.isGroundedFlag      = 0;
       cluster.coyoteTimeTicks     = 0;
       cluster.isFastFallModeFlag  = 0;
+      cluster.jumpsRemaining      = world.hasDoubleJumpAbilityFlag === 1 ? 1 : 0;
       // Start variable jump sustain timer so holding jump sustains height.
       cluster.varJumpTimerTicks   = VAR_JUMP_TIME_TICKS;
       cluster.varJumpSpeedWorld   = -jumpSpeed;
@@ -243,10 +244,22 @@ export function applyPlayerGravityAndJump(
       // ticks) before allowing a wall jump.  This prevents accidental launches off
       // small ledges, stair steps, or block corners.
       const fired = attemptWallJump(cluster, world);
-      if (!fired) {
-        // Fully airborne and no usable wall — buffer the jump. The buffer is
-        // also consumed the instant a wall becomes touchable (movement.ts),
-        // mirroring landing-buffered ground jumps.
+      if (fired) {
+        cluster.jumpsRemaining = world.hasDoubleJumpAbilityFlag === 1 ? 1 : 0;
+      } else if (world.hasDoubleJumpAbilityFlag === 1 && cluster.jumpsRemaining > 0) {
+        // ── Double jump (airborne launch from current position) ───────────────
+        cluster.velocityYWorld     = -baseJumpSpeed;
+        cluster.isGroundedFlag     = 0;
+        cluster.coyoteTimeTicks    = 0;
+        cluster.isFastFallModeFlag = 0;
+        cluster.varJumpTimerTicks  = VAR_JUMP_TIME_TICKS;
+        cluster.varJumpSpeedWorld  = -baseJumpSpeed;
+        cluster.jumpsRemaining    -= 1;
+        if (isSkidJump) {
+          clearPlayerSkidState(cluster);
+        }
+      } else {
+        // Fully airborne and no usable wall / no double jump — buffer the jump.
         cluster.jumpBufferTicks = JUMP_BUFFER_TICKS;
       }
     }

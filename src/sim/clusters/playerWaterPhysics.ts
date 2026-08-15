@@ -86,7 +86,10 @@ export function applyPlayerWaterVerticalForces(
   const gravityAccel = baseGravity * WATER_GRAVITY_MULTIPLIER;
   const buoyancyAccel = WATER_BUOYANCY_BASE_ACCEL_WORLD_PER_SEC2
     + WATER_BUOYANCY_SUBMERSION_ACCEL_WORLD_PER_SEC2 * submersion;
-  const netAcceleration = gravityAccel - buoyancyAccel;
+  let netAcceleration = gravityAccel - buoyancyAccel;
+  if (world.hasSwimAbilityFlag === 1 && world.playerMoveInputDyWorld !== 0) {
+    netAcceleration += world.playerMoveInputDyWorld * 300;
+  }
   const verticalDragPerSec = WATER_VERTICAL_DRAG_PER_SEC
     + WATER_SURFACE_VERTICAL_DRAG_BOOST_PER_SEC * (1 - submersion);
 
