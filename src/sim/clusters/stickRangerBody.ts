@@ -352,43 +352,54 @@ const STAND_POSE_BIAS = 0.05;
 // move the arm, and the weapon moves with it.
 
 /**
- * Shoulder-to-hand rest length. Must match the arm entries in `CONSTRAINTS` —
- * a carry target further out than the arm is simply overruled by the constraint
- * two lines later, which is what makes the bias look like it does nothing.
- */
-const CARRY_ARM_LENGTH = 4.8;
-/**
- * Angle below horizontal, radians, that a carrying arm wants to hold.
+ * How far in front of the chest a carried hand wants to sit, world units.
  *
- * The target is placed on the arm's own reach circle rather than at an absolute
- * point in front of the hip, because the shoulders sit ±4.8 either side of the
- * hip: the trailing shoulder physically cannot put its hand in front of the
- * body, so an absolute target would be dragged back every frame. Forward of its
- * own shoulder is the reachable version of the same intent, and it still puts
- * the two-handed grip — the midpoint of the hands — well in front of the hip.
- *
- * Just past 60° down reads as a relaxed carry; nearer horizontal reads as
- * presenting the weapon, which belongs to an attack rather than to standing.
+ * The arm is two 4.8 links from the chest, so anything under about 9 is
+ * reachable; 5.5 keeps the elbow bent rather than the arm locked straight,
+ * which is what leaves the gait room to move the hand around the carry.
  */
-const CARRY_ARM_ANGLE_RAD = 1.05;
+const CARRY_FORWARD_FROM_CHEST = 5.5;
 /**
- * Angular split between the two hands of a two-handed grip, radians.
+ * How far below the chest a carried hand wants to sit, world units.
+ *
+ * The chest sits 3.6 above the hip, so 4.2 puts the hand just below hip height
+ * — a relaxed carry rather than a weapon held up ready.
+ */
+const CARRY_BELOW_CHEST = 4.2;
+/**
+ * Fore/aft split between the two hands of a two-handed grip, world units.
  *
  * Both hands hold one haft, so they belong close together — but exactly
- * together draws both forearms as a single line. Splitting the arm angles reads
- * as two hands spaced along a grip.
+ * together draws both forearms as a single line.
  */
-const CARRY_TWO_HAND_SPLIT_RAD = 0.22;
+const CARRY_TWO_HAND_SPLIT = 1.1;
+/**
+ * Fraction of a carried hand's velocity bled off each frame.
+ *
+ * The arm is a pendulum and the bias is positional, so without this the hand
+ * swings through the carry rather than settling into it. Applied only to hands
+ * that are actually carrying, so an empty hand keeps the loose swing the gait
+ * gives it.
+ */
+const CARRY_HAND_DAMPING = 0.25;
 /**
  * Strength of the carry pull.
  *
- * Between the standing settle (0.05, meant to be invisible) and the airborne
- * pose: the hand should visibly favour the front without the arm feeling
- * pinned there. At 0.09 a hand crosses from behind the body to the carry in
- * roughly fifteen frames, which reads as the arm swinging forward rather than
- * teleporting.
+ * Chosen by measuring the grip's mean forward offset from the hip over a
+ * settled window, armed against unarmed. Standing is insensitive to this value
+ * (0.09 through 0.28 all park the grip ~5.5 in front); walking is where the
+ * gait fights back, and it is what sets the number:
+ *
+ *   bias   standing grip   walking grip   (unarmed: +0.8 standing, -8.8 walking)
+ *   0.09       +5.5            -3.8
+ *   0.14       +5.5            -0.1
+ *   0.20       +5.5            +1.9
+ *   0.28       +5.5            +3.2
+ *
+ * 0.20 is the point where a walking figure still leads with the weapon without
+ * the arms going rigid against the stride.
  */
-const CARRY_POSE_BIAS = 0.09;
+const CARRY_POSE_BIAS = 0.20;
 /** Half the standing foot gap — each foot is targeted this far to its own side. */
 const STAND_FOOT_SPREAD = 1.4;
 /** Standing foot depth below the hip — near the 9.6 full leg extension. */
@@ -1048,27 +1059,48 @@ function applyWeaponCarryBias(body: StickRangerBody): void {
   const holdsRight = body.carryHandRightFlag === 1;
   if (!holdsLeft && !holdsRight) return;
 
-  const hipX = body.x[SR_HIP];
-  const hipY = body.y[SR_HIP];
   const forward = body.facingDirection < 0 ? -1 : 1;
-  const carryY = hipY + CARRY_HAND_BELOW;
   const applied = { x: 0, y: 0 };
 
-  // On a two-hander the hands share one haft, so they split fore and aft of a
-  // single carry point instead of each taking their own.
-  const isTwoHanded = holdsLeft && holdsRight;
-  const nearReach = CARRY_HAND_FORWARD * (isTwoHanded ? 1 - CARRY_TWO_HAND_SPLIT : 1);
-  const farReach = CARRY_HAND_FORWARD * (isTwoHanded ? 1 + CARRY_TWO_HAND_SPLIT : 1);
-  // The trailing hand is the one on the far side of the body from the facing.
-  const leftReach = forward < 0 ? farReach : nearReach;
-  const rightReach = forward < 0 ? nearReach : farReach;
+  // Anchored to the chest, not to the shoulders. Nothing holds the shoulder
+  // line level — each shoulder is only bound to the chest by one 4.8 spring, so
+  // the pair rotates freely and a shoulder is behind the body as often as
+  // beside it. Measured against that, shoulder-relative targets moved the hand
+  // somewhere different every frame. The chest is the one stable point above
+  // the hip, and the two-link arm reaches 9.6 from it, so a target ~6 out is
+  // comfortably inside the arm's range.
+  const chestX = body.x[SR_CHEST];
+  const chestY = body.y[SR_CHEST];
 
-  if (holdsLeft && !(body.grappleHangFlag === 1 && body.grappleHandIndex === SR_HAND_L)) {
-    biasPointToward(body, SR_HAND_L, hipX + forward * leftReach, carryY, CARRY_POSE_BIAS, applied);
-  }
-  if (holdsRight && !(body.grappleHangFlag === 1 && body.grappleHandIndex === SR_HAND_R)) {
-    biasPointToward(body, SR_HAND_R, hipX + forward * rightReach, carryY, CARRY_POSE_BIAS, applied);
-  }
+  // On a two-hander the hands share one haft, so they sit fore and aft of a
+  // single carry point; a single hand takes that point itself.
+  const isTwoHanded = holdsLeft && holdsRight;
+  const split = isTwoHanded ? CARRY_TWO_HAND_SPLIT : 0;
+  const leadingReach = CARRY_FORWARD_FROM_CHEST + split;
+  const trailingReach = CARRY_FORWARD_FROM_CHEST - split;
+  const leftReach = forward < 0 ? leadingReach : trailingReach;
+  const rightReach = forward < 0 ? trailingReach : leadingReach;
+
+  const biasHand = (handIndex: number, reach: number): void => {
+    // The rope owns a grappling hand; pulling it into a carry would either drag
+    // the body or visibly detach the rope from the fist.
+    if (body.grappleHangFlag === 1 && body.grappleHandIndex === handIndex) return;
+    const targetX = chestX + forward * reach;
+    const targetY = chestY + CARRY_BELOW_CHEST;
+    biasPointToward(body, handIndex, targetX, targetY, CARRY_POSE_BIAS, applied);
+
+    // `biasPointToward` shifts position and previous position together, which
+    // leaves the hand's velocity untouched — so on an arm, which is a pendulum,
+    // the bias just adds energy and the hand rings back and forth through the
+    // carry instead of arriving at it. Measured: raising the bias alone made the
+    // average carry position WORSE, because the overshoot grew with it. Bleeding
+    // a little velocity out of a carried hand is what actually settles it.
+    body.prevX[handIndex] += (body.x[handIndex] - body.prevX[handIndex]) * CARRY_HAND_DAMPING;
+    body.prevY[handIndex] += (body.y[handIndex] - body.prevY[handIndex]) * CARRY_HAND_DAMPING;
+  };
+
+  if (holdsLeft) biasHand(SR_HAND_L, leftReach);
+  if (holdsRight) biasHand(SR_HAND_R, rightReach);
 
   cancelNetTranslation(body, applied);
 }
