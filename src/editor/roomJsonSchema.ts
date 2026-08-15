@@ -220,6 +220,12 @@ export interface RoomJsonSpike {
 
 export type RoomJsonLaser = import('../levels/roomElementDefs').RoomLaserDef;
 
+/** One entry of a room's Random Weather distribution (see {@link RoomWeatherWeightDef}). */
+export interface RoomJsonWeatherWeight {
+  weather: WeatherEffect;
+  percent: number;
+}
+
 export interface RoomJsonSpringboard {
   xBlock: number;
   yBlock: number;
@@ -501,6 +507,10 @@ export interface RoomJsonDef {
   ambientLightDirection?: AmbientLightDirection;
   /** Room-level weather effect. Falls back to `'none'` when not set. */
   weather?: WeatherEffect;
+  /** When true, re-roll the effective weather from `weatherWeights` on every room entry. */
+  randomWeather?: boolean;
+  /** Weighted weather distribution used when `randomWeather` is true (percents sum to 100). */
+  weatherWeights?: RoomJsonWeatherWeight[];
   /** Directional-bias blend (0 = broad ambient, 1 = spotlight). Range 0–1. */
   directionalBias?: number;
   /** Side-exposure strength for non-sky-facing air neighbours. Range 0–1. */

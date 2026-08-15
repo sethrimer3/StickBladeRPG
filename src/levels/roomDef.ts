@@ -131,6 +131,16 @@ export type WeatherEffect = 'none' | 'rain' | 'sunny' | 'cloudy' | 'thunderstorm
 export const OPEN_CEILING_WEATHER_EFFECTS: readonly WeatherEffect[] = ['rain', 'sunny', 'thunderstorm'];
 
 /**
+ * One entry of a room's Random Weather distribution — a candidate weather
+ * plus its percentage chance of being picked on any given room entry.
+ * `percent` values across a room's `weatherWeights` array always sum to 100.
+ */
+export interface RoomWeatherWeightDef {
+  readonly weather: WeatherEffect;
+  readonly percent: number;
+}
+
+/**
  * Direction that ambient/skylight arrives from.
  *
  * The solver seeds "lit air" cells by flood-filling from the edge(s) of the
@@ -777,8 +787,21 @@ export interface RoomDef {
   /**
    * Room-level weather effect. Defaults to `'none'` when unset.
    * See {@link WeatherEffect}.
+   * Ignored (in favor of a weighted random pick) when `randomWeather` is true
+   * and `weatherWeights` is non-empty.
    */
   weather?: WeatherEffect;
+  /**
+   * When true and `weatherWeights` is non-empty, the effective weather for
+   * this room is re-rolled from `weatherWeights` on every room entry instead
+   * of using the fixed `weather` field. Defaults to false (omitted) when unset.
+   */
+  randomWeather?: boolean;
+  /**
+   * Weighted weather distribution used when `randomWeather` is true. Percents
+   * sum to 100. Empty/omitted falls back to plain `weather`.
+   */
+  weatherWeights?: readonly RoomWeatherWeightDef[];
   /** Designer-placed scene lights (visibility-polygon shadow system). */
   sceneLights?: readonly import('./lightingSchema').LightDef[];
   /** Room width in blocks. */

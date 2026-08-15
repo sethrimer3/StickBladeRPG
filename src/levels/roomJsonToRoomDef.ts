@@ -301,6 +301,11 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
   if (json.backgroundId) room.backgroundId = json.backgroundId;
   if (json.backgroundBlur === true) room.backgroundBlur = true;
   if (json.lightingEffect) room.lightingEffect = json.lightingEffect;
+  if (json.weather && json.weather !== 'none') room.weather = json.weather;
+  if (json.randomWeather === true) room.randomWeather = true;
+  if (json.weatherWeights && json.weatherWeights.length > 0) {
+    room.weatherWeights = json.weatherWeights.map(w => ({ weather: w.weather, percent: w.percent }));
+  }
   const resolvedSongId = parseRoomJsonSongId(json);
   if (resolvedSongId !== '_continue') room.songId = resolvedSongId;
 

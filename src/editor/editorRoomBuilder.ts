@@ -344,6 +344,10 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
     backgroundBlur: data.backgroundBlur,
     lightingEffect: data.lightingEffect,
     weather: data.weather !== 'none' ? data.weather : undefined,
+    randomWeather: (data.randomWeather === true && (data.weatherWeights ?? []).length > 0) ? true : undefined,
+    weatherWeights: (data.randomWeather === true && (data.weatherWeights ?? []).length > 0)
+      ? data.weatherWeights!.map(w => ({ weather: w.weather, percent: w.percent }))
+      : undefined,
     songId: data.songId !== '_continue' ? data.songId : undefined,
     widthBlocks: data.widthBlocks,
     heightBlocks: data.heightBlocks,

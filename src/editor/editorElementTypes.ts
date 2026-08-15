@@ -696,6 +696,10 @@ export interface EditorRoomData {
   lightingEffect: LightingEffect;
   /** Weather effect for this room. Defaults to 'none' when unset. */
   weather?: WeatherEffect;
+  /** When true, the effective weather is re-rolled from `weatherWeights` on every room entry. */
+  randomWeather?: boolean;
+  /** Weighted weather distribution used when `randomWeather` is true. */
+  weatherWeights?: { weather: WeatherEffect; percent: number }[];
   /**
    * Direction ambient/skylight arrives from. Undefined means "use whatever
    * the legacy `lightingEffect` value implies" (omni for `DEFAULT`/`Ambient`,

@@ -597,6 +597,8 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
       backgroundId: room.backgroundId ?? 'brownRock',
       lightingEffect: room.lightingEffect ?? 'Ambient',
       weather: room.weather ?? 'none',
+      randomWeather: room.randomWeather === true,
+      weatherWeights: (room.weatherWeights ?? []).map(w => ({ weather: w.weather, percent: w.percent })),
       ambientLightDirection: room.ambientLightDirection,
       directionalBias:       room.directionalBias,
       sideExposureStrength:  room.sideExposureStrength,

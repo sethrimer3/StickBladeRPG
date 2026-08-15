@@ -343,6 +343,10 @@ export interface EditorUICallbacks {
   onBlockThemeSlotAssign: (slotIndex: number, theme: BlockTheme) => void;
   onLightingEffectChange: (effect: LightingEffect) => void;
   onWeatherChange: (weather: WeatherEffect) => void;
+  /** Called when the user toggles the "Random Weather" checkbox. */
+  onRandomWeatherToggle: (enabled: boolean) => void;
+  /** Called when the selected weathers or their percentage split change. */
+  onWeatherWeightsChange: (weights: { weather: WeatherEffect; percent: number }[]) => void;
   onAmbientLightDirectionChange: (direction: AmbientLightDirection | undefined) => void;
   onDirectionalBiasChange: (value: number) => void;
   onSideExposureStrengthChange: (value: number) => void;

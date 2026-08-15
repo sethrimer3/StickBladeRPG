@@ -193,6 +193,10 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
   if (data.backgroundBlur === true) json.backgroundBlur = true;
   if (data.lightingEffect) json.lightingEffect = data.lightingEffect;
   if (data.weather && data.weather !== 'none') json.weather = data.weather;
+  if (data.randomWeather === true && (data.weatherWeights ?? []).length > 0) {
+    json.randomWeather = true;
+    json.weatherWeights = data.weatherWeights!.map(w => ({ weather: w.weather, percent: w.percent }));
+  }
   // Only write songId when it differs from the default ('_continue')
   if (data.songId !== '_continue') json.songId = data.songId;
   if (data.skillTombs.length > 0) {

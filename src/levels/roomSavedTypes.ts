@@ -329,6 +329,10 @@ export interface SavedRoomV2 {
   light?: LightingEffect;
   /** Room-level weather effect. Omitted when `'none'` to keep files compact. */
   weather?: WeatherEffect;
+  /** When true, re-roll the effective weather from `weatherWeights` on every room entry. */
+  randomWeather?: true;
+  /** Weighted weather distribution as [weather, percent] tuples. Omitted when unused. */
+  weatherWeights?: [WeatherEffect, number][];
   song?: string;
   /** [widthBlocks, heightBlocks] */
   size: [number, number];

@@ -453,6 +453,10 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   if (json.backgroundBlur === true) out.bgBlur = true;
   if (json.lightingEffect) out.light = json.lightingEffect;
   if (json.weather && json.weather !== 'none') out.weather = json.weather;
+  if (json.randomWeather === true && json.weatherWeights && json.weatherWeights.length > 0) {
+    out.randomWeather = true;
+    out.weatherWeights = json.weatherWeights.map(w => [w.weather, w.percent]);
+  }
   if (json.songId && json.songId !== '_continue') out.song = json.songId;
   if (specialWalls.length > 0) out.specialWalls = specialWalls;
   if (json.rimStyles?.length) out.rimStyles = json.rimStyles.map(style => [...style]);
@@ -934,7 +938,7 @@ export function validateRoomRoundtrip(json: RoomJsonDef): string[] {
     'backgroundLightSpill', 'solidLightSoftness', 'sunrays', 'rimStyles',
     'ambientLightDirection', 'directionalBias', 'sideExposureStrength',
     'minimumWallLight', 'falloffPower', 'blockSeamBlending', 'voidEdgeStyle',
-    'weather',
+    'weather', 'randomWeather', 'weatherWeights',
   ] as const satisfies readonly (keyof RoomJsonDef)[];
   for (const key of semanticSettings) {
     if (normalize(json[key]) !== normalize(rebuilt[key])) {

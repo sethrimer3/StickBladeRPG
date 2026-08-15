@@ -85,6 +85,7 @@ export type {
   RoomJsonGrappleCarryBlock,
   RoomJsonPhantasmalTile,
   RoomJsonBakedWallTemplate,
+  RoomJsonWeatherWeight,
 } from './roomJsonSchema';
 
 export function validateRoomJson(data: unknown): ValidationError[] {
@@ -122,6 +123,9 @@ export function validateRoomJson(data: unknown): ValidationError[] {
     if (v !== 'none' && v !== 'rain' && v !== 'sunny' && v !== 'cloudy' && v !== 'thunderstorm') {
       errors.push({ path: 'weather', message: 'Must be none|rain|sunny|cloudy|thunderstorm' });
     }
+  }
+  if (obj.weatherWeights !== undefined && !Array.isArray(obj.weatherWeights)) {
+    errors.push({ path: 'weatherWeights', message: 'Must be an array when provided' });
   }
   if (typeof obj.widthBlocks !== 'number' || (obj.widthBlocks as number) < 10) {
     errors.push({ path: 'widthBlocks', message: 'Must be a number >= 10' });
@@ -680,6 +684,9 @@ export function jsonToEditorRoomData(json: RoomJsonDef, startUid: number): { dat
       backgroundId: json.backgroundId ?? 'brownRock',
       backgroundBlur: json.backgroundBlur === true ? true : undefined,
       lightingEffect: json.lightingEffect ?? 'Ambient',
+      weather: json.weather ?? 'none',
+      randomWeather: json.randomWeather === true,
+      weatherWeights: (json.weatherWeights ?? []).map((w: RoomJsonWeatherWeight) => ({ weather: w.weather, percent: w.percent })),
       ambientLightDirection: json.ambientLightDirection,
       directionalBias:       json.directionalBias,
       sideExposureStrength:  json.sideExposureStrength,
