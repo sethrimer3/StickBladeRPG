@@ -295,15 +295,18 @@ export function showInventoryPanel(
     `;
     stage.appendChild(previewFrame);
 
-    if (previewController) {
-      previewController.destroy();
-      previewController = null;
+    if (!previewController) {
+      previewController = new CharacterPreviewController(previewFrame, member.equipment, {
+        width: 180,
+        height: 220,
+        scale: 3.5,
+      });
+    } else {
+      previewController.updateEquipment(member.equipment);
+      if (!previewFrame.contains(previewController.canvas)) {
+        previewFrame.appendChild(previewController.canvas);
+      }
     }
-    previewController = new CharacterPreviewController(previewFrame, member.equipment, {
-      width: 180,
-      height: 220,
-      scale: 5.5,
-    });
 
     // Slots Container
     const slotsGrid = document.createElement('div');
