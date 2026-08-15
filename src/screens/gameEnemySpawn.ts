@@ -207,7 +207,9 @@ export function spawnEnemyClusters(
   enemyDefs: readonly RoomEnemyDef[],
   startEntityId: number,
   levelRng: RngState,
+  difficultyMultiplier: number = 1,
 ): number {
+  const diffMult = Number.isFinite(difficultyMultiplier) && difficultyMultiplier > 0 ? difficultyMultiplier : 1;
   let nextEntityId = startEntityId;
   for (let ei = 0; ei < enemyDefs.length; ei++) {
     const enemyDef = enemyDefs[ei];
@@ -225,8 +227,8 @@ export function spawnEnemyClusters(
     const ey = enemyDef.yBlock * BLOCK_SIZE_MEDIUM;
     const trait = enemyDef.stickRpgEnemyKind ? getStickRpgEnemyTrait(enemyDef.stickRpgEnemyKind) : null;
     const hp = trait !== null
-      ? (enemyDef.isBossFlag === 1 ? trait.baseHp * BOSS_HP_MULTIPLIER : trait.baseHp)
-      : (enemyDef.isBossFlag === 1 ? enemyDef.particleCount * BOSS_HP_MULTIPLIER : enemyDef.particleCount);
+      ? Math.max(1, Math.round((enemyDef.isBossFlag === 1 ? trait.baseHp * BOSS_HP_MULTIPLIER : trait.baseHp) * diffMult))
+      : Math.max(1, Math.round((enemyDef.isBossFlag === 1 ? enemyDef.particleCount * BOSS_HP_MULTIPLIER : enemyDef.particleCount) * diffMult));
     const enemyCluster = createClusterState(nextEntityId++, ex, ey, 0, hp);
     enemyCluster.countsTowardRoomCompletionFlag = enemyDef.countsTowardRoomCompletionFlag ?? 1;
 
@@ -234,8 +236,8 @@ export function spawnEnemyClusters(
       enemyCluster.stickRpgEnemyKind = trait.id;
       enemyCluster.halfWidthWorld = trait.hitboxWidth / 16;
       enemyCluster.halfHeightWorld = trait.hitboxHeight / 16;
-      enemyCluster.xpValue = computeEnemyXpDrop(trait);
-      enemyCluster.coinValue = computeEnemyCoinDrop(trait);
+      enemyCluster.xpValue = computeEnemyXpDrop(trait, diffMult);
+      enemyCluster.coinValue = computeEnemyCoinDrop(trait, diffMult);
       if (trait.id === 'stickmanSwordsman') {
         createStickmanEnemyState(enemyCluster, 'sword');
       } else if (trait.id === 'stickmanArcher') {
@@ -259,8 +261,8 @@ export function spawnEnemyClusters(
         enemyCluster.grappleHunterState = 0;
       }
     } else {
-      enemyCluster.xpValue = enemyDef.isBossFlag === 1 ? 50 : 10;
-      enemyCluster.coinValue = enemyDef.isBossFlag === 1 ? 20 : 2;
+      enemyCluster.xpValue = Math.max(1, Math.round((enemyDef.isBossFlag === 1 ? 50 : 10) * diffMult));
+      enemyCluster.coinValue = Math.max(1, Math.round((enemyDef.isBossFlag === 1 ? 20 : 2) * diffMult));
     }
 
     if (trait === null && enemyDef.isFlyingEyeFlag === 1) {
@@ -292,6 +294,7 @@ export function spawnEnemyClusters(
       enemyCluster.halfWidthWorld   = 6.0;
       enemyCluster.halfHeightWorld  = 6.0;
     } else if (enemyDef.isCrimsonWizardFlag === 1) {
+      const cwHp = Math.max(1, Math.round(CW_HP * diffMult));
       enemyCluster.isCrimsonWizardFlag = 1;
       enemyCluster.crimsonWizardState = CW_STATE_IDLE;
       enemyCluster.crimsonWizardStateTicks = 0;
@@ -309,9 +312,10 @@ export function spawnEnemyClusters(
       enemyCluster.crimsonWizardMeteorSpawnedFlag.fill(0);
       enemyCluster.halfWidthWorld = CW_HALF_W;
       enemyCluster.halfHeightWorld = CW_HALF_H;
-      enemyCluster.healthPoints = CW_HP;
-      enemyCluster.maxHealthPoints = CW_HP;
+      enemyCluster.healthPoints = cwHp;
+      enemyCluster.maxHealthPoints = cwHp;
     } else if (enemyDef.isHeraldFlag === 1) {
+      const heraldHp = Math.max(1, Math.round(HERALD_HP * diffMult));
       enemyCluster.isHeraldFlag = 1;
       enemyCluster.heraldState = HERALD_STATE_IDLE;
       enemyCluster.heraldStateTicks = 0;
@@ -322,9 +326,10 @@ export function spawnEnemyClusters(
       enemyCluster.heraldAttackCooldownTicks = HERALD_INITIAL_COOLDOWN_TICKS;
       enemyCluster.halfWidthWorld = HERALD_HALF_W;
       enemyCluster.halfHeightWorld = HERALD_HALF_H;
-      enemyCluster.healthPoints = HERALD_HP;
-      enemyCluster.maxHealthPoints = HERALD_HP;
+      enemyCluster.healthPoints = heraldHp;
+      enemyCluster.maxHealthPoints = heraldHp;
     } else if (enemyDef.isIceWizardFlag === 1) {
+      const iceWizardHp = Math.max(1, Math.round(ICE_WIZARD_HP * diffMult));
       enemyCluster.isIceWizardFlag = 1;
       enemyCluster.iceWizardState = ICE_WIZARD_STATE_IDLE;
       enemyCluster.iceWizardStateTicks = 0;
@@ -338,8 +343,8 @@ export function spawnEnemyClusters(
       enemyCluster.positionYWorld = Math.round((ey - ICE_WIZARD_HALF_H) / BLOCK_SIZE_MEDIUM) * BLOCK_SIZE_MEDIUM + ICE_WIZARD_HALF_H;
       enemyCluster.iceWizardGridX = Math.round((enemyCluster.positionXWorld - ICE_WIZARD_HALF_W) / BLOCK_SIZE_MEDIUM);
       enemyCluster.iceWizardGridY = Math.round((enemyCluster.positionYWorld - ICE_WIZARD_HALF_H) / BLOCK_SIZE_MEDIUM);
-      enemyCluster.healthPoints = ICE_WIZARD_HP;
-      enemyCluster.maxHealthPoints = ICE_WIZARD_HP;
+      enemyCluster.healthPoints = iceWizardHp;
+      enemyCluster.maxHealthPoints = iceWizardHp;
     } else if (enemyDef.isGrappleHunterFlag === 1) {
       enemyCluster.isGrappleHunterFlag  = 1;
       enemyCluster.grappleHunterState   = 0;
@@ -380,8 +385,7 @@ export function spawnEnemyClusters(
       enemyCluster.bubbleOrbitAngleRad    = 0;
       enemyCluster.bubbleRegenTicks       = WATER_BUBBLE_REGEN_INTERVAL_TICKS;
       enemyCluster.bubbleDriftPhaseRad    = 0;
-      enemyCluster.bubblePrevHealthPoints = enemyCluster.healthPoints;
-    } else if (enemyDef.isSquareStampedeFlag === 1) {
+      enemyCluster.bubblePrevHealthPoints = enemyCluster.healthPoints;    } else if (enemyDef.isSquareStampedeFlag === 1) {
       // Allocate a trail ring-buffer slot for this enemy
       let slotIndex = -1;
       for (let si = 0; si < MAX_SQUARE_STAMPEDE; si++) {
@@ -403,24 +407,26 @@ export function spawnEnemyClusters(
           break;
         }
       }
+      const sqHp = Math.max(1, Math.round(SQUARE_STAMPEDE_LAYER_COUNT * diffMult));
       enemyCluster.isSquareStampedeFlag            = 1;
       enemyCluster.squareStampedeSlotIndex         = slotIndex;
       enemyCluster.squareStampedeBaseHalfSizeWorld = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
       enemyCluster.halfWidthWorld                  = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
       enemyCluster.halfHeightWorld                 = SQUARE_STAMPEDE_BASE_HALF_SIZE_WORLD;
-      enemyCluster.healthPoints                    = SQUARE_STAMPEDE_LAYER_COUNT;
-      enemyCluster.maxHealthPoints                 = SQUARE_STAMPEDE_LAYER_COUNT;
+      enemyCluster.healthPoints                    = sqHp;
+      enemyCluster.maxHealthPoints                 = sqHp;
       enemyCluster.squareStampedeAiState           = 0;
       enemyCluster.squareStampedeAiStateTicks      = 20;
       enemyCluster.squareStampedeTrailTimerTicks   = TRAIL_UPDATE_INTERVAL_TICKS;
     } else if (enemyDef.isShadowEnemyFlag === 1) {
+      const shadowHp = Math.max(1, Math.round(SHADOW_HP * diffMult));
       enemyCluster.isShadowEnemyFlag = 1;
       enemyCluster.shadowPathSlotIndex = shadowSlot;
       enemyCluster.shadowStartupTicks = SHADOW_START_DELAY_TICKS;
       enemyCluster.halfWidthWorld = SHADOW_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld = SHADOW_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints = SHADOW_HP;
-      enemyCluster.maxHealthPoints = SHADOW_HP;
+      enemyCluster.healthPoints = shadowHp;
+      enemyCluster.maxHealthPoints = shadowHp;
       const player = world.clusters[0];
       if (player?.isPlayerFlag === 1) {
         clearShadowPath(world, shadowSlot);
@@ -429,13 +435,14 @@ export function spawnEnemyClusters(
         world.shadowPathLastRecordedYWorld[shadowSlot] = player.positionYWorld;
       }
     } else if (enemyDef.isNeedleUrchinFlag === 1) {
+      const nuHp = Math.max(1, Math.round(NEEDLE_URCHIN_HP * diffMult));
       enemyCluster.isNeedleUrchinFlag = 1;
       enemyCluster.needleUrchinSlotIndex = needleUrchinSlot;
       enemyCluster.halfWidthWorld = NEEDLE_URCHIN_HALF_SIZE_WORLD;
       enemyCluster.halfHeightWorld = NEEDLE_URCHIN_HALF_SIZE_WORLD;
-      enemyCluster.healthPoints = NEEDLE_URCHIN_HP;
-      enemyCluster.maxHealthPoints = NEEDLE_URCHIN_HP;
-      enemyCluster.needleUrchinPrevHealthPoints = NEEDLE_URCHIN_HP;
+      enemyCluster.healthPoints = nuHp;
+      enemyCluster.maxHealthPoints = nuHp;
+      enemyCluster.needleUrchinPrevHealthPoints = nuHp;
       const projectileStart = needleUrchinSlot * NEEDLE_URCHIN_NEEDLES_PER_BURST;
       const projectileEnd = projectileStart + NEEDLE_URCHIN_NEEDLES_PER_BURST;
       world.needleProjectileAliveFlag.fill(0, projectileStart, projectileEnd);
@@ -468,15 +475,16 @@ export function spawnEnemyClusters(
         console.warn('[slimeSnail] no free trail slot available; snail will spawn without depositing slime.');
       }
 
+      const snailHp = Math.max(1, Math.round(SLIME_SNAIL_HP * diffMult));
       enemyCluster.isSlimeSnailFlag              = 1;
       enemyCluster.halfWidthWorld                = SLIME_SNAIL_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld               = SLIME_SNAIL_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints                  = SLIME_SNAIL_HP;
-      enemyCluster.maxHealthPoints               = SLIME_SNAIL_HP;
+      enemyCluster.healthPoints                  = snailHp;
+      enemyCluster.maxHealthPoints               = snailHp;
       enemyCluster.slimeSnailTrailSlotIndex      = slotIndex;
       enemyCluster.slimeSnailSurfaceSideIndex    = (enemyDef.slimeSnailSurfaceSideIndex ?? 0) as 0 | 1 | 2 | 3;
       enemyCluster.slimeSnailClockwiseFlag       = (enemyDef.slimeSnailClockwiseFlag ?? 1) as 0 | 1;
-      enemyCluster.slimeSnailPrevHealthPoints    = SLIME_SNAIL_HP;
+      enemyCluster.slimeSnailPrevHealthPoints    = snailHp;
       placeSlimeSnailOnSurface(world, enemyCluster);
     } else if (enemyDef.isGoldenMimicFlag === 1) {
       const isYFlipped = enemyDef.isGoldenMimicYFlippedFlag === 1;
@@ -489,11 +497,12 @@ export function spawnEnemyClusters(
       enemyCluster.goldenMimicFadeAlpha      = 1.0;
       // goldenMimicInitialParticleCount is filled in after spawnLoadoutParticles below
     } else if (enemyDef.isWallSnakeFlag === 1) {
+      const snakeHp = Math.max(1, Math.round(BIG_SNAKE_HP * diffMult));
       enemyCluster.isWallSnakeFlag          = 1;
       enemyCluster.halfWidthWorld           = BIG_SNAKE_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld          = BIG_SNAKE_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints             = BIG_SNAKE_HP;
-      enemyCluster.maxHealthPoints          = BIG_SNAKE_HP;
+      enemyCluster.healthPoints             = snakeHp;
+      enemyCluster.maxHealthPoints          = snakeHp;
       enemyCluster.snakeAiState             = 0;
       enemyCluster.snakeAiStateTicks        = 0;
       enemyCluster.snakeRepathCooldownTicks = 0;
@@ -505,11 +514,12 @@ export function spawnEnemyClusters(
       enemyCluster.snakeSpawnYWorld         = ey;
       initializeSnakeSegments(enemyCluster.entityId, ex, ey, 18, 5.5, 1, 0);
     } else if (enemyDef.isNeedleSnakeFlag === 1) {
+      const needleSnakeHp = Math.max(1, Math.round(NEEDLE_SNAKE_HP * diffMult));
       enemyCluster.isNeedleSnakeFlag        = 1;
       enemyCluster.halfWidthWorld           = NEEDLE_SNAKE_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld          = NEEDLE_SNAKE_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints             = NEEDLE_SNAKE_HP;
-      enemyCluster.maxHealthPoints          = NEEDLE_SNAKE_HP;
+      enemyCluster.healthPoints             = needleSnakeHp;
+      enemyCluster.maxHealthPoints          = needleSnakeHp;
       enemyCluster.snakeAiState             = 0;
       enemyCluster.snakeAiStateTicks        = 0;
       enemyCluster.snakeRepathCooldownTicks = 0;
@@ -534,17 +544,18 @@ export function spawnEnemyClusters(
         if (!taken) { slotIndex = si; break; }
       }
 
+      const beeHp = Math.max(1, Math.round(BEES_PER_SWARM * diffMult));
       enemyCluster.isBeeSwarmFlag       = 1;
       enemyCluster.beeSwarmSlotIndex    = slotIndex;
       enemyCluster.halfWidthWorld       = BEE_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld      = BEE_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints         = BEES_PER_SWARM;
-      enemyCluster.maxHealthPoints      = BEES_PER_SWARM;
+      enemyCluster.healthPoints         = beeHp;
+      enemyCluster.maxHealthPoints      = beeHp;
       enemyCluster.beeSwarmSpawnXWorld  = ex;
       enemyCluster.beeSwarmSpawnYWorld  = ey;
       enemyCluster.beeSwarmState        = 0;
       enemyCluster.beeSwarmStateTicks   = 0;
-      enemyCluster.beeSwarmPrevHealthPoints = BEES_PER_SWARM;
+      enemyCluster.beeSwarmPrevHealthPoints = beeHp;
       enemyCluster.beeSwarmOrbitAngleRad    = 0;
 
       // Initialise individual bee positions in a ring around the spawn point
@@ -560,11 +571,12 @@ export function spawnEnemyClusters(
         }
       }
     } else if (enemyDef.isWebSpiderFlag === 1) {
+      const spiderHp = Math.max(1, Math.round(4 * diffMult));
       enemyCluster.isWebSpiderFlag            = 1;
       enemyCluster.halfWidthWorld             = WEB_SPIDER_HALF_SIZE_WORLD;
       enemyCluster.halfHeightWorld            = WEB_SPIDER_HALF_SIZE_WORLD;
-      enemyCluster.healthPoints               = 4;
-      enemyCluster.maxHealthPoints            = 4;
+      enemyCluster.healthPoints               = spiderHp;
+      enemyCluster.maxHealthPoints            = spiderHp;
       enemyCluster.webSpiderState             = 0;
       enemyCluster.webSpiderStateTicks        = 0;
       enemyCluster.webSpiderAnchorXWorld      = 0;
@@ -587,7 +599,7 @@ export function spawnEnemyClusters(
       }
 
       const isLarge = (enemyDef.isDustConstellationLargeFlag ?? 0) as 0 | 1;
-      const hp = isLarge === 1 ? DC_LARGE_HP : DC_SMALL_HP;
+      const hp = Math.max(1, Math.round((isLarge === 1 ? DC_LARGE_HP : DC_SMALL_HP) * diffMult));
 
       enemyCluster.isDustConstellationFlag        = 1;
       enemyCluster.isDustConstellationLargeFlag   = isLarge;
@@ -640,7 +652,7 @@ export function spawnEnemyClusters(
       const mprArr     = isLarge === 1 ? ODC_LARGE_MOTES_PER_RING : ODC_SMALL_MOTES_PER_RING;
       const radiiArr   = isLarge === 1 ? ODC_LARGE_RING_RADII : ODC_SMALL_RING_RADII;
       const healthArr  = isLarge === 1 ? ODC_LARGE_RING_HEALTH : ODC_SMALL_RING_HEALTH;
-      const coreHp     = isLarge === 1 ? ODC_LARGE_CORE_HP : ODC_SMALL_CORE_HP;
+      const coreHp     = Math.max(1, Math.round((isLarge === 1 ? ODC_LARGE_CORE_HP : ODC_SMALL_CORE_HP) * diffMult));
 
       enemyCluster.isOrbitalDustCoreFlag           = 1;
       enemyCluster.isOrbitalDustCoreLargeFlag       = isLarge;
@@ -652,10 +664,10 @@ export function spawnEnemyClusters(
       enemyCluster.orbitalDustCoreBobPhaseRad       = 0;
       enemyCluster.orbitalDustCoreAttackCooldownTicks = ODC_ATTACK_COOLDOWN_TICKS;
       enemyCluster.orbitalDustCoreExposedRing       = 0;
-      enemyCluster.orbitalDustCoreRing0Health       = healthArr[0] ?? -1;
-      enemyCluster.orbitalDustCoreRing1Health       = healthArr[1] ?? -1;
-      enemyCluster.orbitalDustCoreRing2Health       = healthArr[2] ?? -1;
-      enemyCluster.orbitalDustCoreRing3Health       = healthArr[3] ?? -1;
+      enemyCluster.orbitalDustCoreRing0Health       = healthArr[0] !== undefined ? Math.max(1, Math.round(healthArr[0] * diffMult)) : -1;
+      enemyCluster.orbitalDustCoreRing1Health       = healthArr[1] !== undefined ? Math.max(1, Math.round(healthArr[1] * diffMult)) : -1;
+      enemyCluster.orbitalDustCoreRing2Health       = healthArr[2] !== undefined ? Math.max(1, Math.round(healthArr[2] * diffMult)) : -1;
+      enemyCluster.orbitalDustCoreRing3Health       = healthArr[3] !== undefined ? Math.max(1, Math.round(healthArr[3] * diffMult)) : -1;
       enemyCluster.orbitalDustCorePulseRadius       = 0;
       enemyCluster.orbitalDustCorePulseActiveFlag   = 0;
       enemyCluster.orbitalDustCorePulseHitPlayerFlag = 0;
@@ -698,7 +710,7 @@ export function spawnEnemyClusters(
       const isLarge = (enemyDef.isDustBlockMimicLargeFlag ?? 0) as 0 | 1;
       const hw = isLarge === 1 ? DBM_LARGE_BLOCK_HALF_W : DBM_SMALL_BLOCK_HALF_W;
       const hh = isLarge === 1 ? DBM_LARGE_BLOCK_HALF_H : DBM_SMALL_BLOCK_HALF_H;
-      const hp = isLarge === 1 ? DBM_LARGE_HP : DBM_SMALL_HP;
+      const hp = Math.max(1, Math.round((isLarge === 1 ? DBM_LARGE_HP : DBM_SMALL_HP) * diffMult));
       const moteCount = isLarge === 1 ? DBM_LARGE_MOTE_COUNT : DBM_SMALL_MOTE_COUNT;
       const formX = isLarge === 1 ? DBM_LARGE_FORMATION_X : DBM_SMALL_FORMATION_X;
       const formY = isLarge === 1 ? DBM_LARGE_FORMATION_Y : DBM_SMALL_FORMATION_Y;
@@ -751,7 +763,7 @@ export function spawnEnemyClusters(
       }
 
       const isLarge = (enemyDef.isStickBladeArchitectLargeFlag ?? 0) as 0 | 1;
-      const hp       = isLarge === 1 ? DWA_LARGE_HP : DWA_SMALL_HP;
+      const hp       = Math.max(1, Math.round((isLarge === 1 ? DWA_LARGE_HP : DWA_SMALL_HP) * diffMult));
       const moteCount = isLarge === 1 ? DWA_LARGE_MOTE_COUNT : DWA_SMALL_MOTE_COUNT;
 
       enemyCluster.isStickBladeArchitectFlag              = 1;
@@ -796,7 +808,7 @@ export function spawnEnemyClusters(
       }
 
       const isPair = (enemyDef.isVoidSingularityPairFlag ?? 0) as 0 | 1;
-      const hp     = isPair === 1 ? VSP_HP : VS_HP;
+      const hp     = Math.max(1, Math.round((isPair === 1 ? VSP_HP : VS_HP) * diffMult));
 
       enemyCluster.isVoidSingularityFlag         = 1;
       enemyCluster.isVoidSingularityPairFlag      = isPair;
@@ -849,6 +861,7 @@ export function spawnEnemyClusters(
         if (!taken) { slotIndex = si; break; }
       }
 
+      const dlHp = Math.max(1, Math.round(DL_HP * diffMult));
       enemyCluster.isDustLeechFlag              = 1;
       enemyCluster.dustLeechState               = DL_IDLE;
       enemyCluster.dustLeechStateTicks          = 0;
@@ -861,8 +874,8 @@ export function spawnEnemyClusters(
       enemyCluster.dustLeechHitFlashTicks       = 0;
       enemyCluster.halfWidthWorld               = DL_HALF_W;
       enemyCluster.halfHeightWorld              = DL_HALF_H;
-      enemyCluster.healthPoints                 = DL_HP;
-      enemyCluster.maxHealthPoints              = DL_HP;
+      enemyCluster.healthPoints                 = dlHp;
+      enemyCluster.maxHealthPoints              = dlHp;
 
       if (slotIndex >= 0) {
         const base = slotIndex * MAX_MOTES_PER_DL;
@@ -880,6 +893,7 @@ export function spawnEnemyClusters(
       const gridY = Math.max(0, Math.min(Math.max(0, roomH - 1), Math.round((ey - GRID_SNAKE_HALF_SIZE) / bs)));
       const length = Math.max(1, Math.min(12, Math.floor(enemyDef.gridSnakeLength ?? DEFAULT_GRID_SNAKE_LENGTH)));
 
+      const gridSnakeHp = Math.max(1, Math.round(6 * diffMult));
       enemyCluster.isGridSnakeEnemyFlag = 1;
       enemyCluster.gridSnakeLength = length;
       enemyCluster.gridSnakeGridX = gridX;
@@ -891,23 +905,24 @@ export function spawnEnemyClusters(
       enemyCluster.gridSnakeNextDirX = 0;
       enemyCluster.gridSnakeNextDirY = 0;
       enemyCluster.gridSnakePhase = 0;
-      enemyCluster.gridSnakePrevHealthPoints = 6;
+      enemyCluster.gridSnakePrevHealthPoints = gridSnakeHp;
       enemyCluster.gridBlockHitFlashTicks = 0;
       enemyCluster.positionXWorld = gridX * bs + GRID_SNAKE_HALF_SIZE;
       enemyCluster.positionYWorld = gridY * bs + GRID_SNAKE_HALF_SIZE;
       enemyCluster.halfWidthWorld = GRID_SNAKE_HALF_SIZE;
       enemyCluster.halfHeightWorld = GRID_SNAKE_HALF_SIZE;
-      enemyCluster.healthPoints = 6;
-      enemyCluster.maxHealthPoints = 6;
+      enemyCluster.healthPoints = gridSnakeHp;
+      enemyCluster.maxHealthPoints = gridSnakeHp;
       initializeGridSnakeSegments(enemyCluster, length);
     } else if (enemyDef.isMomentumTurretFlag === 1) {
+      const mtHp = Math.max(1, Math.round(MT_HP * diffMult));
       enemyCluster.isMomentumTurretFlag = 1;
       enemyCluster.momentumTurretFacingIndex = enemyDef.momentumTurretFacingIndex ?? 0;
       enemyCluster.momentumTurretTargetRadiusWorld = MT_MAX_RING_RADIUS_WORLD;
       enemyCluster.halfWidthWorld = MT_HALF_WIDTH_WORLD;
       enemyCluster.halfHeightWorld = MT_HALF_HEIGHT_WORLD;
-      enemyCluster.healthPoints = MT_HP;
-      enemyCluster.maxHealthPoints = MT_HP;
+      enemyCluster.healthPoints = mtHp;
+      enemyCluster.maxHealthPoints = mtHp;
       enemyCluster.velocityXWorld = 0;
       enemyCluster.velocityYWorld = 0;
     } else if (enemyDef.isGridBlockEnemyFlag === 1) {
@@ -925,6 +940,7 @@ export function spawnEnemyClusters(
       const gridX = Math.max(0, Math.min(maxGridX, Math.round((ex - hw) / bs)));
       const gridY = Math.max(0, Math.min(maxGridY, Math.round((ey - hw) / bs)));
 
+      const gbHp = Math.max(1, Math.round(6 * diffMult));
       enemyCluster.isGridBlockEnemyFlag          = 1;
       enemyCluster.gridBlockSizeIndex            = sizeIndex;
       enemyCluster.gridBlockSpeedIndex           = speedIndex;
@@ -938,13 +954,13 @@ export function spawnEnemyClusters(
       enemyCluster.gridBlockNextDirY             = 0;
       enemyCluster.gridBlockGlintPhase           = 0;
       enemyCluster.gridBlockHitFlashTicks        = 0;
-      enemyCluster.gridBlockPrevHealthPoints     = 6;
+      enemyCluster.gridBlockPrevHealthPoints     = gbHp;
       enemyCluster.positionXWorld                = gridX * bs + hw;
       enemyCluster.positionYWorld                = gridY * bs + hw;
       enemyCluster.halfWidthWorld                = hw;
       enemyCluster.halfHeightWorld               = hw;
-      enemyCluster.healthPoints                  = 6;
-      enemyCluster.maxHealthPoints               = 6;
+      enemyCluster.healthPoints                  = gbHp;
+      enemyCluster.maxHealthPoints               = gbHp;
     }
     world.clusters.push(enemyCluster);
     const particleStartIdx = world.particleCount;
@@ -968,7 +984,8 @@ export function spawnEnemyClusters(
     const skipNewEnemyParticles=enemyCluster.isShadowEnemyFlag===1||enemyCluster.isNeedleUrchinFlag===1;
     const skipTurretParticleSpawn = enemyCluster.isMomentumTurretFlag === 1;
     if (!skipParticleSpawn && !skipTurretParticleSpawn && !skipNewEnemyParticles) {
-      spawnLoadoutParticles(world, enemyCluster.entityId, ex, ey, enemyDef.kinds, enemyDef.particleCount, levelRng);
+      const loadoutCount = Math.max(1, Math.round(enemyDef.particleCount * diffMult));
+      spawnLoadoutParticles(world, enemyCluster.entityId, ex, ey, enemyDef.kinds, loadoutCount, levelRng);
     }
 
     // Post-spawn: mark golden mimic particles as non-regenerating (isTransientFlag=1)

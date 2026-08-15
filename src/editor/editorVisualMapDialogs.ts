@@ -17,6 +17,7 @@ import {
   setRoomMapPosition,
   setWorldName,
   setWorldOrder,
+  setWorldDifficulty,
 } from '../levels/rooms';
 import { roomJsonDefToRoomDef } from '../levels/roomJsonLoader';
 import type { RoomJsonTransition } from './roomJsonSchema';
@@ -337,6 +338,24 @@ export function showAddWorldDialog(ctx: VisualMapDialogContext): void {
   modal.panel.appendChild(lbl);
   modal.panel.appendChild(nameInput);
 
+  const diffLbl = document.createElement('label');
+  diffLbl.textContent = 'Difficulty Multiplier (scales all enemy stats):';
+  diffLbl.style.cssText = 'display: block; color: rgba(241,231,203,0.6); font-size: 11px; margin-bottom: 3px; font-family: monospace;';
+  modal.panel.appendChild(diffLbl);
+
+  const diffInput = document.createElement('input');
+  diffInput.type = 'number';
+  diffInput.step = '0.1';
+  diffInput.min = '0.1';
+  diffInput.value = '1';
+  diffInput.style.cssText = `
+    width: 100%; box-sizing: border-box; padding: 6px 8px;
+    background: rgba(20,20,30,0.9); color: #f1e7cb;
+    border: 1px solid rgba(212,168,75,0.4); border-radius: 3px;
+    font-family: monospace; font-size: 12px; margin-bottom: 12px;
+  `;
+  modal.panel.appendChild(diffInput);
+
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display: flex; gap: 8px;';
 
@@ -344,11 +363,14 @@ export function showAddWorldDialog(ctx: VisualMapDialogContext): void {
   createBtn.style.cssText += ' flex: 1;';
   createBtn.addEventListener('click', () => {
     const name = nameInput.value.trim() || `Zone ${nextId}`;
+    const diffVal = parseFloat(diffInput.value.trim());
+    const diff = Number.isFinite(diffVal) && diffVal > 0 ? diffVal : 1;
     setWorldName(nextId, name);
     setWorldOrder(nextId, WORLD_NAMES.size);
+    setWorldDifficulty(nextId, diff);
     ctx.callbacks.onWorldMapDataChanged?.();
     modal.destroy();
-    ctx.statusBar.textContent = `Zone "${name}" (id: ${nextId}) created \u2014 right-click rooms to move them into it.`;
+    ctx.statusBar.textContent = `Zone "${name}" (id: ${nextId}, diff: ×${diff}) created \u2014 right-click rooms to move them into it.`;
     ctx.statusBar.style.color = '#f0c75e';
     ctx.render();
   });

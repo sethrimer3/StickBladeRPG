@@ -261,6 +261,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
     id: json.id,
     name: json.name,
     worldNumber: json.worldNumber,
+    difficultyMultiplier: json.difficultyMultiplier,
     mapX: json.mapX ?? 0,
     mapY: json.mapY ?? 0,
     widthBlocks: json.widthBlocks,

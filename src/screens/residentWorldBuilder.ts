@@ -30,6 +30,7 @@ import { RoomDef, BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
 import { createRng, type RngState } from '../sim/rng';
 import { spawnBackgroundFluidParticles, spawnAllDustPiles, BACKGROUND_FLUID_COUNT } from './gameSpawn';
 import { spawnEnemyClusters } from './gameEnemySpawn';
+import { getWorldDifficultyMultiplier } from '../levels/rooms';
 import { initGrappleHunterChainParticles } from '../sim/clusters/grappleHunterAi';
 import { loadRoomHazards, loadRoomRopes, loadRoomFallingBlocks, loadRoomGrasshoppers } from './gameRoom';
 import { loadRoomPixelMaterials } from './gameRoomPixelMaterials';
@@ -165,7 +166,8 @@ export function buildResidentWorldState(
       );
     }
     // Enemy entityIds start at 2 (same as in the active world).
-    spawnEnemyClusters(rw, room.enemies, 2, levelRng);
+    const difficultyMult = room.difficultyMultiplier ?? getWorldDifficultyMultiplier(room.worldNumber);
+    spawnEnemyClusters(rw, room.enemies, 2, levelRng, difficultyMult);
     FP.recordLoadPhaseStep('Resident:phaseC', import.meta.env?.DEV ? performance.now() - _t : 0);
   }
 
@@ -395,7 +397,8 @@ export function* createResidentBuildGenerator(
         ` bgBlocks=${bgBlockCount} occupiedCells=${occupiedCells} (${sparsePct}%)`,
       );
     }
-    spawnEnemyClusters(rw, room.enemies, 2, levelRng);
+    const difficultyMult = room.difficultyMultiplier ?? getWorldDifficultyMultiplier(room.worldNumber);
+    spawnEnemyClusters(rw, room.enemies, 2, levelRng, difficultyMult);
     if (import.meta.env?.DEV) {
       const _ms = performance.now() - _t;
       FP.recordLoadPhaseStep('Resident:phaseC', _ms);

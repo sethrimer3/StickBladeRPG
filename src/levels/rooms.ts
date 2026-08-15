@@ -73,6 +73,7 @@ export function getLoadedOfficialPackedCampaign(): SavedCampaignV1 | null {
 /** World id → display name. Populated from room world ids. */
 const worldNamesMap = new Map<number, string>();
 const worldOrderMap = new Map<number, number>();
+const worldDifficultyMap = new Map<number, number>();
 
 /** Room id → visual map position (map world units). */
 const worldMapPositions = new Map<string, { mapX: number; mapY: number }>();
@@ -86,6 +87,8 @@ const roomWorldOverridesMap = new Map<string, number>();
 /** World id → display name (read-only view). */
 export const WORLD_NAMES: ReadonlyMap<number, string> = worldNamesMap;
 export const WORLD_ORDER: ReadonlyMap<number, number> = worldOrderMap;
+/** World id → difficulty multiplier (read-only view). */
+export const WORLD_DIFFICULTY: ReadonlyMap<number, number> = worldDifficultyMap;
 /** Room id → visual map position (read-only view). */
 export const WORLD_MAP_POSITIONS: ReadonlyMap<string, { mapX: number; mapY: number }> = worldMapPositions;
 /** Room id → name override (read-only view). */
@@ -99,10 +102,22 @@ export const ROOM_WORLD_OVERRIDES: ReadonlyMap<string, number> = roomWorldOverri
 export function setWorldName(worldId: number, name: string): void {
   worldNamesMap.set(worldId, name);
   if (!worldOrderMap.has(worldId)) worldOrderMap.set(worldId, worldOrderMap.size);
+  if (!worldDifficultyMap.has(worldId)) worldDifficultyMap.set(worldId, 1);
 }
 
 export function setWorldOrder(worldId: number, order: number): void {
   worldOrderMap.set(worldId, order);
+}
+
+/** Sets the difficulty multiplier for a world/zone id. */
+export function setWorldDifficulty(worldId: number, multiplier: number): void {
+  const clamped = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
+  worldDifficultyMap.set(worldId, clamped);
+}
+
+/** Gets the difficulty multiplier for a world/zone id, defaulting to 1. */
+export function getWorldDifficultyMultiplier(worldId: number): number {
+  return worldDifficultyMap.get(worldId) ?? 1;
 }
 
 /** Sets the visual map position for a room. */
@@ -171,6 +186,7 @@ export function registerRoom(room: RoomDef): void {
     worldNamesMap.set(room.worldNumber, `World ${room.worldNumber}`);
   }
   if (!worldOrderMap.has(room.worldNumber)) worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+  if (!worldDifficultyMap.has(room.worldNumber)) worldDifficultyMap.set(room.worldNumber, 1);
 }
 
 /**
@@ -194,7 +210,7 @@ export function unregisterRoom(roomId: string): void {
  *
  * Primary path: loads from the canonical packed campaign file
  * `ASSETS/CAMPAIGNS/STICKBLADE_CAMPAIGN/StickbladeCampaign.sbcampaign.json`.
- * World-map metadata (world names, map positions) is read from the campaign file.
+ * World-map metadata (world names, map positions, difficulty multipliers) is read from the campaign file.
  *
  * Fallback: if the packed file is unavailable or invalid, falls back to loading
  * individual room JSON files from `CAMPAIGNS/STICKBLADE_CAMPAIGN/ROOMS/`.
@@ -205,6 +221,7 @@ export async function initRoomRegistry(): Promise<void> {
   registryMap.clear();
   worldNamesMap.clear();
   worldOrderMap.clear();
+  worldDifficultyMap.clear();
   worldMapPositions.clear();
   roomNameOverridesMap.clear();
   roomWorldOverridesMap.clear();
@@ -224,12 +241,18 @@ export async function initRoomRegistry(): Promise<void> {
       const world = packedCampaign.worldMap.worlds[worldIndex];
       worldNamesMap.set(world.id, world.name);
       worldOrderMap.set(world.id, world.order ?? worldIndex);
+      worldDifficultyMap.set(world.id, world.difficultyMultiplier ?? 1);
     }
     for (const [, room] of rooms) {
       if (!worldNamesMap.has(room.worldNumber)) {
         worldNamesMap.set(room.worldNumber, `World ${room.worldNumber}`);
       }
-      if (!worldOrderMap.has(room.worldNumber)) worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+      if (!worldOrderMap.has(room.worldNumber)) {
+        worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+      }
+      if (!worldDifficultyMap.has(room.worldNumber)) {
+        worldDifficultyMap.set(room.worldNumber, 1);
+      }
     }
     loadedOfficialCampaignRevisionMetadata = packedCampaign.metadata ?? null;
     loadedOfficialCampaignSpawn = packedCampaign.campaign.campaignSpawn ?? null;
@@ -253,6 +276,7 @@ export async function initRoomRegistry(): Promise<void> {
     worldMapPositions.set(id, { mapX: room.mapX, mapY: room.mapY });
     worldNamesMap.set(room.worldNumber, worldNamesMap.get(room.worldNumber) ?? `World ${room.worldNumber}`);
     if (!worldOrderMap.has(room.worldNumber)) worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+    if (!worldDifficultyMap.has(room.worldNumber)) worldDifficultyMap.set(room.worldNumber, 1);
   }
   console.log(`[rooms] Loaded ${registryMap.size} rooms from individual JSON files (fallback)`);
 }
@@ -263,6 +287,7 @@ export async function initRoomRegistry(): Promise<void> {
 let mainCampaignSnapshot: Map<string, RoomDef> | null = null;
 let mainWorldNamesSnapshot: Map<number, string> | null = null;
 let mainWorldOrderSnapshot: Map<number, number> | null = null;
+let mainWorldDifficultySnapshot: Map<number, number> | null = null;
 let mainWorldMapPositionsSnapshot: Map<string, { mapX: number; mapY: number }> | null = null;
 
 /**
@@ -275,6 +300,7 @@ export function captureMainCampaignSnapshot(): void {
   mainCampaignSnapshot = new Map(registryMap);
   mainWorldNamesSnapshot = new Map(worldNamesMap);
   mainWorldOrderSnapshot = new Map(worldOrderMap);
+  mainWorldDifficultySnapshot = new Map(worldDifficultyMap);
   mainWorldMapPositionsSnapshot = new Map(worldMapPositions);
 }
 
@@ -285,16 +311,18 @@ export function captureMainCampaignSnapshot(): void {
  * No-op if no snapshot has been captured.
  */
 export function restoreMainCampaignSnapshot(): void {
-  if (!mainCampaignSnapshot || !mainWorldNamesSnapshot || !mainWorldOrderSnapshot || !mainWorldMapPositionsSnapshot) return;
+  if (!mainCampaignSnapshot || !mainWorldNamesSnapshot || !mainWorldOrderSnapshot || !mainWorldDifficultySnapshot || !mainWorldMapPositionsSnapshot) return;
   registryMap.clear();
   worldNamesMap.clear();
   worldOrderMap.clear();
+  worldDifficultyMap.clear();
   worldMapPositions.clear();
   roomNameOverridesMap.clear();
   roomWorldOverridesMap.clear();
   for (const [k, v] of mainCampaignSnapshot) registryMap.set(k, v);
   for (const [k, v] of mainWorldNamesSnapshot) worldNamesMap.set(k, v);
   for (const [k, v] of mainWorldOrderSnapshot) worldOrderMap.set(k, v);
+  for (const [k, v] of mainWorldDifficultySnapshot) worldDifficultyMap.set(k, v);
   for (const [k, v] of mainWorldMapPositionsSnapshot) worldMapPositions.set(k, v);
 }
 
@@ -318,6 +346,7 @@ export function clearRegistryAndApplyCampaignMetadata(campaign: SavedCampaignV1)
   registryMap.clear();
   worldNamesMap.clear();
   worldOrderMap.clear();
+  worldDifficultyMap.clear();
   worldMapPositions.clear();
   roomNameOverridesMap.clear();
   roomWorldOverridesMap.clear();
@@ -329,6 +358,7 @@ export function clearRegistryAndApplyCampaignMetadata(campaign: SavedCampaignV1)
     const world = campaign.worldMap.worlds[worldIndex];
     worldNamesMap.set(world.id, world.name);
     worldOrderMap.set(world.id, world.order ?? worldIndex);
+    worldDifficultyMap.set(world.id, world.difficultyMultiplier ?? 1);
   }
 
   // Populate world map positions from the campaign's worldMap.rooms so that
@@ -364,6 +394,7 @@ export function registerRoomsFromPackedCampaign(campaign: SavedCampaignV1): void
   registryMap.clear();
   worldNamesMap.clear();
   worldOrderMap.clear();
+  worldDifficultyMap.clear();
   worldMapPositions.clear();
   roomNameOverridesMap.clear();
   roomWorldOverridesMap.clear();
@@ -379,13 +410,19 @@ export function registerRoomsFromPackedCampaign(campaign: SavedCampaignV1): void
     const world = campaign.worldMap.worlds[worldIndex];
     worldNamesMap.set(world.id, world.name);
     worldOrderMap.set(world.id, world.order ?? worldIndex);
+    worldDifficultyMap.set(world.id, world.difficultyMultiplier ?? 1);
   }
   // Fill gaps for any worlds referenced by rooms but missing from worldMap.worlds.
   for (const [, room] of rooms) {
     if (!worldNamesMap.has(room.worldNumber)) {
       worldNamesMap.set(room.worldNumber, `World ${room.worldNumber}`);
     }
-    if (!worldOrderMap.has(room.worldNumber)) worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+    if (!worldOrderMap.has(room.worldNumber)) {
+      worldOrderMap.set(room.worldNumber, worldOrderMap.size);
+    }
+    if (!worldDifficultyMap.has(room.worldNumber)) {
+      worldDifficultyMap.set(room.worldNumber, 1);
+    }
   }
 
   console.log(`[rooms] Registered ${registryMap.size} rooms from packed campaign "${campaign.campaign.id}"`);

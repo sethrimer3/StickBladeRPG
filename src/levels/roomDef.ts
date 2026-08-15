@@ -648,6 +648,11 @@ export interface RoomDef {
   name: string;
   /** World number — determines block sprites and background colour. */
   worldNumber: number;
+  /**
+   * Optional difficulty multiplier for enemies in this room.
+   * Falls back to zone difficulty multiplier if unset.
+   */
+  difficultyMultiplier?: number;
   /** X position on the visual world map (map world units). */
   mapX: number;
   /** Y position on the visual world map (map world units). */

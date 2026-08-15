@@ -74,27 +74,32 @@ describe('world map topology data', () => {
   });
 });
 
+import { setWorldDifficulty, getWorldDifficultyMultiplier } from '../levels/rooms';
+
 describe('difficulty multiplier calculations', () => {
-  test('matches canonical donor scaling rules', () => {
-    // Stage 1-1 -> (1-1)*5 + 1 = 1
+  test('resolves zone-based difficulty multipliers and explicit overrides', () => {
+    // Default zone difficulty is 1
     assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 1, levelNumber: 1 }), 1);
+    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 2 }), 1);
 
-    // Stage 1-5 -> (1-1)*5 + 5 = 5
-    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 1, levelNumber: 5 }), 5);
+    // Custom zone difficulty multiplier
+    setWorldDifficulty(5, 2.5);
+    assert.equal(getWorldDifficultyMultiplier(5), 2.5);
+    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 5, levelNumber: 1 }), 2.5);
 
-    // Stage 5-1 -> (5-1)*5 + 1 = 21
-    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 5, levelNumber: 1 }), 21);
+    // Map node resolves from zone
+    const node53 = findWorldMapNode('5-3');
+    assert.equal(computeLevelDifficultyMultiplier({ mapNode: node53 }), 2.5);
 
-    // Stage 8-5 -> (8-1)*5 + 5 = 40
-    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 8, levelNumber: 5 }), 40);
+    // Explicit difficultyMultiplier on def takes highest precedence
+    assert.equal(computeLevelDifficultyMultiplier({ worldNumber: 5, difficultyMultiplier: 4 }), 4);
 
     // Special trials
     assert.equal(computeLevelDifficultyMultiplier({ id: 'canopySentinelTrial' }), 10);
     assert.equal(computeLevelDifficultyMultiplier({ name: 'Chronoglass Expanse' }), 50);
 
-    // Map node overrides
-    const node53 = findWorldMapNode('5-3');
-    assert.equal(computeLevelDifficultyMultiplier({ mapNode: node53 }), 23);
+    // Reset zone 5 difficulty for subsequent tests
+    setWorldDifficulty(5, 1);
   });
 });
 
@@ -137,7 +142,7 @@ describe('level instantiation from map nodes', () => {
     assert.equal(level.enemies.length >= 1, true);
     assert.equal(level.enemies[0].isBossFlag, 1);
     assert.equal(level.boss?.name, 'Ignis Archon');
-    assert.equal(level.difficultyMultiplier, 15);
+    assert.equal(level.difficultyMultiplier, 1);
     assert.equal(level.walls.length >= 4, true);
     assert.equal(level.entryDoor.target, 'next');
     assert.equal(level.exitDoor.target, 'menu');

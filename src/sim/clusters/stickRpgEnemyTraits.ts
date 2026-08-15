@@ -502,14 +502,14 @@ export function isStickRpgEnemyKind(kind: string): kind is StickRpgEnemyKind {
   return kind in STICK_RPG_ENEMY_TRAITS;
 }
 
-/** Calculate scaled enemy XP drop based on trait base XP and difficulty level. */
-export function computeEnemyXpDrop(trait: StickRpgEnemyTrait, level: number = 1): number {
-  const scale = 1 + Math.max(0, level - 1) * 0.15;
-  return Math.round(trait.baseXp * scale);
+/** Calculate scaled enemy XP drop based on trait base XP and difficulty multiplier. */
+export function computeEnemyXpDrop(trait: StickRpgEnemyTrait, difficulty: number = 1): number {
+  const mult = Number.isFinite(difficulty) && difficulty > 0 ? difficulty : 1;
+  return Math.max(1, Math.round(trait.baseXp * mult));
 }
 
-/** Calculate scaled enemy coin drop based on trait base coins and difficulty level. */
-export function computeEnemyCoinDrop(trait: StickRpgEnemyTrait, level: number = 1): number {
-  const scale = 1 + Math.max(0, level - 1) * 0.1;
-  return Math.round(trait.baseCoins * scale);
+/** Calculate scaled enemy coin drop based on trait base coins and difficulty multiplier. */
+export function computeEnemyCoinDrop(trait: StickRpgEnemyTrait, difficulty: number = 1): number {
+  const mult = Number.isFinite(difficulty) && difficulty > 0 ? difficulty : 1;
+  return Math.max(1, Math.round(trait.baseCoins * mult));
 }

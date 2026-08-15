@@ -69,7 +69,7 @@ import { transitionLinkWarningMessage } from './transitionValidation';
 import { exportRoomAsJson, exportAllChanges, exportCampaignJson, exportMainCampaignJson } from './editorExport';
 import {
   ROOM_REGISTRY, registerRoom, unregisterRoom, getLoadedOfficialCampaignSpawn,
-  WORLD_NAMES, WORLD_ORDER, WORLD_MAP_POSITIONS,
+  WORLD_NAMES, WORLD_ORDER, WORLD_DIFFICULTY, WORLD_MAP_POSITIONS,
   setRoomNameOverride, setRoomWorldOverride, setRoomMapPosition, setRoomTransitionLink,
 } from '../levels/rooms';
 import { loadRoomForGameplayAsync } from '../levels/roomFileLoader';
@@ -437,7 +437,7 @@ export function createEditorController(
     hasUnexportedChanges = true;
     const store = campaignSession?.campaignStore;
     if (store === undefined) return;
-    store.updateWorldMap(mergeWorldMapWithRegistry(campaignSession!, WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER));
+    store.updateWorldMap(mergeWorldMapWithRegistry(campaignSession!, WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER, WORLD_DIFFICULTY));
   }
 
   // Edge extension cache rebuilt whenever a new room is loaded into the editor.
@@ -667,7 +667,7 @@ export function createEditorController(
       roomById.set(state.roomData.id, dehydrateRoom(editorRoomDataToJson(state.roomData)));
     }
 
-    const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER);
+    const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER, WORLD_DIFFICULTY);
     const worldMapRoomById = new Map(worldMap.rooms.map(room => [room.id, room]));
     const rooms: SavedRoomV2[] = [];
     for (const [roomId, room] of roomById) {

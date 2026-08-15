@@ -43,7 +43,7 @@ import type { AtmosphericLightDust } from '../render/effects/atmosphericLightDus
 import type { GuideDustPathRenderer } from '../render/effects/guideDustPathRenderer';
 import { RoomDef, BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL } from '../levels/roomDef';
 import { buildRoomAmbientBlockerKeys } from '../levels/roomAmbientBlockers';
-import { ROOM_REGISTRY } from '../levels/rooms';
+import { ROOM_REGISTRY, getWorldDifficultyMultiplier } from '../levels/rooms';
 import type { CameraState } from '../render/camera';
 import { snapCamera } from '../render/camera';
 import {
@@ -820,7 +820,8 @@ export function* makeLoadRoomPhases(
         ` bgBlocks=${bgBlockCount} occupiedCells=${occupiedCells} (${sparsePct}%)`,
       );
     }
-    spawnEnemyClusters(world, room.enemies, 2, levelRng);
+    const difficultyMult = room.difficultyMultiplier ?? getWorldDifficultyMultiplier(room.worldNumber);
+    spawnEnemyClusters(world, room.enemies, 2, levelRng, difficultyMult);
     FP.recordLoadPhaseStep('C:enemySpawn', import.meta.env.DEV ? performance.now() - _t0 : 0);
   }
 

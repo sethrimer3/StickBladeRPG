@@ -24,7 +24,7 @@ import {
 import { getLoadedOfficialCampaignRevisionMetadata, getLoadedOfficialPackedCampaign } from '../levels/rooms';
 import type { EditableCampaignSession } from './editableCampaignSession';
 import { assembleExportCampaign, buildAuthoritativeCampaignExport, buildWorldMapFromRegistry } from './editableCampaignSession';
-import { WORLD_NAMES, WORLD_ORDER } from '../levels/rooms';
+import { WORLD_NAMES, WORLD_ORDER, WORLD_DIFFICULTY } from '../levels/rooms';
 import { BUILD_NUMBER } from '../build-info';
 import { createExportProgressModal } from './editorExportProgressModal';
 import { resolveExportOutcomeEvent } from './exportOutcome';
@@ -395,6 +395,7 @@ export async function exportCampaignJson(
         WORLD_NAMES,
         WORLD_ORDER,
         customBlockDefs,
+        WORLD_DIFFICULTY,
       );
     } else {
       if (import.meta.env.DEV) {
@@ -407,7 +408,7 @@ export async function exportCampaignJson(
           }
         }
       }
-      const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER);
+      const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER, WORLD_DIFFICULTY);
       exported = assembleExportCampaign(session, pendingRoomEdits, ROOM_REGISTRY, worldMap);
     }
     const expectedIds = session.campaignStore !== undefined
@@ -508,7 +509,7 @@ export async function exportMainCampaignJson(
           return dehydrateRoom(editorRoomDataToJson(data));
         });
 
-    const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER);
+    const worldMap = buildWorldMapFromRegistry(WORLD_NAMES, ROOM_REGISTRY, WORLD_ORDER, WORLD_DIFFICULTY);
     const loadedRevMeta = getLoadedOfficialCampaignRevisionMetadata();
     const syntheticSession: EditableCampaignSession = {
       source: 'main',

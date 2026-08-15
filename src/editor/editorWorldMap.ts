@@ -18,6 +18,8 @@ import {
   ROOM_WORLD_OVERRIDES,
   setWorldName,
   setWorldOrder,
+  setWorldDifficulty,
+  getWorldDifficultyMultiplier,
   setRoomNameOverride,
   setRoomWorldOverride,
   registerRoom,
@@ -144,13 +146,39 @@ export function showEditorWorldMap(
         margin: 12px 0 6px 0; border-bottom: 1px solid ${PANEL_BORDER}; padding-bottom: 4px;
       `;
 
+      const diffMult = getWorldDifficultyMultiplier(worldNum);
+      const diffSuffix = diffMult !== 1 ? ` (×${diffMult})` : '';
       const worldLabelEl = document.createElement('span');
-      worldLabelEl.textContent = worldDisplayName(worldNum);
+      worldLabelEl.textContent = `${worldDisplayName(worldNum)}${diffSuffix}`;
       worldLabelEl.style.cssText = `color: ${ACCENT_GOLD}; font-size: 13px; font-family: 'Cinzel', serif; flex: 1;`;
       worldRow.appendChild(worldLabelEl);
 
       // Rename world button
       if (!isLinkMode) {
+        const diffBtn = document.createElement('button');
+        diffBtn.textContent = `×${diffMult}`;
+        diffBtn.title = 'Edit zone difficulty multiplier (scales all enemy stats)';
+        diffBtn.style.cssText = `
+          background: transparent; color: rgba(255,200,100,0.85);
+          border: 1px solid rgba(255,200,100,0.4); border-radius: 3px;
+          font-size: 10px; cursor: pointer; padding: 1px 5px;
+        `;
+        diffBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const currentDiff = getWorldDifficultyMultiplier(worldNum);
+          const newDiffStr = window.prompt(`Difficulty multiplier for zone "${worldDisplayName(worldNum)}" (e.g. 1.0, 1.5, 2.0):`, String(currentDiff));
+          if (newDiffStr !== null) {
+            const parsed = parseFloat(newDiffStr.trim());
+            if (Number.isFinite(parsed) && parsed > 0) {
+              setWorldDifficulty(worldNum, parsed);
+              callbacks.onWorldMapDataChanged?.();
+              rebuildList();
+            }
+          }
+        });
+        worldRow.appendChild(diffBtn);
+
         const renameWorldBtn = document.createElement('button');
         renameWorldBtn.textContent = '\u270f';
         renameWorldBtn.title = 'Rename zone';
@@ -622,6 +650,24 @@ export function showEditorWorldMap(
     `;
     modal.appendChild(nameInput2);
 
+    const diffLbl = document.createElement('label');
+    diffLbl.textContent = 'Difficulty Multiplier (scales all enemy stats):';
+    diffLbl.style.cssText = 'display: block; color: rgba(241,231,203,0.6); font-size: 11px; margin-bottom: 4px; font-family: monospace;';
+    modal.appendChild(diffLbl);
+
+    const diffInput = document.createElement('input');
+    diffInput.type = 'number';
+    diffInput.step = '0.1';
+    diffInput.min = '0.1';
+    diffInput.value = '1';
+    diffInput.style.cssText = `
+      width: 100%; box-sizing: border-box; padding: 5px 8px;
+      background: rgba(20,20,30,0.9); color: ${TEXT_COLOR};
+      border: 1px solid rgba(212,168,75,0.4); border-radius: 3px;
+      font-family: monospace; font-size: 12px; margin-bottom: 12px;
+    `;
+    modal.appendChild(diffInput);
+
     const btnRow3 = document.createElement('div');
     btnRow3.style.cssText = 'display: flex; gap: 8px;';
 
@@ -634,8 +680,11 @@ export function showEditorWorldMap(
     `;
     createBtn3.addEventListener('click', () => {
       const name = nameInput2.value.trim() || `Zone ${nextId}`;
+      const diffVal = parseFloat(diffInput.value.trim());
+      const diff = Number.isFinite(diffVal) && diffVal > 0 ? diffVal : 1;
       setWorldName(nextId, name);
       setWorldOrder(nextId, sortedZoneIds(WORLD_NAMES.keys()).length);
+      setWorldDifficulty(nextId, diff);
       callbacks.onWorldMapDataChanged?.();
       if (backdrop.parentElement) backdrop.parentElement.removeChild(backdrop);
       rebuildList();

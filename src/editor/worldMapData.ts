@@ -17,6 +17,8 @@ export interface WorldMapWorldEntry {
   name: string;
   /** Display order in editor lists. Lower values appear first. */
   order?: number;
+  /** Optional difficulty multiplier for this zone. Scales all enemy stats. Defaults to 1. */
+  difficultyMultiplier?: number;
 }
 
 export interface WorldMapRoomEntry {

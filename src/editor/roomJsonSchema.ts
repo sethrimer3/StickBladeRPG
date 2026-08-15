@@ -467,6 +467,8 @@ export interface RoomJsonDef {
   id: string;
   name: string;
   worldNumber: number;
+  /** Optional difficulty multiplier for this room. Falls back to zone multiplier if unset. */
+  difficultyMultiplier?: number;
   /** X position on the visual world map (map world units). */
   mapX?: number;
   /** Y position on the visual world map (map world units). */

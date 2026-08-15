@@ -318,6 +318,7 @@ export interface SavedRoomV2 {
   id: string;
   name: string;
   world: number;
+  difficultyMultiplier?: number;
   /** [mapX, mapY] */
   map?: [number, number];
   theme?: BlockThemeId | BlockTheme;

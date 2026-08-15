@@ -458,6 +458,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
     transitions,
     skillTombs,
   };
+  if (saved.difficultyMultiplier !== undefined) json.difficultyMultiplier = saved.difficultyMultiplier;
   if (saved.challengeFields) json.challengeFields = saved.challengeFields.map(([uid, xBlock, yBlock, wBlock, hBlock]) => ({ uid, xBlock, yBlock, wBlock, hBlock }));
   if (saved.challengeGates) json.challengeGates = saved.challengeGates.map(([uid, xBlock, yBlock, wBlock, hBlock]) => ({ uid, xBlock, yBlock, wBlock, hBlock }));
   if (saved.challengeTotems) json.challengeTotems = saved.challengeTotems.map(([uid, xBlock, yBlock]) => ({ uid, xBlock, yBlock }));

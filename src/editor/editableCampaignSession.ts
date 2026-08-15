@@ -266,16 +266,19 @@ export function buildWorldMapFromRegistry(
   worldNames: ReadonlyMap<number, string>,
   registryRooms: ReadonlyMap<string, { id: string; name: string; worldNumber: number; mapX: number; mapY: number }>,
   worldOrder?: ReadonlyMap<number, number>,
+  worldDifficulty?: ReadonlyMap<number, number>,
 ): WorldMapJsonDef {
   const worldsMap = new Map<number, WorldMapWorldEntry>();
   const rooms: WorldMapRoomEntry[] = [];
 
   for (const [, room] of registryRooms) {
     if (!worldsMap.has(room.worldNumber)) {
+      const diff = worldDifficulty?.get(room.worldNumber);
       worldsMap.set(room.worldNumber, {
         id: room.worldNumber,
         name: worldNames.get(room.worldNumber) ?? `World ${room.worldNumber}`,
         order: worldOrder?.get(room.worldNumber) ?? worldsMap.size,
+        ...(diff !== undefined && diff !== 1 ? { difficultyMultiplier: diff } : {}),
       });
     }
     rooms.push({
@@ -301,11 +304,19 @@ export function mergeWorldMapWithRegistry(
   worldNames: ReadonlyMap<number, string>,
   registryRooms: ReadonlyMap<string, { id: string; name: string; worldNumber: number; mapX: number; mapY: number }>,
   worldOrder?: ReadonlyMap<number, number>,
+  worldDifficulty?: ReadonlyMap<number, number>,
 ): WorldMapJsonDef {
-  const registryMap = buildWorldMapFromRegistry(worldNames, registryRooms, worldOrder);
+  const registryMap = buildWorldMapFromRegistry(worldNames, registryRooms, worldOrder, worldDifficulty);
   const worldsById = new Map(session.campaignStore?.worldMap.worlds.map(world => [world.id, world])
     ?? session.campaign.worldMap.worlds.map(world => [world.id, world]));
-  for (const world of registryMap.worlds) worldsById.set(world.id, world);
+  for (const world of registryMap.worlds) {
+    const existing = worldsById.get(world.id);
+    worldsById.set(world.id, {
+      ...existing,
+      ...world,
+      difficultyMultiplier: world.difficultyMultiplier ?? existing?.difficultyMultiplier,
+    });
+  }
   const roomsById = new Map(session.campaignStore?.worldMap.rooms.map(room => [room.id, room])
     ?? session.campaign.worldMap.rooms.map(room => [room.id, room]));
   for (const room of registryMap.rooms) roomsById.set(room.id, room);
@@ -321,11 +332,12 @@ export function buildAuthoritativeCampaignExport(
   worldNames: ReadonlyMap<number, string>,
   worldOrder?: ReadonlyMap<number, number>,
   customBlockDefs?: SavedCampaignV1['customBlockDefs'],
+  worldDifficulty?: ReadonlyMap<number, number>,
 ): SavedCampaignV1 {
   const store = session.campaignStore;
   if (store === undefined) {
     throw new Error('Authoritative campaign export requires a CampaignStore.');
   }
-  store.updateWorldMap(mergeWorldMapWithRegistry(session, worldNames, registryRooms, worldOrder));
+  store.updateWorldMap(mergeWorldMapWithRegistry(session, worldNames, registryRooms, worldOrder, worldDifficulty));
   return store.buildExportCampaign(session.campaign, customBlockDefs);
 }

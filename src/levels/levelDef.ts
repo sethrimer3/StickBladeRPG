@@ -100,13 +100,16 @@ export interface LevelDef {
   unlockRequires?: readonly string[] | string[];
 }
 
-const STAGES_PER_WORLD = 5;
+import { getWorldDifficultyMultiplier } from './rooms';
 
 /**
- * Computes level difficulty scaling multiplier ported from STICK-RPG.
+ * Computes level/zone difficulty scaling multiplier.
  */
 export function computeLevelDifficultyMultiplier(def: Partial<LevelDef>): number {
   if (!def) return 1;
+  if (typeof def.difficultyMultiplier === 'number' && Number.isFinite(def.difficultyMultiplier) && def.difficultyMultiplier > 0) {
+    return def.difficultyMultiplier;
+  }
   const id = def.id ?? '';
   const name = def.name ?? '';
 
@@ -121,27 +124,22 @@ export function computeLevelDifficultyMultiplier(def: Partial<LevelDef>): number
   if (map) {
     if (map.branch) {
       const match = /^world(\d+)$/.exec(map.branch);
-      if (match && Number.isFinite(map.branchStep)) {
+      if (match) {
         const worldNum = parseInt(match[1], 10);
-        const stageIndex = Math.max(1, Math.floor(map.branchStep ?? 1));
-        const base = (worldNum - 1) * STAGES_PER_WORLD + stageIndex;
-        if (Number.isFinite(base) && base > 0) return base;
+        return getWorldDifficultyMultiplier(worldNum);
       }
     }
     if (map.stageCode) {
       const match = /^(\d+)-(\d+)$/.exec(map.stageCode);
       if (match) {
         const w = parseInt(match[1], 10);
-        const s = parseInt(match[2], 10);
-        const base = (w - 1) * STAGES_PER_WORLD + s;
-        if (Number.isFinite(base) && base > 0) return base;
+        return getWorldDifficultyMultiplier(w);
       }
     }
   }
 
-  if (Number.isFinite(def.worldNumber) && Number.isFinite(def.levelNumber)) {
-    const base = ((def.worldNumber ?? 1) - 1) * STAGES_PER_WORLD + (def.levelNumber ?? 1);
-    if (Number.isFinite(base) && base > 0) return base;
+  if (Number.isFinite(def.worldNumber)) {
+    return getWorldDifficultyMultiplier(def.worldNumber!);
   }
 
   return 1;

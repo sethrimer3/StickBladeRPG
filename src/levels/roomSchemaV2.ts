@@ -444,6 +444,9 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
     solids,
   };
 
+  if (json.difficultyMultiplier !== undefined && json.difficultyMultiplier !== 1) {
+    out.difficultyMultiplier = json.difficultyMultiplier;
+  }
   if (json.mapX !== undefined || json.mapY !== undefined) out.map = [json.mapX ?? 0, json.mapY ?? 0];
   out.theme = blockThemeToId(defaultTheme);
   if (json.backgroundId)   out.bg = json.backgroundId;
