@@ -33,6 +33,8 @@ import {
   TOP_BAR_HEIGHT_PX,
 } from '../render/hud/playerTopBar';
 import { getEquippedWeaponDef } from '../sim/weapons/playerWeaponState';
+import { getWeaponResourceKind } from '../sim/weapons/weaponResources';
+import { drawPlayerOverheadBars } from '../render/hud/playerStatusBars';
 import { formatRunTimer } from '../progression/saveSlots';
 import { drawChallengeHudShield } from '../render/challengeElementRenderer';
 import { getSpeedrunTimerEnabled } from '../ui/renderSettings';
@@ -360,8 +362,28 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
     // Update tracked health for next frame.
     prevHealthMap.set(cluster.entityId, cluster.healthPoints);
 
-    // Player health bar is in the HUD; skip per-character bar for player.
-    if (cluster.isPlayerFlag === 1) continue;
+    // The player gets the health + resource pair from `playerStatusBars`
+    // rather than the enemy bar below, so it can carry the resource bar and the
+    // specified color ramp.
+    if (cluster.isPlayerFlag === 1) {
+      const playerResourceKind = getWeaponResourceKind(getEquippedWeaponDef(world.playerWeapon));
+      drawPlayerOverheadBars(
+        ctx,
+        {
+          positionXWorld: cluster.positionXWorld,
+          positionYWorld: cluster.positionYWorld,
+          halfHeightWorld: cluster.halfHeightWorld,
+          healthPoints: cluster.healthPoints,
+          maxHealthPoints: cluster.maxHealthPoints,
+          resourceKind: playerResourceKind,
+          resourcePool: playerResourceKind !== null
+            ? world.playerWeapon.resources[playerResourceKind]
+            : null,
+        },
+        ox, oy, zoom,
+      );
+      continue;
+    }
 
     const healthFraction = cluster.healthPoints / cluster.maxHealthPoints;
     const healthBarAlpha = getHealthBarAlpha(
