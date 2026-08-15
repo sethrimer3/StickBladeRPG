@@ -36,6 +36,7 @@ function _warnOnce(id: string, msg: string): void {
 const ITEM_SPRITE_URL: Readonly<Record<string, string>> = Object.freeze({
   // Enemies with sprite assets
   enemy_rolling:         'SPRITES/ENEMIES/goldenBlock/goldenBlock.png',
+  enemy_slime:           'SPRITES/ENEMIES/GreenSlime/GreenSlime.png',
   enemy_rock_elemental:  'SPRITES/ENEMIES/earthElemental/earthElemental_head_deactivated.png',
   enemy_beetle:          'SPRITES/ENEMIES/goldenBeetle/goldenBeetle_walking.png',
   enemy_radiant_tether:  'SPRITES/ENEMIES/radiantTeather/radiantTether_flying.png',
@@ -69,10 +70,6 @@ const ITEM_VISUAL: Readonly<Record<string, ProceduralVisual>> = Object.freeze({
     bg: '#1a3a88',
     extraCss: `clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);`,
     glyph: '◈',
-  },
-  enemy_slime: {
-    bg: '#2a8a2a',
-    extraCss: `border-radius: 50% 50% 45% 45%;`,
   },
   enemy_slime_large: {
     bg: '#26a026',

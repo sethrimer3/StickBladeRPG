@@ -134,8 +134,8 @@ import { spawnLoadoutParticles } from './gameSpawn';
 /** Boss clusters receive this multiplier on their base HP for extra durability. */
 export const BOSS_HP_MULTIPLIER = 2;
 
-/** Initial hop delay for slime enemies (ticks). */
-export const SLIME_HOP_INTERVAL_INITIAL_TICKS = 30;
+/** Initial hop delay for slime enemies (ticks) — 3.0 seconds at 60Hz. */
+export const SLIME_HOP_INTERVAL_INITIAL_TICKS = 180;
 /** Initial hop delay for large slime enemies (ticks). */
 export const LARGE_SLIME_HOP_INTERVAL_INITIAL_TICKS = 45;
 

@@ -40,6 +40,7 @@ import {
   renderGoldenMimic,
   renderRollingEnemy,
   renderRockElemental,
+  renderGreenSlime,
   renderSlimeBody,
   renderLargeSlimeDustOrbit,
   renderWheelEnemy,
@@ -504,9 +505,10 @@ export function renderClusters(
       }
 
     } else if (cluster.isSlimeFlag === 1) {
-      // ── Slime: green blob circle ──────────────────────────────────────────
+      // ── Slime: 16×16 green slime sprite ──────────────────────────────────
       const healthRatio = cluster.maxHealthPoints > 0 ? cluster.healthPoints / cluster.maxHealthPoints : 1;
-      renderSlimeBody(ctx, screenX, screenY, boxHalfW, false, healthRatio);
+      const isFacingLeft = cluster.isFacingLeftFlag === 1;
+      renderGreenSlime(ctx, screenX, screenY, boxHalfW, boxHalfH, isFacingLeft, healthRatio);
     } else if (cluster.isLargeSlimeFlag === 1) {
       // ── Large Dust Slime: larger green blob with orbiting dust ────────────
       const healthRatio = cluster.maxHealthPoints > 0 ? cluster.healthPoints / cluster.maxHealthPoints : 1;

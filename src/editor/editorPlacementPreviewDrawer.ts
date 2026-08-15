@@ -48,6 +48,7 @@ import { THEME_BLOCK_SPRITE_URL } from './editorUIHelpers';
  */
 const PLACEMENT_SPRITE_URLS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   enemy_rolling:         ['SPRITES/ENEMIES/goldenBlock/goldenBlock.png'],
+  enemy_slime:           ['SPRITES/ENEMIES/GreenSlime/GreenSlime.png'],
   enemy_rock_elemental:  [
     'SPRITES/ENEMIES/earthElemental/earthElemental_head_deactivated.png',
     'SPRITES/ENEMIES/earthElemental/earthElemental_head_activated.png',

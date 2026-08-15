@@ -28,6 +28,11 @@ import {
 /** Golden block enemy sprite (16×16 source art). */
 const _goldenBlockSprite = loadImg('SPRITES/ENEMIES/goldenBlock/goldenBlock.png');
 
+// ── Slime sprites ────────────────────────────────────────────────────────────
+
+/** Green slime enemy sprite (16×16 source art). */
+const _greenSlimeSprite = loadImg('SPRITES/ENEMIES/GreenSlime/GreenSlime.png');
+
 // ── Rock Elemental sprites ───────────────────────────────────────────────────
 
 const _reHeadDeactivated = loadImg('SPRITES/ENEMIES/earthElemental/earthElemental_head_deactivated.png');
@@ -317,6 +322,35 @@ export function renderGoldenMimic(
 }
 
 // ── Slime ────────────────────────────────────────────────────────────────────
+
+/**
+ * Renders the Green Slime enemy using its 16×16 sprite, flipped horizontally
+ * when facing left. Falls back to procedural green blob rendering if the
+ * sprite is still loading.
+ */
+export function renderGreenSlime(
+  ctx: CanvasRenderingContext2D,
+  screenX: number,
+  screenY: number,
+  halfWidthPx: number,
+  halfHeightPx: number,
+  isFacingLeft: boolean,
+  healthRatio: number,
+): void {
+  const drawW = halfWidthPx * 2;
+  const drawH = halfHeightPx * 2;
+  if (isSpriteReady(_greenSlimeSprite)) {
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    if (isFacingLeft) {
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(_greenSlimeSprite, -halfWidthPx, -halfHeightPx, drawW, drawH);
+    ctx.restore();
+  } else {
+    renderSlimeBody(ctx, screenX, screenY, halfWidthPx, false, healthRatio);
+  }
+}
 
 export function renderSlimeBody(
   ctx: CanvasRenderingContext2D,
