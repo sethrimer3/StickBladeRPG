@@ -117,6 +117,12 @@ export function validateRoomJson(data: unknown): ValidationError[] {
       errors.push({ path: 'lightingEffect', message: 'Must be Ambient|DarkRoom|FullyLit (legacy DEFAULT|Above also accepted)' });
     }
   }
+  if (obj.weather !== undefined) {
+    const v = obj.weather;
+    if (v !== 'none' && v !== 'rain') {
+      errors.push({ path: 'weather', message: 'Must be none|rain' });
+    }
+  }
   if (typeof obj.widthBlocks !== 'number' || (obj.widthBlocks as number) < 10) {
     errors.push({ path: 'widthBlocks', message: 'Must be a number >= 10' });
   }

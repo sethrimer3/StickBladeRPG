@@ -8,7 +8,7 @@
  * without modification.
  */
 
-import type { BlockTheme, BlockThemeId, BackgroundId, LightingEffect, TransitionDirection, CrumbleVariant, VoidEdgeStyle } from './roomDef';
+import type { BlockTheme, BlockThemeId, BackgroundId, LightingEffect, TransitionDirection, CrumbleVariant, VoidEdgeStyle, WeatherEffect } from './roomDef';
 import type { RoomJsonLightSource, RoomJsonSunbeam, RoomJsonDialogueTrigger, RoomJsonBakedWallTemplate } from '../editor/roomJson';
 import type { SavedSceneLight } from './lightingSchema';
 export type { SavedRect, SavedRun, SavedPoint, SavedSolidLayer } from './tileGridCompressor';
@@ -327,6 +327,8 @@ export interface SavedRoomV2 {
   /** When true, render the blurred variant of `bg`. Omitted when false. */
   bgBlur?: true;
   light?: LightingEffect;
+  /** Room-level weather effect. Omitted when `'none'` to keep files compact. */
+  weather?: WeatherEffect;
   song?: string;
   /** [widthBlocks, heightBlocks] */
   size: [number, number];

@@ -112,6 +112,12 @@ export type BackgroundId = string;
 export type LightingEffect = 'Ambient' | 'DarkRoom' | 'FullyLit' | 'DEFAULT' | 'Above';
 
 /**
+ * Room-level weather effect: falling rain drops in the foreground plus a
+ * parallax rain background. `'none'` disables both.
+ */
+export type WeatherEffect = 'none' | 'rain';
+
+/**
  * Direction that ambient/skylight arrives from.
  *
  * The solver seeds "lit air" cells by flood-filling from the edge(s) of the
@@ -755,6 +761,11 @@ export interface RoomDef {
   sunbeams?: readonly RoomSunbeamDef[];
   /** Room-level procedural sunrays/god-rays effect (see {@link RoomSunraysDef}). */
   sunrays?: RoomSunraysDef;
+  /**
+   * Room-level weather effect. Defaults to `'none'` when unset.
+   * See {@link WeatherEffect}.
+   */
+  weather?: WeatherEffect;
   /** Designer-placed scene lights (visibility-polygon shadow system). */
   sceneLights?: readonly import('./lightingSchema').LightDef[];
   /** Room width in blocks. */

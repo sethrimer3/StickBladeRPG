@@ -7,7 +7,7 @@
  */
 
 import { ParticleKind } from '../sim/particles/kinds';
-import type { TransitionDirection, BlockTheme, BlockThemeId, BlockSoundHardness, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle } from '../levels/roomDef';
+import type { TransitionDirection, BlockTheme, BlockThemeId, BlockSoundHardness, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle, WeatherEffect } from '../levels/roomDef';
 import type { CompactSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
 
 // ── ParticleKind string mapping ──────────────────────────────────────────────
@@ -499,6 +499,8 @@ export interface RoomJsonDef {
   lightingEffect?: LightingEffect;
   /** Ambient/skylight direction (see {@link AmbientLightDirection}). */
   ambientLightDirection?: AmbientLightDirection;
+  /** Room-level weather effect. Falls back to `'none'` when not set. */
+  weather?: WeatherEffect;
   /** Directional-bias blend (0 = broad ambient, 1 = spotlight). Range 0–1. */
   directionalBias?: number;
   /** Side-exposure strength for non-sky-facing air neighbours. Range 0–1. */

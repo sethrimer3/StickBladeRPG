@@ -474,6 +474,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
   if (saved.bg)    json.backgroundId = saved.bg;
   if (saved.bgBlur === true) json.backgroundBlur = true;
   if (saved.light) json.lightingEffect = saved.light;
+  if (saved.weather) json.weather = saved.weather;
   if (saved.song)  json.songId = saved.song;
   if (dustSkillTombs && dustSkillTombs.length > 0) json.dustSkillTombs = dustSkillTombs;
   if (saved.skillBooks)     json.skillBooks      = saved.skillBooks.map(([x, y]) => ({ xBlock: x, yBlock: y }));
