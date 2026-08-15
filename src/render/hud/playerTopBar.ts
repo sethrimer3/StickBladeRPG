@@ -9,6 +9,12 @@
  * favour of this bar; see `MOTE_LIFE_CONTAINERS_ENABLED`.
  */
 
+import {
+  drawResourceBar,
+  getHealthBarColor,
+} from './playerStatusBars';
+import type { WeaponResourceKind, WeaponResourcePool } from '../../sim/weapons/weaponResources';
+
 /**
  * Temporary switch: while false, `gameHudRenderer` draws this top bar instead
  * of the per-mote dust container life indicators. Flip back to true to restore
@@ -26,11 +32,20 @@ const LIFE_BAR_WIDTH_PX = 72;
 const LIFE_BAR_HEIGHT_PX = 8;
 const LIFE_BAR_Y_OFFSET_PX = 2;
 
+/** Resource bar sits directly beneath the life bar, same width. */
+const RESOURCE_BAR_HEIGHT_PX = 5;
+const RESOURCE_BAR_GAP_PX = 2;
+
 const WEAPON_SLOT_GAP_PX = 8;
 const WEAPON_SLOT_WIDTH_PX = 64;
 
-/** Health fractions at which the fill color escalates. */
-const LIFE_DANGER_FRACTION = 0.40;
+/**
+ * Health fraction below which the fill pulses.
+ *
+ * The former `LIFE_DANGER_FRACTION` step is gone: the shared green → yellow →
+ * orange → red ramp now covers that transition continuously, so a second
+ * hard-coded threshold would fight it.
+ */
 const LIFE_CRITICAL_FRACTION = 0.20;
 
 export interface PlayerTopBarState {
@@ -40,6 +55,9 @@ export interface PlayerTopBarState {
   maxHp: number;
   /** Equipped weapon display name, or null when unarmed. */
   weaponName: string | null;
+  /** Pool the equipped weapon draws from, or null when it is unmetered. */
+  resourceKind?: WeaponResourceKind | null;
+  resourcePool?: WeaponResourcePool | null;
 }
 
 /** X position where the weapon slot begins, for callers placing badges after it. */
@@ -47,13 +65,20 @@ export function getTopBarWidthPx(): number {
   return LIFE_BAR_WIDTH_PX + WEAPON_SLOT_GAP_PX + WEAPON_SLOT_WIDTH_PX;
 }
 
+/**
+ * Life bar color.
+ *
+ * The green → yellow → orange → red ramp is shared with the overhead bar
+ * (`playerStatusBars.ts`) so both placements read identically. The critical
+ * pulse is layered on top of the ramp rather than replacing it, keeping the
+ * urgency cue this bar already had.
+ */
 function getLifeFillColor(healthFraction: number, nowMs: number): string {
   if (healthFraction < LIFE_CRITICAL_FRACTION) {
     const pulseT = (Math.sin(nowMs * 0.008) + 1) * 0.5;
-    return `rgb(${Math.round(210 + 45 * pulseT)},25,25)`;
+    return `rgb(${Math.round(210 + 45 * pulseT)},${Math.round(25 + 30 * pulseT)},25)`;
   }
-  if (healthFraction < LIFE_DANGER_FRACTION) return '#e07000';
-  return '#00b866';
+  return getHealthBarColor(healthFraction);
 }
 
 /** Draws the player status top bar. Leaves canvas state as it found it. */
@@ -109,6 +134,20 @@ export function drawPlayerTopBar(
   ctx.fillText(hpText, hpTextX + 1, hpTextY + 1);
   ctx.fillStyle = '#ffffff';
   ctx.fillText(hpText, hpTextX, hpTextY);
+
+  // ── Resource bar (Mana / Ammo / Dust) directly beneath the life bar ───────
+  // Only the equipped weapon's pool is shown; an unmetered weapon has none.
+  if (state.resourceKind && state.resourcePool) {
+    drawResourceBar(
+      ctx,
+      barX,
+      barY + LIFE_BAR_HEIGHT_PX + RESOURCE_BAR_GAP_PX,
+      LIFE_BAR_WIDTH_PX,
+      RESOURCE_BAR_HEIGHT_PX,
+      state.resourceKind,
+      state.resourcePool,
+    );
+  }
 
   // ── Equipped weapon slot ──────────────────────────────────────────────────
   const slotX = barX + LIFE_BAR_WIDTH_PX + WEAPON_SLOT_GAP_PX;

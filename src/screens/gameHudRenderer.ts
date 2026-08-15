@@ -257,6 +257,7 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
     // ── Player top bar (life bar + equipped weapon slot) ────────────────────
     // Temporarily replaces the dust container life indicators.
     const weaponDef = getEquippedWeaponDef(world.playerWeapon);
+    const topBarResourceKind = getWeaponResourceKind(weaponDef);
     drawPlayerTopBar(
       ctx,
       {
@@ -265,6 +266,10 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
         currentHp: playerForMoteLife ? getPlayerHitPoints(playerForMoteLife) : 0,
         maxHp: playerForMoteLife ? getPlayerMaxHitPoints(playerForMoteLife) : 0,
         weaponName: weaponDef ? weaponDef.name : null,
+        resourceKind: topBarResourceKind,
+        resourcePool: topBarResourceKind !== null
+          ? world.playerWeapon.resources[topBarResourceKind]
+          : null,
       },
       nowMs,
     );
