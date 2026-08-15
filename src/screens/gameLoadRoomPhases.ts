@@ -37,6 +37,8 @@ import type { ReusableWorldSnapshot } from '../render/snapshot';
 import type { PlayerCloak } from '../render/clusters/playerCloak';
 import type { PhantomCloakExtension } from '../render/clusters/phantomCloak';
 import type { EnvironmentalDustLayer } from '../render/environmentalDust';
+import type { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
+import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
 import type { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
 import type { SunraysRenderer } from '../render/effects/sunraysRenderer';
 import type { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
@@ -190,6 +192,8 @@ export interface LoadRoomCtx {
   stormweaveLifeMotes?: import('../sim/stormweave/lifeMotes').StormweaveLifeMotes;
   decorationWaveState: import('../render/effects/wallDecorations').DecorationWaveState;
   environmentalDust: EnvironmentalDustLayer;
+  rainForegroundLayer: RainForegroundLayer;
+  rainParallaxBackground: RainParallaxBackground;
   sunbeamRenderer: SunbeamRenderer;
   sunraysRenderer: SunraysRenderer;
   atmosphericLightDust: AtmosphericLightDust;
@@ -512,6 +516,8 @@ function applyRoomEnvironmentAndScheduling(
     verdantFlowerTrail,
     decorationWaveState,
     environmentalDust,
+    rainForegroundLayer,
+    rainParallaxBackground,
     sunbeamRenderer,
     sunraysRenderer,
     atmosphericLightDust,
@@ -531,6 +537,12 @@ function applyRoomEnvironmentAndScheduling(
     const _t0 = import.meta.env.DEV ? performance.now() : 0;
     environmentalDust.initFromWorld(world, room.worldNumber);
     if (recordPhaseSteps) FP.recordLoadPhaseStep('F:environmentalDust', import.meta.env.DEV ? performance.now() - _t0 : 0);
+  }
+  {
+    const _t0 = import.meta.env.DEV ? performance.now() : 0;
+    rainForegroundLayer.initFromRoom(world, room);
+    rainParallaxBackground.initFromRoom(room);
+    if (recordPhaseSteps) FP.recordLoadPhaseStep('F:rain', import.meta.env.DEV ? performance.now() - _t0 : 0);
   }
   {
     const _t0 = import.meta.env.DEV ? performance.now() : 0;

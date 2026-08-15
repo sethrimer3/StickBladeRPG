@@ -39,7 +39,6 @@ interface SplashParticle {
 
 export class RainForegroundLayer {
   private active = false;
-  private worldWidthWorld = 0;
   private openColumnXs: number[] = [];
   private columnLandingY: number[] = [];
   private spawnTimerMs = 0;
@@ -52,7 +51,6 @@ export class RainForegroundLayer {
     this.drops.length = 0;
     this.splashes.length = 0;
     this.spawnTimerMs = 0;
-    this.worldWidthWorld = world.worldWidthWorld;
 
     if (!this.active) {
       this.openColumnXs = [];
@@ -88,7 +86,8 @@ export class RainForegroundLayer {
     return this.rngState / 0x7fffffff;
   }
 
-  update(world: WorldState, dtMs: number): void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for API symmetry with other per-tick effect layers.
+  update(_world: WorldState, dtMs: number): void {
     if (!this.active || this.openColumnXs.length === 0) {
       this.updateSplashesOnly(dtMs);
       return;

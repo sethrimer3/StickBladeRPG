@@ -11,6 +11,8 @@ import { deactivateShieldWeave, updateShieldWeaveState } from '../sim/stormweave
 import { PhantomCloakExtension } from '../render/clusters/phantomCloak';
 import type { HudState } from '../render/hud/overlay';
 import { EnvironmentalDustLayer } from '../render/environmentalDust';
+import { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
+import { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
 import { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
 import { SunraysRenderer } from '../render/effects/sunraysRenderer';
 import { AtmosphericLightDust } from '../render/effects/atmosphericLightDust';
@@ -491,6 +493,8 @@ export function startGameScreen(
     residentRoomManager.setRadiusReadyCounts(r1, r2, r1Total, r2Total);
   }
   const environmentalDust = new EnvironmentalDustLayer();
+  const rainForegroundLayer = new RainForegroundLayer();
+  const rainParallaxBackground = new RainParallaxBackground();
   const sunbeamRenderer = new SunbeamRenderer();
   const sunraysRenderer = new SunraysRenderer();
   const atmosphericLightDust = new AtmosphericLightDust();
@@ -709,6 +713,8 @@ export function startGameScreen(
     stormweaveLifeMotes,
     decorationWaveState,
     environmentalDust,
+    rainForegroundLayer,
+    rainParallaxBackground,
     sunbeamRenderer,
     sunraysRenderer,
     atmosphericLightDust,
@@ -1872,6 +1878,7 @@ export function startGameScreen(
         world.clusters.push(newSlimes[s]);
       }
       environmentalDust.update(world, FIXED_DT_MS);
+      rainForegroundLayer.update(world, FIXED_DT_MS);
       atmosphericLightDust.update(FIXED_DT_MS);
       guideDustPathRenderer.update(FIXED_DT_MS);
       skidDebris.update(world, FIXED_DT_MS);
@@ -2094,7 +2101,7 @@ export function startGameScreen(
 
     const renderFrameArgs = {
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+      webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
       playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, darkRoomOverlay, decorationWaveState,
       sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
       world, currentRoom, isChallengeModeActive: world.challengeMode.isActive,

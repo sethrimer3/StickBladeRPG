@@ -46,6 +46,8 @@ import type { RenderProfiler } from '../render/hud/renderProfiler';
 import { STAGE_WALLS, STAGE_ENTITIES, STAGE_PARTICLES, STAGE_DUST, STAGE_SUNBEAMS, STAGE_BLOOM, STAGE_HUD, STAGE_BG_BLOCKS, STAGE_DARK_BLOCKER, STAGE_UPSCALE } from '../render/hud/renderProfiler';
 import type { WebGLParticleRenderer } from '../render/particles/webglRenderer';
 import type { EnvironmentalDustLayer } from '../render/environmentalDust';
+import type { RainForegroundLayer } from '../render/effects/rain/rainForegroundLayer';
+import type { RainParallaxBackground } from '../render/effects/rain/rainParallaxBackground';
 import type { SkidDebrisRenderer } from '../render/skidDebrisRenderer';
 import type { CrumbleDebrisRenderer } from '../render/crumbleDebrisRenderer';
 import type { CrackedBlockShatterRenderer } from '../render/crackedBlockShatterRenderer';
@@ -159,6 +161,8 @@ export interface RenderFrameContext {
   // Renderer instances
   webglRenderer: WebGLParticleRenderer;
   environmentalDust: EnvironmentalDustLayer;
+  rainForegroundLayer: RainForegroundLayer;
+  rainParallaxBackground: RainParallaxBackground;
   skidDebris: SkidDebrisRenderer;
   crumbleDebris: CrumbleDebrisRenderer;
   /** Momentum-speed cracked-block shatter burst — sprite-palette-sampled fragments. */
@@ -355,7 +359,7 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+    webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
     playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
     sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
     world, currentRoom, snapshot,
@@ -473,6 +477,7 @@ export function renderFrame(r: RenderFrameContext): void {
     zoom,
     virtualWidthPx,
     virtualHeightPx,
+    rainParallaxBackground,
     roomWidthWorld,
     roomHeightWorld,
     nowMs,
@@ -719,6 +724,7 @@ export function renderFrame(r: RenderFrameContext): void {
   // ── Atmospheric effects (dust, debris) ──────────────────────────────────
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_DUST);
   environmentalDust.render(ctx, ox, oy, zoom, isDebugMode);
+  rainForegroundLayer.render(ctx, ox, oy, zoom);
   atmosphericLightDust.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   guideDustPathRenderer.render(ctx, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
   skidDebris.render(ctx, ox, oy, zoom);
