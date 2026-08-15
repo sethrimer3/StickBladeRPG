@@ -33,6 +33,8 @@ import { renderTimeStopFieldDebug } from '../render/effects/timeStopFieldDebugRe
 import { renderParticles } from '../render/particles/renderer';
 import { renderPixelLockedDust } from '../render/particles/pixelLockedDustRenderer';
 import { renderDustSelectionWheel } from '../render/effects/dustSelectionWheelRenderer';
+import { drawGrappleAbilityKeyLabel, getGrappleAbilityKeyLabel } from '../render/hud/grappleAbilityIcon';
+import { MOTE_LIFE_CONTAINERS_ENABLED } from '../render/hud/playerTopBar';
 import type { DustSelectionWheelController } from './gameDustSelectionState';
 import {
   tickPlayerRocketChargeParticles,
@@ -69,6 +71,7 @@ import { processPendingIceFrostImpacts } from '../sim/iceFrost';
 import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import type { DustContainerPickupEffect } from '../render/dustContainerPickupEffect';
 import type { PlayerDeathDustEffect } from '../render/playerDeathDust';
+import type { EnemyDeathPixelEffect } from '../render/enemyDeathPixelEffect';
 import type { ClusterSnapshot } from '../render/clusterSnapshotTypes';
 import type { SunbeamRenderer } from '../render/effects/sunbeamRenderer';
 import type { SunraysRenderer } from '../render/effects/sunraysRenderer';
@@ -171,6 +174,8 @@ export interface RenderFrameContext {
   dustContainerPickupEffect: DustContainerPickupEffect;
   /** One-shot player-death disintegration burst — warm-gold motes blown leftward. */
   playerDeathDust: PlayerDeathDustEffect;
+  /** Enemy death pixel disintegration effect — bouncing physical pixels. */
+  enemyDeathPixels: EnemyDeathPixelEffect;
   bloomSystem: BloomSystem;
   playerCloak: PlayerCloak;
   /** Phantasmal golden cloak extension — visible while the player is grappling. */
@@ -349,7 +354,7 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
+    webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
     playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
     sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
     world, currentRoom, snapshot,
@@ -506,7 +511,13 @@ export function renderFrame(r: RenderFrameContext): void {
   const shieldDustKind = world.shieldWeaveDustKindOverride >= 0
     ? world.shieldWeaveDustKindOverride
     : world.selectedDustKind;
-  renderStormweaveLifeMotes(ctx, stormweaveLifeMotes, ox, oy, zoom, world.shieldWeave, graphicsQuality, shieldDustKind);
+  // The passive gold-dust follow cloud is a cosmetic of the Storm Weave and
+  // must not appear unless Storm is equipped as the primary weave; the same
+  // mote pool is still drawn while an active weave (Shield/Sword/Bow) is
+  // using it, since those weaves are independently equipped/activated.
+  if (world.isMoteSourceOrbitFlag === 1 || world.shieldWeave.isActive) {
+    renderStormweaveLifeMotes(ctx, stormweaveLifeMotes, ox, oy, zoom, world.shieldWeave, graphicsQuality, shieldDustKind);
+  }
 
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BG_BLOCKS);
   renderBackgroundBlocks(ctx, currentRoom, ox, oy, zoom, virtualWidthPx, virtualHeightPx);
@@ -713,6 +724,7 @@ export function renderFrame(r: RenderFrameContext): void {
   crackedBlockShatter.render(ctx, ox, oy, zoom);
   breakEffects.render(ctx, ox, oy, zoom);
   weakWallJumpDebris.render(ctx, ox, oy, zoom);
+  enemyDeathPixels.render(ctx, ox, oy, zoom);
   // Falling block groups — tiles + dust effects
   if (world.fallingBlockGroups.length > 0) {
     renderFallingBlocks(ctx, world, ox, oy, zoom, r.world.dtMs, fallingBlockDust, isDebugMode, getActiveProceduralMaterial(), r.renderAlpha, r.prevFallingBlockOffsetY);
@@ -860,6 +872,17 @@ export function renderFrame(r: RenderFrameContext): void {
         canvas.width / virtualWidthPx, canvas.height / virtualHeightPx,
       );
     }
+  }
+
+  // ── Grapple ability icon key label (device-canvas overlay; see
+  //     grappleAbilityIcon.ts for why this half of the icon is drawn here
+  //     rather than with the icon body on the virtual canvas). ──────────────
+  if (!MOTE_LIFE_CONTAINERS_ENABLED) {
+    drawGrappleAbilityKeyLabel(
+      deviceCtx,
+      canvas.width / virtualWidthPx, canvas.height / virtualHeightPx,
+      getGrappleAbilityKeyLabel(),
+    );
   }
 
   // ── Device-canvas overlays (touch joystick, debug control hints) ─────────

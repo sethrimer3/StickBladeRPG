@@ -68,7 +68,7 @@ import {
   type PlayerWeaveLoadout,
   sanitizePlayerWeaveLoadoutForProgress,
 } from '../sim/weaves/playerLoadout';
-import { WEAVE_NONE, WEAVE_STORM } from '../sim/weaves/weaveDefinition';
+import { WEAVE_NONE } from '../sim/weaves/weaveDefinition';
 import { resetGrappleDisplayRadius } from '../sim/clusters/grappleShared';
 import { resetRadiantTetherState } from '../sim/clusters/radiantTetherAi';
 import { resetRadiantWebState } from '../sim/clusters/radiantWebAi';
@@ -436,7 +436,11 @@ function applyPlayerWeaveWorldFields(
   world.playerPrimaryWeaveId           = effectiveWeaveLoadout.primary.weaveId;
   world.playerSecondaryWeaveId         = effectiveWeaveLoadout.secondary.weaveId;
   world.canUsePlayerSecondaryWeaveFlag = effectiveWeaveLoadout.secondary.weaveId === WEAVE_NONE ? 0 : 1;
-  world.isMoteSourceOrbitFlag          = world.playerPrimaryWeaveId === WEAVE_STORM ? 1 : 0;
+  // Storm's passive gold-dust follow cloud is disabled by default even while
+  // Storm occupies the primary dust-binding slot, pending a dedicated equip
+  // step that makes it a real equippable weapon rather than an always-on
+  // default (see world.isMoteSourceOrbitFlag doc comment).
+  world.isMoteSourceOrbitFlag          = 0;
   // The Stick Ranger stickman is the player character. Forced rather than read
   // from progress so existing saves (which persisted 'outcast') switch over
   // too; restore the `ctx.progress?.characterId` read here to bring character

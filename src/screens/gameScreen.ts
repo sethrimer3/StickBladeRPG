@@ -134,6 +134,10 @@ import {
   PlayerDeathDustEffect,
   triggerPlayerDeathDustFromSprite,
 } from '../render/playerDeathDust';
+import {
+  EnemyDeathPixelEffect,
+  triggerEnemyDeathPixelsFromCluster,
+} from '../render/enemyDeathPixelEffect';
 import { resetPlayerLuminantLight } from './gamePlayerLuminantLight';
 import {
   getCharacterSprites,
@@ -410,6 +414,8 @@ export function startGameScreen(
     while (!result.done) result = gen.next();
     dustContainerPickupEffect.reset();
     playerDeathDust.reset();
+    enemyDeathPixels.reset();
+    knownAliveEnemyEntityIds.clear();
     verdantAfterimageTrail.reset();
     verdantFlowerTrail.reset();
     resetPlayerLuminantLight();
@@ -511,6 +517,8 @@ export function startGameScreen(
   const fallingBlockDust = new FallingBlockDustRenderer();
   const dustContainerPickupEffect = new DustContainerPickupEffect();
   const playerDeathDust = new PlayerDeathDustEffect();
+  const enemyDeathPixels = new EnemyDeathPixelEffect();
+  const knownAliveEnemyEntityIds = new Set<number>();
   const verdantAfterimageTrail = new VerdantAfterimageTrail();
   const verdantFlowerTrail = new VerdantFlowerTrail();
   let deathDustTriggerSeed = 1;
@@ -1660,6 +1668,7 @@ export function startGameScreen(
       dustWheelController.cancel(timestampMs);
       deactivateShieldWeave(world.shieldWeave);
       playerDeathDust.update(elapsedMs);
+      enemyDeathPixels.update(elapsedMs, world);
       if (lastRenderFrameArgs !== null) {
         renderFrame(lastRenderFrameArgs);
       }
@@ -1876,6 +1885,19 @@ export function startGameScreen(
 
       // ── Fragile custom-block break events (Phase 2C) ──────────────────────
       tickBreakEvents(world, breakEffects, playerSfx, getGraphicsQuality(), FIXED_DT_MS);
+
+      // ── Enemy death pixel disintegration events ────────────────────────────
+      for (let ci = 0; ci < world.clusters.length; ci++) {
+        const cluster = world.clusters[ci];
+        if (cluster.isPlayerFlag === 1) continue;
+        if (cluster.isAliveFlag === 1) {
+          knownAliveEnemyEntityIds.add(cluster.entityId);
+        } else if (knownAliveEnemyEntityIds.has(cluster.entityId)) {
+          knownAliveEnemyEntityIds.delete(cluster.entityId);
+          triggerEnemyDeathPixelsFromCluster(enemyDeathPixels, cluster, deathDustTriggerSeed++);
+        }
+      }
+      enemyDeathPixels.update(FIXED_DT_MS, world);
       accumulatorMs -= FIXED_DT_MS;
     }
 
@@ -2070,7 +2092,7 @@ export function startGameScreen(
 
     const renderFrameArgs = {
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust,
+      webglRenderer, environmentalDust, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
       playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, darkRoomOverlay, decorationWaveState,
       sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
       world, currentRoom, isChallengeModeActive: world.challengeMode.isActive,

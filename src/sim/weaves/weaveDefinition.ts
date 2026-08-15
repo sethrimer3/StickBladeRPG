@@ -91,7 +91,7 @@ export interface WeaveDefinition {
 const STORM_DEF: WeaveDefinition = {
   id: WEAVE_STORM,
   displayName: 'Storm Weave',
-  description: 'Passively attracts nearby dust to the Weaver. Always active.',
+  description: 'Passively attracts nearby dust to the Weaver while equipped.',
   role: WeaveRole.PrimaryOnly,
   dustSlotCapacity: 0,   // Storm does not bind dust — it is always active passively
   durationTicks: 0,

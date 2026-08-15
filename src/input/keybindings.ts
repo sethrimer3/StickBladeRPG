@@ -54,7 +54,7 @@ export const DEFAULT_KEYBOARD_BINDINGS: Record<KeyboardAction, string> = {
   jump:             'w',
   interact:         'f',
   weaponAttack:     'q',
-  grappleFire:      'g',
+  grappleFire:      'e',
   openInventory:    'i',
   toggleFullscreen: 'p',
 };

@@ -122,6 +122,22 @@ export function applySlimeAI(world: WorldState): void {
       // Grounded: stop horizontal sliding
       cluster.velocityXWorld = 0;
 
+      // Keep a tiny downward "resting" velocity every grounded tick instead of
+      // leaving velocityYWorld at the 0 the collision sweep snapped it to on
+      // landing. Because tickEnemyMovement() skips gravity entirely for slimes
+      // (see enemyMovement.ts), a fully-zeroed Y velocity means the cluster
+      // doesn't move at all next tick and stays *exactly* touching the floor —
+      // which resolveWallsY's overlap test (`bottom <= wallTop`) treats as NOT
+      // overlapping, so it fails to re-confirm isGroundedFlag=1. That flips the
+      // slime to "ungrounded" every other tick, which re-enters the airborne
+      // branch below and unconditionally resets slimeHopTimerTicks back to the
+      // full pause duration — permanently preventing the timer from ever
+      // reaching zero, so the slime never hops. This nudge guarantees the
+      // cluster actually overlaps the floor by a hair each tick, which the
+      // collision sweep reliably detects and re-snaps to grounded, exactly
+      // like every other ground enemy that keeps applying gravity while resting.
+      cluster.velocityYWorld = SLIME_GRAVITY_WORLD_PER_SEC2 * dtSec;
+
       // Damage reaction: if HP was reduced while waiting, cap remaining pause ticks
       if (cluster.slimeHopTimerTicks > maxPauseTicks) {
         cluster.slimeHopTimerTicks = maxPauseTicks;

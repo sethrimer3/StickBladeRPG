@@ -36,6 +36,7 @@ import { getEquippedWeaponDef } from '../sim/weapons/playerWeaponState';
 import { formatRunTimer } from '../progression/saveSlots';
 import { drawChallengeHudShield } from '../render/challengeElementRenderer';
 import { getSpeedrunTimerEnabled } from '../ui/renderSettings';
+import { drawGrappleAbilityIcon } from '../render/hud/grappleAbilityIcon';
 
 preloadDustContainerHudFrames();
 
@@ -272,6 +273,7 @@ export function renderGameHud(r: HudRenderContext, nowMs: number): void {
         TOP_BAR_ORIGIN_Y_PX + TOP_BAR_HEIGHT_PX * 0.5,
       );
     }
+    drawGrappleAbilityIcon(ctx, world, nowMs);
   } else {
   ctx.save();
   for (let moteIndex = 0; moteIndex < maxMoteCapacity; moteIndex++) {

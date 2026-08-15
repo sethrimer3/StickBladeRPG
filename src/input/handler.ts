@@ -545,7 +545,7 @@ export function attachInputListeners(canvas: HTMLCanvasElement, state: InputStat
       state.mouseDownYPx = mouse.yPx;
       // The left button swings the equipped weapon. It no longer fires the
       // grapple — that moved to its own rebindable key (`grappleFire`,
-      // default G) so the capability is kept, just not on this button.
+      // default E) so the capability is kept, just not on this button.
       state.isWeaponAttackHeldFlag = true;
     } else if (e.button === 2) {
       state.isRightMouseDownFlag = 1;

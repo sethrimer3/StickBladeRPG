@@ -195,6 +195,9 @@ export const ES_CATALOG: Partial<Record<TranslationKey, CatalogEntry>> = {
     'Desactivado internamente mientras siga activo el renderizado heredado.',
   'pause.graphics.spriteAtlasesHint': 'Recarga o vuelve a entrar en la sala tras cambiar esto.',
   'pause.graphics.reachableEdgeGlowOpacity': 'Opacidad del brillo de bordes alcanzables',
+  'pause.graphics.crispPixelScaling': 'ESCALADO DE PÍXELES NÍTIDO (EXPERIMENTAL)',
+  'pause.graphics.crispPixelScalingTooltip':
+    'Fija el renderizado interno del lienzo a múltiplos enteros de píxeles del dispositivo, eliminando el desenfoque de interpolación subpíxel en escalas no enteras.',
 
   // Death screen
   'death.title': 'Polvo...',

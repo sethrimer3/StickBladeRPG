@@ -2,7 +2,7 @@
  * Player Loadout — Weave equipment and dust binding.
  *
  * The loadout defines:
- *   - Primary Weave (Storm — passive attraction, always active)
+ *   - Primary Weave (Storm — passive dust attraction/follow; equippable, off by default)
  *   - Secondary Weave (Shield — crescent shield in aim direction)
  *   - Which dust types are bound to each Weave
  */
@@ -177,7 +177,10 @@ export function sanitizePlayerWeaveLoadoutForProgress(
 /**
  * Creates the default starting loadout for a new game.
  *
- * Primary: Storm Weave (passive attraction — always active, no bound dust)
+ * Primary: Storm Weave (holds the primary dust binding/selection slot; its
+ * passive gold-dust follow cloud is gated off by default — see
+ * `world.isMoteSourceOrbitFlag` — pending a dedicated equip step that makes
+ * it a real equippable weapon).
  * Secondary: None until progression unlocks and equips an active weave.
  */
 export function createDefaultWeaveLoadout(): PlayerWeaveLoadout {

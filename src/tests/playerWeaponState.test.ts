@@ -288,7 +288,7 @@ describe('input binding', () => {
     // instead, so without this action the grapple would be unreachable on
     // keyboard and mouse — the capability was meant to be kept, not removed.
     assert.ok(KB_ACTIONS.includes('grappleFire'));
-    assert.equal(DEFAULT_KEYBOARD_BINDINGS.grappleFire, 'g');
+    assert.equal(DEFAULT_KEYBOARD_BINDINGS.grappleFire, 'e');
     assert.equal(KEYBOARD_ACTION_META.grappleFire.label, 'Grapple');
   });
 
