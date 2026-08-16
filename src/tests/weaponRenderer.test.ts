@@ -23,6 +23,8 @@ const DT_MS = 1000 / 60;
 interface DrawCall {
   op: string;
   args: unknown[];
+  strokeStyle?: string;
+  fillStyle?: string;
 }
 
 /**
@@ -33,7 +35,24 @@ interface DrawCall {
  */
 function createRecordingContext(): { ctx: CanvasRenderingContext2D; calls: DrawCall[] } {
   const calls: DrawCall[] = [];
-  const record = (op: string) => (...args: unknown[]): void => { calls.push({ op, args }); };
+
+  const ctxState = {
+    strokeStyle: '',
+    fillStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    globalAlpha: 1,
+  };
+
+  const record = (op: string) => (...args: unknown[]): void => {
+    calls.push({
+      op,
+      args,
+      strokeStyle: ctxState.strokeStyle,
+      fillStyle: ctxState.fillStyle,
+    });
+  };
 
   const ctx = {
     save: record('save'),
@@ -50,11 +69,20 @@ function createRecordingContext(): { ctx: CanvasRenderingContext2D; calls: DrawC
     stroke: record('stroke'),
     fill: record('fill'),
     fillRect: record('fillRect'),
-    globalAlpha: 1,
-    lineWidth: 1,
-    lineCap: 'butt',
-    strokeStyle: '',
-    fillStyle: '',
+    rect: record('rect'),
+    clip: record('clip'),
+    get strokeStyle() { return ctxState.strokeStyle; },
+    set strokeStyle(val: string) { ctxState.strokeStyle = val; },
+    get fillStyle() { return ctxState.fillStyle; },
+    set fillStyle(val: string) { ctxState.fillStyle = val; },
+    get lineWidth() { return ctxState.lineWidth; },
+    set lineWidth(val: number) { ctxState.lineWidth = val; },
+    get lineCap() { return ctxState.lineCap; },
+    set lineCap(val: string) { ctxState.lineCap = val; },
+    get lineJoin() { return ctxState.lineJoin; },
+    set lineJoin(val: string) { ctxState.lineJoin = val; },
+    get globalAlpha() { return ctxState.globalAlpha; },
+    set globalAlpha(val: number) { ctxState.globalAlpha = val; },
   } as unknown as CanvasRenderingContext2D;
 
   return { ctx, calls };
@@ -258,8 +286,8 @@ describe('staff rendering', () => {
     assert.equal(weapon.staff.beamActiveFlag, 0);
     const { ctx, calls } = createRecordingContext();
     new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
-    // Idle staff draws only the held shaft/gem (1 stroke), never the 2-pass beam (3 strokes).
-    assert.equal(countOps(calls, 'stroke'), 2); // 1 shaft stroke + 1 gem halo stroke
+    // Idle staff draws only the held shaft/gem (4 outline passes + 1 foreground shaft + 1 gem halo), never the 2-pass beam.
+    assert.equal(countOps(calls, 'stroke'), 6);
   });
 
   test('a full, idle charge meter is hidden as pure noise', () => {
@@ -418,9 +446,10 @@ describe('held weapon poses', () => {
     new WeaponRenderer().render(weaponCtx.ctx, snapshot, OX, OY, ZOOM);
 
     // The weapon sprite is unavailable in Node, so the blade falls back to a
-    // stroked line whose first moveTo is the grip end.
-    const bladeStart = weaponCtx.calls.find(c => c.op === 'moveTo');
-    assert.ok(bladeStart !== undefined, 'the blade should have been stroked');
+    // stroked line whose last moveTo is the foreground grip end.
+    const bladeStarts = weaponCtx.calls.filter(c => c.op === 'moveTo');
+    assert.ok(bladeStarts.length >= 5, 'the blade should stroke 4 outline passes + 1 foreground pass');
+    const foregroundBladeStart = bladeStarts[bladeStarts.length - 1];
 
     const anchor = createWeaponGripAnchor();
     computeWeaponGripAnchor(body, getWeaponDef('woodenSword')!, 1, anchor);
@@ -428,10 +457,27 @@ describe('held weapon poses', () => {
     const expectedGripY = Math.round(anchor.yWorld * ZOOM + OY);
 
     assert.ok(
-      Math.abs((bladeStart.args[0] as number) - expectedGripX) < 1e-6
-      && Math.abs((bladeStart.args[1] as number) - expectedGripY) < 1e-6,
-      `blade starts at ${bladeStart.args[0]},${bladeStart.args[1]} but the grip is at ${expectedGripX},${expectedGripY}`,
+      Math.abs((foregroundBladeStart.args[0] as number) - expectedGripX) < 1e-6
+      && Math.abs((foregroundBladeStart.args[1] as number) - expectedGripY) < 1e-6,
+      `blade starts at ${foregroundBladeStart.args[0]},${foregroundBladeStart.args[1]} but the grip is at ${expectedGripX},${expectedGripY}`,
     );
+  });
+
+  test('held weapons render 4 black outline passes before 1 foreground pass', () => {
+    const weapon = createPlayerWeaponState();
+    equipPlayerWeapon(weapon, 'sword');
+    const { ctx, calls } = createRecordingContext();
+    new WeaponRenderer().render(ctx, createSnapshot(weapon), 0, 0, 1);
+
+    const strokes = calls.filter(c => c.op === 'stroke');
+    assert.ok(strokes.length >= 5, 'should have 4 outline strokes + 1 foreground stroke');
+
+    // First 4 strokes must be solid black outline
+    for (let i = 0; i < 4; i++) {
+      assert.equal(strokes[i].strokeStyle, '#000000', `pass ${i} should be black outline`);
+    }
+    // 5th stroke is the colored blade
+    assert.notEqual(strokes[4].strokeStyle, '#000000', '5th pass should be weapon color');
   });
 
   test('renderStickRangerBody renders both hands joined at grip for two-handed weapons', () => {

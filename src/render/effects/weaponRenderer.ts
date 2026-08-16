@@ -42,6 +42,7 @@ import {
   type WeaponGripAnchor,
 } from '../../sim/weapons/weaponGrip';
 import { getStickRangerRenderAlpha } from '../../sim/clusters/stickRangerBody';
+import { OUTLINE_NEIGHBOR_OFFSETS } from '../clusters/stickRangerRenderer';
 import { BladeTrail, DEFAULT_TRAIL_STYLE, type TrailStyle } from './bladeTrail';
 import type { GraphicsQuality } from '../../ui/renderSettings';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
@@ -50,6 +51,29 @@ import {
   EXPIRY_FLASH_TICKS,
   MAX_EXPIRY_FLASHES,
 } from '../../sim/weapons/weaponExpiryEffects';
+
+/** Cached black silhouette masks for weapon sprites, keyed by source image. */
+const _weaponBlackMaskCache = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+
+function getOrCreateWeaponBlackMask(img: HTMLImageElement): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const cached = _weaponBlackMaskCache.get(img);
+  if (cached !== undefined) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+  const ctx = canvas.getContext('2d');
+  if (ctx !== null) {
+    ctx.drawImage(img, 0, 0);
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  _weaponBlackMaskCache.set(img, canvas);
+  return canvas;
+}
 
 /** Blade thickness in virtual pixels. */
 const BLADE_WIDTH_PX = 2;
@@ -598,7 +622,7 @@ export class WeaponRenderer {
 
     const color = def.color ?? DEFAULT_BLADE_COLOR;
     const isSpear = def.poseStyle === 'spear' || def.spearPose !== undefined;
-
+    const outlineThickness = Math.max(1, Math.round(zoom));
 
     if (def.spriteUrl) {
       const img = loadImg(def.spriteUrl);
@@ -623,6 +647,23 @@ export class WeaponRenderer {
           ctx.rect(-drawWPx, -reach * zoom, drawWPx * 2, drawHPx + reach * zoom);
           ctx.clip();
         }
+
+        const blackMask = getOrCreateWeaponBlackMask(img);
+        if (blackMask !== null) {
+          // 1. Draw 4 cardinal black outline passes (corners clipped)
+          for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+            const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+            ctx.drawImage(
+              blackMask,
+              -drawWPx * gripRatioX + ox * outlineThickness,
+              -drawHPx * gripRatioY + oy * outlineThickness,
+              drawWPx,
+              drawHPx,
+            );
+          }
+        }
+
+        // 2. Draw foreground sprite
         ctx.drawImage(img, -drawWPx * gripRatioX, -drawHPx * gripRatioY, drawWPx, drawHPx);
         ctx.restore();
         return;
@@ -634,37 +675,48 @@ export class WeaponRenderer {
     const tipX = originXPx + cos * reach * zoom;
     const tipY = originYPx + sin * reach * zoom;
 
-    if (isSpear) {
-      // Spear shaft
-      ctx.strokeStyle = color;
-      ctx.lineWidth = BLADE_WIDTH_PX;
-      ctx.beginPath();
-      ctx.moveTo(originXPx - cos * 6 * zoom, originYPx - sin * 6 * zoom);
-      ctx.lineTo(tipX, tipY);
-      ctx.stroke();
+    const drawGeometry = (passColor: string, spearHeadColor: string, dx: number, dy: number): void => {
+      if (isSpear) {
+        // Spear shaft
+        ctx.strokeStyle = passColor;
+        ctx.lineWidth = BLADE_WIDTH_PX;
+        ctx.beginPath();
+        ctx.moveTo(originXPx - cos * 6 * zoom + dx, originYPx - sin * 6 * zoom + dy);
+        ctx.lineTo(tipX + dx, tipY + dy);
+        ctx.stroke();
 
-      // Spearhead diamond
-      const perpX = -sin;
-      const perpY = cos;
-      const headLen = 8 * zoom;
-      const headWidth = 3 * zoom;
-      ctx.fillStyle = def.highlightColor ?? color;
-      ctx.beginPath();
-      ctx.moveTo(tipX, tipY);
-      ctx.lineTo(tipX - cos * headLen + perpX * headWidth, tipY - sin * headLen + perpY * headWidth);
-      ctx.lineTo(tipX - cos * (headLen * 1.3), tipY - sin * (headLen * 1.3));
-      ctx.lineTo(tipX - cos * headLen - perpX * headWidth, tipY - sin * headLen - perpY * headWidth);
-      ctx.closePath();
-      ctx.fill();
-    } else {
-      // Standard blade
-      ctx.strokeStyle = color;
-      ctx.lineWidth = BLADE_WIDTH_PX;
-      ctx.beginPath();
-      ctx.moveTo(originXPx, originYPx);
-      ctx.lineTo(tipX, tipY);
-      ctx.stroke();
+        // Spearhead diamond
+        const perpX = -sin;
+        const perpY = cos;
+        const headLen = 8 * zoom;
+        const headWidth = 3 * zoom;
+        ctx.fillStyle = spearHeadColor;
+        ctx.beginPath();
+        ctx.moveTo(tipX + dx, tipY + dy);
+        ctx.lineTo(tipX - cos * headLen + perpX * headWidth + dx, tipY - sin * headLen + perpY * headWidth + dy);
+        ctx.lineTo(tipX - cos * (headLen * 1.3) + dx, tipY - sin * (headLen * 1.3) + dy);
+        ctx.lineTo(tipX - cos * headLen - perpX * headWidth + dx, tipY - sin * headLen - perpY * headWidth + dy);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        // Standard blade
+        ctx.strokeStyle = passColor;
+        ctx.lineWidth = BLADE_WIDTH_PX;
+        ctx.beginPath();
+        ctx.moveTo(originXPx + dx, originYPx + dy);
+        ctx.lineTo(tipX + dx, tipY + dy);
+        ctx.stroke();
+      }
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawGeometry('#000000', '#000000', ox * outlineThickness, oy * outlineThickness);
     }
+
+    // 2. Draw foreground pass
+    drawGeometry(color, def.highlightColor ?? color, 0, 0);
   }
 
   private _renderHeldBow(
@@ -678,6 +730,7 @@ export class WeaponRenderer {
     const color = def.color ?? '#c58f57';
     const span = 14 * zoom;
     const curveForward = 5 * zoom;
+    const outlineThickness = Math.max(1, Math.round(zoom));
 
     const fwdX = Math.cos(angleRad);
     const fwdY = Math.sin(angleRad);
@@ -689,22 +742,33 @@ export class WeaponRenderer {
     const botX = originXPx + fwdX * curveForward - perpX * span;
     const botY = originYPx + fwdY * curveForward - perpY * span;
 
-    // Curved bow limbs
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(topX, topY);
-    ctx.quadraticCurveTo(originXPx - fwdX * 2 * zoom, originYPx - fwdY * 2 * zoom, botX, botY);
-    ctx.stroke();
+    const drawGeometry = (limbColor: string, stringColor: string, dx: number, dy: number): void => {
+      // Curved bow limbs
+      ctx.strokeStyle = limbColor;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(topX + dx, topY + dy);
+      ctx.quadraticCurveTo(originXPx - fwdX * 2 * zoom + dx, originYPx - fwdY * 2 * zoom + dy, botX + dx, botY + dy);
+      ctx.stroke();
 
-    // Bowstring
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(topX, topY);
-    ctx.lineTo(originXPx - fwdX * 3 * zoom, originYPx - fwdY * 3 * zoom);
-    ctx.lineTo(botX, botY);
-    ctx.stroke();
+      // Bowstring
+      ctx.strokeStyle = stringColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(topX + dx, topY + dy);
+      ctx.lineTo(originXPx - fwdX * 3 * zoom + dx, originYPx - fwdY * 3 * zoom + dy);
+      ctx.lineTo(botX + dx, botY + dy);
+      ctx.stroke();
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawGeometry('#000000', '#000000', ox * outlineThickness, oy * outlineThickness);
+    }
+
+    // 2. Draw foreground pass
+    drawGeometry(color, 'rgba(255, 255, 255, 0.65)', 0, 0);
   }
 
   private _renderHeldGun(
@@ -721,33 +785,45 @@ export class WeaponRenderer {
     const fwdY = Math.sin(angleRad);
     const perpX = -fwdY;
     const perpY = fwdX;
+    const outlineThickness = Math.max(1, Math.round(zoom));
 
-    // Main barrel
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(originXPx, originYPx);
-    ctx.lineTo(originXPx + fwdX * barrelLen, originYPx + fwdY * barrelLen);
-    ctx.stroke();
+    const drawGeometry = (barrelColor: string, gripColor: string, scopeColor: string | null, dx: number, dy: number): void => {
+      // Main barrel
+      ctx.strokeStyle = barrelColor;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(originXPx + dx, originYPx + dy);
+      ctx.lineTo(originXPx + fwdX * barrelLen + dx, originYPx + fwdY * barrelLen + dy);
+      ctx.stroke();
 
-    // Handle / receiver grip
-    ctx.strokeStyle = def.highlightColor ?? '#445566';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(originXPx, originYPx);
-    ctx.lineTo(originXPx - perpX * 5 * zoom - fwdX * 2 * zoom, originYPx - perpY * 5 * zoom - fwdY * 2 * zoom);
-    ctx.stroke();
+      // Handle / receiver grip
+      ctx.strokeStyle = gripColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(originXPx + dx, originYPx + dy);
+      ctx.lineTo(originXPx - perpX * 5 * zoom - fwdX * 2 * zoom + dx, originYPx - perpY * 5 * zoom - fwdY * 2 * zoom + dy);
+      ctx.stroke();
 
-    // Scope / sight
-    if (def.scopeColor) {
-      ctx.fillStyle = def.scopeColor;
-      ctx.fillRect(
-        originXPx + fwdX * (barrelLen * 0.4) + perpX * 3 * zoom - 2,
-        originYPx + fwdY * (barrelLen * 0.4) + perpY * 3 * zoom - 2,
-        4,
-        4,
-      );
+      // Scope / sight
+      if (scopeColor) {
+        ctx.fillStyle = scopeColor;
+        ctx.fillRect(
+          originXPx + fwdX * (barrelLen * 0.4) + perpX * 3 * zoom - 2 + dx,
+          originYPx + fwdY * (barrelLen * 0.4) + perpY * 3 * zoom - 2 + dy,
+          4,
+          4,
+        );
+      }
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawGeometry('#000000', '#000000', def.scopeColor ? '#000000' : null, ox * outlineThickness, oy * outlineThickness);
     }
+
+    // 2. Draw foreground pass
+    drawGeometry(color, def.highlightColor ?? '#445566', def.scopeColor ?? null, 0, 0);
   }
 
   private _renderHeldStaff(
@@ -762,6 +838,7 @@ export class WeaponRenderer {
     const shaftLen = (readNumber(config, 'shaftLength') ?? 24) * zoom * 0.5;
     const shaftColor = readString(config, 'shaftColor') ?? def.color ?? '#8b5a2b';
     const gemColor = readString(config, 'gemColor') ?? def.beamCoreColor ?? '#77ddff';
+    const outlineThickness = Math.max(1, Math.round(zoom));
 
     const fwdX = Math.cos(angleRad);
     const fwdY = Math.sin(angleRad);
@@ -770,23 +847,34 @@ export class WeaponRenderer {
     const baseYPx = originYPx - fwdY * (shaftLen * 0.35);
     const headXPx = originXPx + fwdX * (shaftLen * 0.65);
     const headYPx = originYPx + fwdY * (shaftLen * 0.65);
-
-    // Shaft line
-    ctx.strokeStyle = shaftColor;
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(baseXPx, baseYPx);
-    ctx.lineTo(headXPx, headYPx);
-    ctx.stroke();
-
-    // Glowing jewel head
     const gemRadius = 3.5 * zoom * 0.5;
-    ctx.fillStyle = gemColor;
-    ctx.beginPath();
-    ctx.arc(headXPx, headYPx, Math.max(2, gemRadius), 0, Math.PI * 2);
-    ctx.fill();
 
-    // Subtle gem halo
+    const drawGeometry = (shaftC: string, gemC: string, dx: number, dy: number): void => {
+      // Shaft line
+      ctx.strokeStyle = shaftC;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(baseXPx + dx, baseYPx + dy);
+      ctx.lineTo(headXPx + dx, headYPx + dy);
+      ctx.stroke();
+
+      // Glowing jewel head
+      ctx.fillStyle = gemC;
+      ctx.beginPath();
+      ctx.arc(headXPx + dx, headYPx + dy, Math.max(2, gemRadius), 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawGeometry('#000000', '#000000', ox * outlineThickness, oy * outlineThickness);
+    }
+
+    // 2. Draw foreground pass
+    drawGeometry(shaftColor, gemColor, 0, 0);
+
+    // Subtle gem halo (foreground)
     ctx.strokeStyle = gemColor;
     ctx.globalAlpha = 0.5;
     ctx.lineWidth = 1.5;
@@ -807,6 +895,7 @@ export class WeaponRenderer {
     const coverColor = def.bookTrimColor ?? def.color ?? '#8a2be2';
     const pageColor = def.bookPageColor ?? '#fdf5e6';
     const runeColor = def.bookRuneColor ?? '#00ffff';
+    const outlineThickness = Math.max(1, Math.round(zoom));
 
     const fwdX = Math.cos(angleRad);
     const fwdY = Math.sin(angleRad);
@@ -816,7 +905,22 @@ export class WeaponRenderer {
     const bookW = 8 * zoom;
     const bookH = 11 * zoom;
 
-    // Tome cover background
+    // 1. Draw 4 cardinal black outline passes for cover (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      const dx = ox * outlineThickness;
+      const dy = oy * outlineThickness;
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(originXPx - perpX * (bookW * 0.5) + dx, originYPx - perpY * (bookW * 0.5) + dy);
+      ctx.lineTo(originXPx + perpX * (bookW * 0.5) + dx, originYPx + perpY * (bookW * 0.5) + dy);
+      ctx.lineTo(originXPx + perpX * (bookW * 0.5) + fwdX * bookH + dx, originYPx + perpY * (bookW * 0.5) + fwdY * bookH + dy);
+      ctx.lineTo(originXPx - perpX * (bookW * 0.5) + fwdX * bookH + dx, originYPx - perpY * (bookW * 0.5) + fwdY * bookH + dy);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 2. Tome cover background
     ctx.fillStyle = coverColor;
     ctx.beginPath();
     ctx.moveTo(originXPx - perpX * (bookW * 0.5), originYPx - perpY * (bookW * 0.5));

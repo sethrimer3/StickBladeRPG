@@ -273,26 +273,38 @@ export function renderStickRangerWeapon(
 
   const reachPx = (def.range ?? 20) * scalePx;
   const color = def.color ?? '#e0e0e0';
+  const outlineThicknessPx = Math.max(1, Math.round(scalePx));
 
   if (def.kind === 'melee' || def.kind === 'shield') {
-    // ── Sword Blade ────────────────────────────────────────────────────────
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.5, scalePx * 1.2);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(reachPx, 0);
-    ctx.stroke();
+    const drawBladePass = (bladeColor: string, guardColor: string, dx: number, dy: number): void => {
+      // Blade
+      ctx.strokeStyle = bladeColor;
+      ctx.lineWidth = Math.max(1.5, scalePx * 1.2);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(dx, dy);
+      ctx.lineTo(reachPx + dx, dy);
+      ctx.stroke();
 
-    // Crossguard
-    ctx.strokeStyle = '#8a6f3d';
-    ctx.lineWidth = Math.max(1, scalePx * 0.8);
-    ctx.beginPath();
-    ctx.moveTo(reachPx * 0.15, -scalePx * 2);
-    ctx.lineTo(reachPx * 0.15, scalePx * 2);
-    ctx.stroke();
+      // Crossguard
+      ctx.strokeStyle = guardColor;
+      ctx.lineWidth = Math.max(1, scalePx * 0.8);
+      ctx.beginPath();
+      ctx.moveTo(reachPx * 0.15 + dx, -scalePx * 2 + dy);
+      ctx.lineTo(reachPx * 0.15 + dx, scalePx * 2 + dy);
+      ctx.stroke();
+    };
 
-    // Swing swoosh arc if active
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawBladePass(OUTLINE_COLOR, OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
+    }
+
+    // 2. Draw foreground pass
+    drawBladePass(color, '#8a6f3d', 0, 0);
+
+    // Swing swoosh arc if active (foreground only)
     if (isSwinging) {
       ctx.strokeStyle = 'rgba(255, 100, 100, 0.4)';
       ctx.lineWidth = scalePx * 2.5;
@@ -301,42 +313,64 @@ export function renderStickRangerWeapon(
       ctx.stroke();
     }
   } else if (def.kind === 'bow') {
-    // ── Bow Arc & String ───────────────────────────────────────────────────
     const bowRadiusPx = 7 * scalePx;
-    ctx.strokeStyle = '#8b5a2b';
-    ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
-    ctx.beginPath();
-    ctx.arc(0, 0, bowRadiusPx, -Math.PI * 0.35, Math.PI * 0.35);
-    ctx.stroke();
 
-    // Bowstring
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(0.8, scalePx * 0.5);
-    ctx.beginPath();
-    const topX = Math.cos(-Math.PI * 0.35) * bowRadiusPx;
-    const topY = Math.sin(-Math.PI * 0.35) * bowRadiusPx;
-    const botX = Math.cos(Math.PI * 0.35) * bowRadiusPx;
-    const botY = Math.sin(Math.PI * 0.35) * bowRadiusPx;
-    ctx.moveTo(topX, topY);
-    ctx.lineTo(-scalePx * 1.5, 0);
-    ctx.lineTo(botX, botY);
-    ctx.stroke();
+    const drawBowPass = (limbColor: string, stringColor: string, dx: number, dy: number): void => {
+      ctx.strokeStyle = limbColor;
+      ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
+      ctx.beginPath();
+      ctx.arc(dx, dy, bowRadiusPx, -Math.PI * 0.35, Math.PI * 0.35);
+      ctx.stroke();
+
+      // Bowstring
+      ctx.strokeStyle = stringColor;
+      ctx.lineWidth = Math.max(0.8, scalePx * 0.5);
+      ctx.beginPath();
+      const topX = Math.cos(-Math.PI * 0.35) * bowRadiusPx + dx;
+      const topY = Math.sin(-Math.PI * 0.35) * bowRadiusPx + dy;
+      const botX = Math.cos(Math.PI * 0.35) * bowRadiusPx + dx;
+      const botY = Math.sin(Math.PI * 0.35) * bowRadiusPx + dy;
+      ctx.moveTo(topX, topY);
+      ctx.lineTo(-scalePx * 1.5 + dx, dy);
+      ctx.lineTo(botX, botY);
+      ctx.stroke();
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawBowPass(OUTLINE_COLOR, OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
+    }
+
+    // 2. Draw foreground pass
+    drawBowPass('#8b5a2b', '#ffffff', 0, 0);
   } else if (def.kind === 'staff' || def.kind === 'magic') {
-    // ── Staff Shaft & Magic Orb ───────────────────────────────────────────
     const staffLenPx = 18 * scalePx;
-    ctx.strokeStyle = '#6e4720';
-    ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
-    ctx.beginPath();
-    ctx.moveTo(-staffLenPx * 0.2, 0);
-    ctx.lineTo(staffLenPx * 0.8, 0);
-    ctx.stroke();
-
-    // Glowing tip
     const tipX = staffLenPx * 0.8;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(tipX, 0, scalePx * 2.5, 0, Math.PI * 2);
-    ctx.fill();
+
+    const drawStaffPass = (shaftColor: string, tipColor: string, dx: number, dy: number): void => {
+      ctx.strokeStyle = shaftColor;
+      ctx.lineWidth = Math.max(1.2, scalePx * 0.9);
+      ctx.beginPath();
+      ctx.moveTo(-staffLenPx * 0.2 + dx, dy);
+      ctx.lineTo(staffLenPx * 0.8 + dx, dy);
+      ctx.stroke();
+
+      // Glowing tip
+      ctx.fillStyle = tipColor;
+      ctx.beginPath();
+      ctx.arc(tipX + dx, dy, scalePx * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    // 1. Draw 4 cardinal black outline passes (corners clipped)
+    for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+      const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+      drawStaffPass(OUTLINE_COLOR, OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
+    }
+
+    // 2. Draw foreground pass
+    drawStaffPass('#6e4720', color, 0, 0);
   }
 
   ctx.restore();
