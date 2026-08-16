@@ -117,7 +117,7 @@ import {
 import { renderGameHud } from './gameHudRenderer';
 import { renderDarkRoomLighting } from './gameDarkRoomLighting';
 import { applyRenderQualitySettings } from './gameRenderQuality';
-import { renderBackgroundPass, type StagedRoomBgInfo } from './gameRenderBackgroundPass';
+import { renderBackgroundPass, renderWorldBackgroundLayer, type StagedRoomBgInfo } from './gameRenderBackgroundPass';
 import { renderSceneLightingPass } from './gameRenderSceneLighting';
 import { renderTeleportFlash } from '../render/lambdaAnchorRenderer';
 import { renderVoidEdge } from '../render/voidEdgeRenderer';
@@ -415,13 +415,13 @@ export function renderFrame(r: RenderFrameContext): void {
   ctx.clearRect(0, 0, virtualWidthPx, virtualHeightPx);
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, virtualWidthPx, virtualHeightPx);
+  // The static world background is drawn straight onto the device canvas at
+  // full screen resolution (see the device background pass below), so the room
+  // rect is punched back out to transparent here and the virtual canvas is
+  // composited over that background rather than hiding it.
+  ctx.clearRect(roomScreenXPx, roomScreenYPx, roomScreenWidthPx, roomScreenHeightPx);
   if (webglRenderer.isAvailable) {
     webglRenderer.render(snapshot, ox, oy, zoom);
-  } else if (bgColor !== '#000000') {
-    // Keep legacy room-local background tinting behavior when no WebGL layer
-    // is active, while preserving black room margins via clipping below.
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(roomScreenXPx, roomScreenYPx, roomScreenWidthPx, roomScreenHeightPx);
   }
 
   // ── Adjacent rooms (render-only radius-1 view, drawn into the void) ───────
@@ -491,6 +491,7 @@ export function renderFrame(r: RenderFrameContext): void {
     roomHeightWorld,
     nowMs,
     renderProfiler,
+    worldBackgroundDrawnExternally: true,
   });
 
   // ── Background light spill (optional subtle warm glow from nearby walls) ──
@@ -850,6 +851,51 @@ export function renderFrame(r: RenderFrameContext): void {
   // ── Upscale virtual canvas to device canvas ────────────────────────────
   if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_UPSCALE);
   resetCanvasPass(deviceCtx, canvas.width, canvas.height, false);
+
+  // ── World background at native screen resolution ────────────────────────
+  // Drawn onto the device canvas (not the virtual one) so its parallax offset
+  // is rasterised against device pixels instead of being quantised to whole
+  // virtual pixels — at the game's native resolution a slowly panning camera
+  // snaps the background a full virtual pixel at a time, which reads as
+  // stuttering. The virtual canvas is transparent over the room rect, so the
+  // blit below composites the world on top of this layer.
+  deviceCtx.save();
+  try {
+    // Scaling the transform keeps every coordinate below in virtual/logical
+    // space while the actual rasterisation happens at device resolution.
+    deviceCtx.setTransform(
+      canvas.width / virtualWidthPx, 0,
+      0, canvas.height / virtualHeightPx,
+      0, 0,
+    );
+    // Smoothing on: this layer is a photographic backdrop sampled at screen
+    // resolution, so nearest-neighbour would reintroduce the blocky stepping
+    // the device-resolution pass exists to remove.
+    deviceCtx.imageSmoothingEnabled = true;
+    deviceCtx.beginPath();
+    deviceCtx.rect(clipScreenXPx, clipScreenYPx, clipScreenWPx, clipScreenHPx);
+    deviceCtx.clip();
+    if (!webglRenderer.isAvailable && bgColor !== '#000000') {
+      // Legacy room-local background tint, kept beneath the background image.
+      deviceCtx.fillStyle = bgColor;
+      deviceCtx.fillRect(roomScreenXPx, roomScreenYPx, roomScreenWidthPx, roomScreenHeightPx);
+    }
+    renderWorldBackgroundLayer({
+      ctx: deviceCtx,
+      currentRoom,
+      stagedRoom: r.stagedRoom,
+      ox,
+      oy,
+      zoom,
+      virtualWidthPx,
+      virtualHeightPx,
+      roomWidthWorld,
+      roomHeightWorld,
+    });
+  } finally {
+    deviceCtx.restore();
+  }
+
   deviceCtx.drawImage(virtualCanvas, 0, 0, canvas.width, canvas.height);
   // Composite WebGL particle canvas on top (also at virtual resolution)
   if (webglRenderer.isAvailable) {

@@ -23,7 +23,13 @@ export interface StagedRoomBgInfo {
   originYWorld: number;
 }
 
-export interface BackgroundPassContext {
+/**
+ * Inputs for the static world-background image layer alone (no procedural
+ * background effects).  Coordinates are always expressed in virtual/logical
+ * pixels — the caller may pre-scale the context to draw the same layout at a
+ * higher device resolution.
+ */
+export interface WorldBackgroundLayerContext {
   ctx: CanvasRenderingContext2D;
   currentRoom: RoomDef;
   stagedRoom: StagedRoomBgInfo | null;
@@ -34,16 +40,31 @@ export interface BackgroundPassContext {
   virtualHeightPx: number;
   roomWidthWorld: number;
   roomHeightWorld: number;
+}
+
+export interface BackgroundPassContext extends WorldBackgroundLayerContext {
   nowMs: number;
   renderProfiler?: RenderProfiler;
   rainParallaxBackground?: RainParallaxBackground;
   thunderstormLightning?: ThunderstormLightning;
+  /**
+   * When true the static world-background image was already drawn by the
+   * caller — at device resolution, on the device canvas — so this pass renders
+   * only the procedural background effects on top.
+   */
+  worldBackgroundDrawnExternally?: boolean;
 }
 
 /**
- * Render room background and procedural background effects for the current frame.
+ * Draw the static world-background image (plus the staged room's background
+ * when a seamless crossing is active), clipped to each room's screen rect.
+ *
+ * Split out of {@link renderBackgroundPass} so the game renderer can draw this
+ * layer straight onto the device canvas at full screen resolution: at the
+ * game's native virtual resolution the parallax offset quantises to whole
+ * virtual pixels, which makes slow camera motion look like it stutters.
  */
-export function renderBackgroundPass(r: BackgroundPassContext): void {
+export function renderWorldBackgroundLayer(r: WorldBackgroundLayerContext): void {
   const {
     ctx,
     currentRoom,
@@ -55,13 +76,7 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
     virtualHeightPx,
     roomWidthWorld,
     roomHeightWorld,
-    nowMs,
-    renderProfiler,
-    rainParallaxBackground,
-    thunderstormLightning,
   } = r;
-
-  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BACKGROUND);
 
   if (stagedRoom !== null) {
     const stagedW = stagedRoom.room.widthBlocks * BLOCK_SIZE_MEDIUM;
@@ -127,6 +142,31 @@ export function renderBackgroundPass(r: BackgroundPassContext): void {
       currentRoom.backgroundBlur === true,
     );
   }
+}
+
+/**
+ * Render room background and procedural background effects for the current frame.
+ */
+export function renderBackgroundPass(r: BackgroundPassContext): void {
+  const {
+    ctx,
+    currentRoom,
+    ox,
+    oy,
+    zoom,
+    virtualWidthPx,
+    virtualHeightPx,
+    roomWidthWorld,
+    roomHeightWorld,
+    nowMs,
+    renderProfiler,
+    rainParallaxBackground,
+    thunderstormLightning,
+  } = r;
+
+  if (renderProfiler !== undefined) renderProfiler.stageBegin(STAGE_BACKGROUND);
+
+  if (r.worldBackgroundDrawnExternally !== true) renderWorldBackgroundLayer(r);
 
   const roomCenterOffsetXPx = virtualWidthPx * 0.5 - roomWidthWorld * 0.5 * zoom;
   const roomCenterOffsetYPx = virtualHeightPx * 0.5 - roomHeightWorld * 0.5 * zoom;
