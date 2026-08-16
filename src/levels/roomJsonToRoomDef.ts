@@ -38,6 +38,7 @@ import { legacyChallengeGateToRoomGate, normalizeRoomGateDef } from './gateDefs'
 import { buildCompleteBoundaryWalls } from './roomBoundaryWalls';
 import { hydrateAndValidateBakedWallTemplate } from './roomWallTemplateHash';
 import { isKnownMaterialId } from '../sim/pixelMaterials/pixelMaterialTypes';
+import { encodeHalfBlockOrientation } from "./halfBlockGeometry";
 
 export { validateRoomJson };
 
@@ -69,7 +70,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
       rampOrientation: w.rampOrientation,
       stairsOrientation: w.stairsOrientation,
       smoothRampOrientation: w.smoothRampOrientation,
-      halfBlockOrientation: w.halfBlock ? (1 as const) : (0 as const),
+      halfBlockOrientation: encodeHalfBlockOrientation(w.halfBlock),
     };
     if (w.r !== undefined && rimStylesTable !== undefined && rimStylesTable[w.r] !== undefined) {
       wall.surfaceRim = decodeSurfaceRimStyle(rimStylesTable[w.r]);
@@ -476,7 +477,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
       rampOrientation: b.rampOrientation,
       stairsOrientation: b.stairsOrientation,
       smoothRampOrientation: b.smoothRampOrientation,
-      halfBlockOrientation: b.halfBlockOrientation,
+      halfBlockOrientation: encodeHalfBlockOrientation(b.halfBlock),
       variant: b.variant !== 'normal' ? b.variant : undefined,
       isSecretFlag: b.isSecretFlag,
       blockTheme: blockThemeRefToTheme(b.blockThemeId) ?? b.blockTheme,

@@ -17,6 +17,7 @@ import { getTransitionEditorHitbox } from './editorHitTest';
 import { editorPerfCounters } from './editorPerfCounters';
 import { findTransitionWidthMismatch } from './editorVisualMapHelpers';
 import { getStickRpgEnemyTrait } from '../sim/clusters/stickRpgEnemyTraits';
+import { halfBlockRect, isHalfBlockOrientation } from "../levels/halfBlockGeometry";
 
 /** Click/tap tolerance radius, in screen px, around a transition's width-mismatch warning icon. */
 export const TRANSITION_WARNING_ICON_RADIUS_PX = 9;
@@ -466,7 +467,9 @@ export function drawPlatformLine(
 }
 
 /**
- * Draws a half-width pillar wall as a narrow rectangle.
+ * Draws a half-block wall as the solid half named by its orientation, plus a
+ * faint outline of the full authored extent so the empty half stays legible
+ * while editing.
  */
 export function drawHalfBlockRect(
   ctx: CanvasRenderingContext2D,
@@ -479,14 +482,13 @@ export function drawHalfBlockRect(
   const y  = w.yBlock * BLOCK_SIZE_SMALL * zoom + oy;
   const ww = w.wBlock * BLOCK_SIZE_SMALL * zoom;
   const wh = w.hBlock * BLOCK_SIZE_SMALL * zoom;
-  // Half-width pillar = 3 world units wide (half of BLOCK_SIZE_MEDIUM=6)
-  const halfW = ww / 2;
+  const solid = halfBlockRect(x, y, ww, wh, w.halfBlockOrientation);
 
   ctx.fillStyle = color;
-  ctx.fillRect(x, y, halfW, wh);
+  ctx.fillRect(solid.x, solid.y, solid.w, solid.h);
   ctx.strokeStyle = color.replace(/[\d.]+\)$/, '1)');
   ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, halfW, wh);
+  ctx.strokeRect(solid.x, solid.y, solid.w, solid.h);
   // Faint outline of full block extent
   ctx.strokeStyle = color.replace(/[\d.]+\)$/, '0.3)');
   ctx.strokeRect(x, y, ww, wh);
@@ -893,7 +895,7 @@ export function getEditorWallTopology(room: EditorRoomData, wallGeometryRevision
   const cells: EditorWallCell[] = [];
 
   for (const w of room.interiorWalls) {
-    if (w.isPlatformFlag === 1 || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.smoothRampOrientation !== undefined || w.halfBlockOrientation === 1) continue;
+    if (w.isPlatformFlag === 1 || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.smoothRampOrientation !== undefined || isHalfBlockOrientation(w.halfBlockOrientation)) continue;
     for (let dy = 0; dy < w.hBlock; dy++) {
       for (let dx = 0; dx < w.wBlock; dx++) {
         const gx = w.xBlock + dx;

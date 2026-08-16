@@ -46,6 +46,7 @@ import {
 } from '../sim/fallingBlocks/fallingBlockTypes';
 import { updateWallSlot } from '../sim/fallingBlocks/fallingBlockSim';
 import { BLOCK_SIZE_MEDIUM } from '../levels/roomDef';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

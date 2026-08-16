@@ -56,6 +56,7 @@ import type {
   EditorPixelMaterial,
 } from './editorState';
 import { particleKindToString } from './roomJsonSchema';
+import { HALF_BLOCK_NONE, isHalfBlockOrientation } from "../levels/halfBlockGeometry";
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -111,7 +112,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
   // Special cases that should NOT be split into 1×1 tiles:
   //   • Stairs (stairsOrientation set) — the mask spans the whole placement.
   //   • Ramps (rampOrientation set) — they represent a triangle block, not a rect.
-  //   • Half-width pillars (halfBlockOrientation) — single-column elements.
+  //   • Half-blocks (halfBlockOrientation) — the half applies to the whole extent.
   //   • Platforms (isPlatformFlag) — keep their original width for natural editing.
   const interiorWalls: EditorWall[] = [];
   for (const w of extractInteriorWalls(room)) {
@@ -119,7 +120,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
       w.rampOrientation == null &&
       w.stairsOrientation == null &&
       w.smoothRampOrientation == null &&
-      (w.halfBlockOrientation ?? 0) === 0 &&
+      !isHalfBlockOrientation(w.halfBlockOrientation ?? HALF_BLOCK_NONE) &&
       (w.isPlatformFlag ?? 0) === 0 &&
       (w.wBlock > 1 || w.hBlock > 1);
 
@@ -139,7 +140,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
             rampOrientation: undefined,
             stairsOrientation: undefined,
             smoothRampOrientation: undefined,
-            halfBlockOrientation: 0,
+            halfBlockOrientation: HALF_BLOCK_NONE,
             surfaceRim: w.surfaceRim,
           });
         }
@@ -157,7 +158,7 @@ export function roomDefToEditorRoomData(room: RoomDef, startUid: number): { data
         rampOrientation: w.rampOrientation,
         stairsOrientation: w.stairsOrientation,
         smoothRampOrientation: w.smoothRampOrientation,
-        halfBlockOrientation: (w.halfBlockOrientation ?? 0) as 0 | 1,
+        halfBlockOrientation: w.halfBlockOrientation ?? HALF_BLOCK_NONE,
         surfaceRim: w.surfaceRim,
       });
     }

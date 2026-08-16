@@ -41,6 +41,7 @@ import type {
 import { editorRoomDataToRoomDef } from './editorRoomBuilder';
 import { buildRoomWallTemplate } from '../screens/gameRoomWalls';
 import { BAKED_WALL_SCHEMA_VERSION, computeWallTemplateSourceHash } from '../levels/roomWallTemplateHash';
+import { HALF_BLOCK_NONE, decodeHalfBlockOrientation } from "../levels/halfBlockGeometry";
 
 /**
  * Converts the in-editor room representation into the compact JSON format that
@@ -89,7 +90,7 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       if (w.rampOrientation !== undefined) wall.rampOrientation = w.rampOrientation;
       if (w.stairsOrientation !== undefined) wall.stairsOrientation = w.stairsOrientation;
       if (w.smoothRampOrientation !== undefined) wall.smoothRampOrientation = w.smoothRampOrientation;
-      if (w.halfBlockOrientation === 1) wall.halfBlock = true;
+      { const h = decodeHalfBlockOrientation(w.halfBlockOrientation); if (h !== undefined) wall.halfBlock = h; }
       const rimIndex = rimIndexForWall(w);
       if (rimIndex !== undefined) wall.r = rimIndex;
       return wall;
@@ -406,7 +407,7 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       if (b.rampOrientation !== undefined) entry.rampOrientation = b.rampOrientation;
       if (b.stairsOrientation !== undefined) entry.stairsOrientation = b.stairsOrientation;
       if (b.smoothRampOrientation !== undefined) entry.smoothRampOrientation = b.smoothRampOrientation;
-      if (b.halfBlockOrientation === 1) entry.halfBlockOrientation = 1;
+      { const h = decodeHalfBlockOrientation(b.halfBlockOrientation ?? HALF_BLOCK_NONE); if (h !== undefined) entry.halfBlock = h; }
       if (b.variant !== 'normal') entry.variant = b.variant;
       if (b.isSecretFlag === 1) entry.isSecretFlag = 1;
       if (b.blockTheme !== undefined) {

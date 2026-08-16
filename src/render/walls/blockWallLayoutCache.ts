@@ -28,6 +28,7 @@ import {
   type SurfaceRimStyle,
   SURFACE_RIM_STYLE_INDEX_DEFAULT,
 } from './surfaceRimStyle';
+import { isHalfBlockOrientation } from "../../levels/halfBlockGeometry";
 
 // ── Fast layout signature hash ─────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ export interface CachedWallLayout {
   platformTiles: CachedTileCoord[];
   /** Shaped walls (stairs, legacy ramps): rendered from their template mask. */
   shapedWalls: ShapedWallInfo[];
-  /** Half-pillar walls (halfBlockOrientation === 1): rendered narrow. */
+  /** Half-block walls: their wall AABB is already the narrowed half, so these are drawn as plain rects by their own pass. */
   halfBlockWalls: HalfBlockWallInfo[];
   /** Per-tile theme: maps tile key → BlockTheme (null = use room default). */
   tileTheme: Map<string, BlockTheme | null>;
@@ -249,8 +250,8 @@ function _buildSolid2x2Map(walls: WallSnapshot, blockSizePx: number): Map<string
     // Shaped walls (stairs, legacy ramps) are drawn from their template mask by
     // the shaped-wall path, never as solid 2×2 blocks.
     if (!isPlainRectOrientationIndex(walls.rampOrientationIndex[wi])) continue;
-    // Half-pillar walls are rendered by the half-pillar path, never as solid 2×2 blocks.
-    if (walls.halfBlockOrientation[wi] === 1) continue;
+    // Half-block walls are rendered by the half-block path, never as solid 2×2 blocks.
+    if (isHalfBlockOrientation(walls.halfBlockOrientation[wi])) continue;
 
     const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
     const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
@@ -361,7 +362,7 @@ function _buildRenderData(style: SurfaceRimStyle): CachedSurfaceRimRenderData {
 }
 
 function _renderPassPriority(walls: WallSnapshot, wi: number): number {
-  if (walls.halfBlockOrientation[wi] === 1) return 3;
+  if (isHalfBlockOrientation(walls.halfBlockOrientation[wi])) return 3;
   if (!isPlainRectOrientationIndex(walls.rampOrientationIndex[wi])) return 2;
   if (walls.isPlatformFlag[wi] === 1) return 1;
   return 0;
@@ -561,8 +562,8 @@ export function buildWallLayout(
 
     // Half-pillar walls: add to normal occupied for lighting/neighbor purposes but
     // record for separate narrow rendering.
-    const isHalfPillar = walls.halfBlockOrientation[wi] === 1;
-    if (isHalfPillar) {
+    const isHalfBlock = isHalfBlockOrientation(walls.halfBlockOrientation[wi]);
+    if (isHalfBlock) {
       halfBlockWalls.push({ wallIndex: wi });
       // Add to occupied so neighbor detection works; these tiles still block movement.
       for (let r = 0; r < rowCount; r++) {

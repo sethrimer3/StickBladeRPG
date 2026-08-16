@@ -55,6 +55,7 @@ import {
 } from '../render/transitions/transitionPreviewContext';
 import { getOppositeTransitionDirection } from './gameTransitions';
 import { internSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

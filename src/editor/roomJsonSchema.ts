@@ -9,6 +9,7 @@
 import { ParticleKind } from '../sim/particles/kinds';
 import type { TransitionDirection, BlockTheme, BlockThemeId, BlockSoundHardness, BackgroundId, LightingEffect, DecorationKind, AmbientLightDirection, CrumbleVariant, BlockSeamBlending, VoidEdgeStyle, WeatherEffect } from '../levels/roomDef';
 import type { CompactSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
+import type { HalfBlockOrientationName } from "../levels/halfBlockGeometry";
 
 // ── ParticleKind string mapping ──────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import { MAX_WATER_ZONES } from './worldHazardState';
 import { SURFACE_RIM_STYLE_INDEX_DEFAULT } from '../render/walls/surfaceRimStyle';
 import { markLiquidBodiesDirty } from '../render/liquidBodyCache';
 import { ParticleKind } from './particles/kinds';
+import { HALF_BLOCK_NONE } from "../levels/halfBlockGeometry";
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 

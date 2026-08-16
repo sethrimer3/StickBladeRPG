@@ -62,9 +62,25 @@ export function decodeHalfBlockOrientation(value: number): HalfBlockOrientationN
   return isHalfBlockOrientation(value) ? HALF_BLOCK_ORIENTATION_NAMES[value] : undefined;
 }
 
-/** Advances an orientation one step through left → right → top → bottom → left. */
+/**
+ * Orientations in true 90°-clockwise order: a left-half slab rotated a quarter
+ * turn clockwise becomes a top-half slab, then a right half, then a bottom
+ * half. Used for both placement rotation steps and select-mode rotation, so
+ * Q/E move a half-block the way the shape actually turns.
+ */
+export const HALF_BLOCK_ROTATION_ORDER: readonly HalfBlockOrientation[] = [
+  HALF_BLOCK_LEFT, HALF_BLOCK_TOP, HALF_BLOCK_RIGHT, HALF_BLOCK_BOTTOM,
+];
+
+/** The orientation reached by rotating `steps` quarter-turns clockwise from left. */
+export function halfBlockOrientationForRotationSteps(steps: number): HalfBlockOrientation {
+  return HALF_BLOCK_ROTATION_ORDER[((steps % 4) + 4) % 4];
+}
+
+/** Advances an orientation one quarter-turn clockwise (see `HALF_BLOCK_ROTATION_ORDER`). */
 export function rotateHalfBlockOrientation(value: number): HalfBlockOrientation {
-  return (isHalfBlockOrientation(value) ? (value + 1) % 4 : 0) as HalfBlockOrientation;
+  const index = HALF_BLOCK_ROTATION_ORDER.indexOf(value as HalfBlockOrientation);
+  return HALF_BLOCK_ROTATION_ORDER[(Math.max(0, index) + 1) % 4];
 }
 
 /** An axis-aligned rectangle, in whatever unit the caller passed in. */

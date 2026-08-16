@@ -23,6 +23,7 @@ import { buildCompleteBoundaryWalls } from '../levels/roomBoundaryWalls';
 import { wallShapeOrientationIndex } from '../levels/stairsGeometry';
 import { editorPerfCounters } from './editorPerfCounters';
 import type { EditorViewport } from './editorRendererHelpers';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 /** Cheap per-wall signature — cheaper than a full WallSnapshot content hash, adequate for the small wall counts a single editor room has. */
 function _signatureFor(walls: readonly EditorWall[], widthBlocks: number, heightBlocks: number, roomTheme: string | null): string {
@@ -70,27 +71,27 @@ export function buildEditorWallSnapshot(room: EditorRoomData): WallSnapshot {
   const themeIndex = new Uint8Array(count);
   const isInvisibleFlag = new Uint8Array(count);
   const rampOrientationIndex = new Uint8Array(count);
-  const halfBlockOrientation = new Uint8Array(count);
+  const halfBlockOrientation = new Uint8Array(count).fill(HALF_BLOCK_NONE);
   const surfaceRimStyleIndex = new Uint16Array(count);
   const surfaceRimStyleTable: SurfaceRimStyle[] = [];
 
   for (let i = 0; i < count; i++) {
     const def = i < boundaryWalls.length ? boundaryWalls[i] : interiorWalls[i - boundaryWalls.length];
-    const isHalfBlock = def.halfBlockOrientation === 1;
-    const rawWWorld = isHalfBlock
-      ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
-      : Math.max(BLOCK_SIZE_MEDIUM, def.wBlock * BLOCK_SIZE_MEDIUM);
+    const halfOrientation = def.halfBlockOrientation ?? HALF_BLOCK_NONE;
+    const rect = halfBlockWorldRect(
+      def.xBlock, def.yBlock, def.wBlock, def.hBlock, halfOrientation, BLOCK_SIZE_MEDIUM,
+    );
 
-    xWorld[i] = def.xBlock * BLOCK_SIZE_MEDIUM;
-    yWorld[i] = def.yBlock * BLOCK_SIZE_MEDIUM;
-    wWorld[i] = rawWWorld;
-    hWorld[i] = Math.max(BLOCK_SIZE_MEDIUM, def.hBlock * BLOCK_SIZE_MEDIUM);
+    xWorld[i] = rect.x;
+    yWorld[i] = rect.y;
+    wWorld[i] = rect.w;
+    hWorld[i] = rect.h;
     isPlatformFlag[i] = def.isPlatformFlag === 1 ? 1 : 0;
     platformEdge[i] = def.platformEdge ?? 0;
     themeIndex[i] = def.blockTheme !== undefined ? blockThemeToIndex(def.blockTheme) : WALL_THEME_DEFAULT_INDEX;
     isInvisibleFlag[i] = 'isInvisibleFlag' in def && def.isInvisibleFlag === 1 ? 1 : 0;
     rampOrientationIndex[i] = wallShapeOrientationIndex(def);
-    halfBlockOrientation[i] = isHalfBlock ? 1 : 0;
+    halfBlockOrientation[i] = halfOrientation;
     surfaceRimStyleIndex[i] = internSurfaceRimStyle(surfaceRimStyleTable, def.surfaceRim);
   }
 

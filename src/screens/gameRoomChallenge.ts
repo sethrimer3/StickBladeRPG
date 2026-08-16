@@ -16,6 +16,7 @@ import {
   gateRectIsOccupied,
   updateGateState,
 } from '../sim/gates/gateState';
+import { HALF_BLOCK_NONE } from "../levels/halfBlockGeometry";
 
 const CHALLENGE_TOTEM_INTERACT_RADIUS_WORLD = 24;
 const FIXED_GATE_TICK_MS = 16.666;

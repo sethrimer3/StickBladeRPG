@@ -49,6 +49,7 @@ import { createDefaultDialogueEntry, MAX_DIALOGUE_ENTRIES } from '../dialogue/di
 import { canMutateElement } from './editorLayers';
 import { bumpSelectionRevision } from './editorSelectionCache';
 import { normalizeSurfaceRimStyle, isDefaultSurfaceRimStyle, type SurfaceRimStyle } from '../render/walls/surfaceRimStyle';
+import { HALF_BLOCK_NONE } from "../levels/halfBlockGeometry";
 
 // Guide dust path property validation bounds
 const MIN_MOTE_COUNT      = 3;
@@ -745,7 +746,7 @@ export function handleCrumbleModifierToggle(
         rampOrientation: block.rampOrientation,
         stairsOrientation: block.stairsOrientation,
         smoothRampOrientation: block.smoothRampOrientation,
-        halfBlockOrientation: block.halfBlockOrientation ?? 0,
+        halfBlockOrientation: block.halfBlockOrientation ?? HALF_BLOCK_NONE,
       };
       roomData.interiorWalls.push(wall);
       el.type = 'wall';

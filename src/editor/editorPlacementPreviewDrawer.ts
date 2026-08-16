@@ -37,6 +37,7 @@ import {
 import { loadImg, isSpriteReady } from '../render/imageCache';
 import { THEME_BLOCK_SPRITE_URL } from './editorUIHelpers';
 import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
+import { HALF_BLOCK_NONE, halfBlockOrientationForRotationSteps } from "../levels/halfBlockGeometry";
 
 // ============================================================================
 // Sprite animation tables for ghost placement preview
@@ -373,7 +374,7 @@ export function drawPlacementPreview(
         isPlatformFlag: 0,
         platformEdge: 0,
         rampOrientation: rampOri,
-        halfBlockOrientation: 0,
+        halfBlockOrientation: HALF_BLOCK_NONE,
       };
       drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, 'rgba(210,180,100,0.30)', 2);
     } else {
@@ -449,7 +450,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       stairsOrientation: stairsOri,
-      halfBlockOrientation: 0,
+      halfBlockOrientation: HALF_BLOCK_NONE,
     };
     drawStairsShape(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_STAIRS_COLOR, 2);
     return;
@@ -468,7 +469,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       rampOrientation: rampOri,
-      halfBlockOrientation: 0,
+      halfBlockOrientation: HALF_BLOCK_NONE,
     };
     drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_RAMP_COLOR, 2);
     return;
@@ -487,7 +488,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       smoothRampOrientation: smoothRampOri,
-      halfBlockOrientation: 0,
+      halfBlockOrientation: HALF_BLOCK_NONE,
     };
     drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_RAMP_COLOR, 2);
     return;
@@ -504,7 +505,7 @@ export function drawPlacementPreview(
       hBlock: preview.hBlock,
       isPlatformFlag: 1,
       platformEdge,
-      halfBlockOrientation: 0,
+      halfBlockOrientation: HALF_BLOCK_NONE,
     };
     drawPlatformLine(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PLATFORM_COLOR);
     return;
@@ -519,7 +520,7 @@ export function drawPlacementPreview(
       hBlock: preview.hBlock,
       isPlatformFlag: 0,
       platformEdge: 0,
-      halfBlockOrientation: 1,
+      halfBlockOrientation: halfBlockOrientationForRotationSteps(state.placementRotationSteps),
     };
     drawHalfBlockRect(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PILLAR_HALF_COLOR);
     return;

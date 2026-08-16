@@ -111,6 +111,7 @@ import type {
   SavedPoint,
   SavedSolidLayer,
 } from './roomSavedTypes';
+import { HALF_BLOCK_NONE, encodeHalfBlockOrientation } from "./halfBlockGeometry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENEMY TYPE MAPPING
@@ -181,7 +182,7 @@ export function isUniformSolidWall(w: RoomJsonWall): boolean {
   if (w.rampOrientation !== undefined)   return false;
   if (w.stairsOrientation !== undefined) return false;
   if (w.smoothRampOrientation !== undefined) return false;
-  if (w.halfBlock === true)      return false;
+  if (w.halfBlock !== undefined) return false;
   return true;
 }
 
@@ -426,7 +427,7 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
     if (w.rampOrientation !== undefined) sw.ramp = w.rampOrientation;
     if (w.stairsOrientation !== undefined) sw.stairs = w.stairsOrientation;
     if (w.smoothRampOrientation !== undefined) sw.smoothRamp = w.smoothRampOrientation;
-    if (w.halfBlock) sw.half = 1;
+    { const h = encodeHalfBlockOrientation(w.halfBlock); if (h !== HALF_BLOCK_NONE) sw.half = h as 0 | 1 | 2 | 3; }
     if (w.r !== undefined) sw.rim = w.r;
     return sw;
   });
@@ -643,7 +644,7 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
       if (c.rampOrientation !== undefined) entry.ramp = c.rampOrientation as 0 | 1 | 2 | 3;
       if (c.stairsOrientation !== undefined) entry.stairs = c.stairsOrientation;
       if (c.smoothRampOrientation !== undefined) entry.smoothRamp = c.smoothRampOrientation;
-      if (c.halfBlockOrientation === 1) entry.pillar = 1;
+      { const h = encodeHalfBlockOrientation(c.halfBlock); if (h !== HALF_BLOCK_NONE) entry.half = h as 0 | 1 | 2 | 3; }
       if (c.blockThemeId) entry.theme = c.blockThemeId;
       if (c.spikeDirection !== undefined) {
         entry.sd = c.spikeDirection;

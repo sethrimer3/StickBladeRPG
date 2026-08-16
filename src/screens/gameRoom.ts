@@ -10,6 +10,7 @@ import {
   ROPE_THICKNESS_HALF_WORLD,
 } from '../levels/roomDef';
 import { initRopeSegments, presettleRopes } from '../sim/ropes/ropeSim';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 /** Duration (ms) to show health bar after taking damage. */
 export const HEALTH_BAR_DISPLAY_MS = 3000;

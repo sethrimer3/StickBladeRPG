@@ -27,6 +27,7 @@ import type { CharacterStats } from './stats/characterStats';
 import type { PlayerStatBoosts } from '../progression/statBoosts';
 import type { PartyState } from './party/partyState';
 import type { PlayerInventory } from './party/inventory';
+import { HALF_BLOCK_NONE } from "../levels/halfBlockGeometry";
 
 /** Fixed capacity for this tick's Verdant flower-bloom spawn events (see verdantFlowerEventCount). */
 export const VERDANT_FLOWER_EVENTS_CAPACITY = 16;

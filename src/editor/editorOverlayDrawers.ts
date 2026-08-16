@@ -46,6 +46,7 @@ import {
 import type { IsElementSelected } from './editorZoneDrawers';
 import { drawEditorSurfaceRimOverlay } from './editorWallSurfaceRimPreview';
 import { editorPerfCounters } from './editorPerfCounters';
+import { isHalfBlockOrientation } from "../levels/halfBlockGeometry";
 
 // Re-export zone/environment draw helpers and the shared IsElementSelected type
 // so callers can import everything from this single file.
@@ -102,7 +103,7 @@ export function drawEditorWalls(
     const isPlatform = w.isPlatformFlag === 1;
     const isStairs = w.stairsOrientation !== undefined;
     const isRamp = w.rampOrientation !== undefined || w.smoothRampOrientation !== undefined;
-    const isHalfPillar = w.halfBlockOrientation === 1;
+    const isHalfBlock = isHalfBlockOrientation(w.halfBlockOrientation);
 
     if (isStairs) {
       const color = sel ? STAIRS_SELECTED : STAIRS_HIGHLIGHT;
@@ -113,7 +114,7 @@ export function drawEditorWalls(
     } else if (isPlatform) {
       const color = sel ? PLATFORM_SELECTED : PLATFORM_HIGHLIGHT;
       drawPlatformLine(ctx, w, offsetXPx, offsetYPx, zoom, color);
-    } else if (isHalfPillar) {
+    } else if (isHalfBlock) {
       const color = sel ? PILLAR_HALF_SELECTED : PILLAR_HALF_HIGHLIGHT;
       drawHalfBlockRect(ctx, w, offsetXPx, offsetYPx, zoom, color);
     } else {

@@ -21,6 +21,7 @@ import type { RoomWallTemplate } from './roomDef';
 import { BLOCK_SIZE_MEDIUM } from './roomDef';
 import { blockThemeToIndex, indexToBlockTheme } from './blockTheme';
 import { decodeSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
+import { encodeHalfBlockOrientation } from "./halfBlockGeometry";
 
 // ── Schema version ────────────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export function computeWallTemplateSourceHash(json: RoomJsonDef): string {
     // Must stay in lockstep with scripts/bake-room-wall-templates.mjs — a
     // mismatch would let a stale baked template survive a stairs edit.
     hashStr(String(w.stairsOrientation ?? ''));
-    hashBool(w.halfBlock);
+    hashNum(encodeHalfBlockOrientation(w.halfBlock));
     hashStr(String(w.r ?? ''));
   }
   // Surface Rim style table content — two rooms with different `rimStyles`

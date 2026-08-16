@@ -43,6 +43,32 @@ const SURFACE_RIM_STYLE_INDEX_DEFAULT = 0xFFFF;
 // roomSavedTypes.ts
 const DEFAULT_THEME_KEY = '__default__';
 
+// ── half-block geometry (mirrors src/levels/halfBlockGeometry.ts) ─────────────
+// Kept in lockstep with that module: a divergence here silently bakes wall
+// AABBs that disagree with what the game loads at runtime.
+
+const HALF_BLOCK_NONE = 255;
+const HALF_BLOCK_ORIENTATION_NAMES = ['left', 'right', 'top', 'bottom'];
+
+function encodeHalfBlockOrientation(name) {
+  const index = HALF_BLOCK_ORIENTATION_NAMES.indexOf(name);
+  return index < 0 ? HALF_BLOCK_NONE : index;
+}
+
+function halfBlockWorldRect(xBlock, yBlock, wBlock, hBlock, orientation, blockSizePx) {
+  const x = xBlock * blockSizePx;
+  const y = yBlock * blockSizePx;
+  const w = Math.max(blockSizePx, wBlock * blockSizePx);
+  const h = Math.max(blockSizePx, hBlock * blockSizePx);
+  switch (orientation) {
+    case 0: return { x,             y,             w: w / 2, h };
+    case 1: return { x: x + w / 2,  y,             w: w / 2, h };
+    case 2: return { x,             y,             w,        h: h / 2 };
+    case 3: return { x,             y: y + h / 2,  w,        h: h / 2 };
+    default: return { x, y, w, h };
+  }
+}
+
 // ── blockThemeRefToTheme (mirrors blockTheme.ts) ───────────────────────────────
 /** Resolves a compact theme ID or full theme name to its canonical full name. */
 function blockThemeRefToTheme(ref) {
@@ -164,7 +190,7 @@ function hydrateSpecialWalls(specialWalls) {
     }
     if (sw.ramp !== undefined) wall.rampOrientation = sw.ramp;
     if (sw.stairs !== undefined) wall.stairsOrientation = sw.stairs;
-    if (sw.half === 1) wall.halfBlock = true;
+    if (sw.half !== undefined) wall.halfBlock = HALF_BLOCK_ORIENTATION_NAMES[sw.half];
     return wall;
   });
 }
@@ -198,7 +224,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
   const sh  = []; // soundHardnessIndex
   const iv  = []; // isInvisibleFlag
   const ro  = []; // shape orientation: 0-3 legacy ramp, 4-7 stairs, 255 plain rect
-  const ph  = []; // halfBlockOrientation
+  const ph  = []; // halfBlockOrientation (0-3, or HALF_BLOCK_NONE)
   const ic  = []; // isIceFlag
   const uic = []; // isUltraIceFlag
   const rs  = []; // rimStyleIndex (SURFACE_RIM_STYLE_INDEX_DEFAULT = default)
@@ -206,15 +232,17 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
   const rawCount = Math.min(allWalls.length, MAX_WALLS);
   for (let wi = 0; wi < rawCount; wi++) {
     const def = allWalls[wi];
-    const isHalfBlock = def.halfBlock === true || def.halfBlockOrientation === 1;
-    // Half-width pillars use half BLOCK_SIZE_MEDIUM for width; minimum is still enforced per-axis.
-    const rawWWorld = isHalfBlock
-      ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
-      : Math.max(BLOCK_SIZE_MEDIUM,     def.wBlock * BLOCK_SIZE_MEDIUM);
-    xs.push(def.xBlock * BLOCK_SIZE_MEDIUM);
-    ys.push(def.yBlock * BLOCK_SIZE_MEDIUM);
-    ws.push(rawWWorld);
-    hs.push(Math.max(BLOCK_SIZE_MEDIUM, def.hBlock * BLOCK_SIZE_MEDIUM));
+    // Mirrors halfBlockWorldRect() in src/levels/halfBlockGeometry.ts.
+    const halfOrientation = def.halfBlockOrientation !== undefined
+      ? def.halfBlockOrientation
+      : encodeHalfBlockOrientation(def.halfBlock);
+    const rect = halfBlockWorldRect(
+      def.xBlock, def.yBlock, def.wBlock, def.hBlock, halfOrientation, BLOCK_SIZE_MEDIUM,
+    );
+    xs.push(rect.x);
+    ys.push(rect.y);
+    ws.push(rect.w);
+    hs.push(rect.h);
     fs.push((def.isPlatform === true || def.isPlatformFlag === 1) ? 1 : 0);
     pe.push(def.platformEdge ?? 0);
     const themeIdx = def.blockTheme !== undefined
@@ -229,7 +257,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
       : def.rampOrientation !== undefined ? def.rampOrientation
       : 255,
     );
-    ph.push(isHalfBlock ? 1 : 0);
+    ph.push(halfOrientation);
     // Ice flag derived from resolved theme name (mirrors gameRoomWalls.ts)
     const resolvedTheme = themeIdx === WALL_THEME_DEFAULT_INDEX
       ? (roomBlockTheme ?? '')
@@ -353,7 +381,7 @@ function computeWallTemplateSourceHash(
     hashStr(w.blockThemeId ?? '');
     hashStr(String(w.rampOrientation ?? ''));
     hashStr(String(w.stairsOrientation ?? ''));
-    hashBool(w.halfBlock);
+    hashNum(encodeHalfBlockOrientation(w.halfBlock));
     hashStr(String(w.r ?? ''));
   }
   hashStr(JSON.stringify(rimStyles ?? []));

@@ -14,6 +14,7 @@ import { RoomDef, BLOCK_SIZE_MEDIUM, WALL_THEME_DEFAULT_INDEX, type FallingBlock
 import { SURFACE_RIM_STYLE_INDEX_DEFAULT } from '../render/walls/surfaceRimStyle';
 import { MAX_TILES_PER_GROUP, MAX_LANDING_CONTACTS, type FallingBlockGroup } from '../sim/fallingBlocks/fallingBlockTypes';
 import { resolveWallSoundHardnessIndex } from './gameRoom';
+import { HALF_BLOCK_NONE } from "../levels/halfBlockGeometry";
 
 /**
  * Converts editor-placed falling block tiles into runtime FallingBlockGroup

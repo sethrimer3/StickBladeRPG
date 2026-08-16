@@ -33,6 +33,7 @@ import {
 import { editorPerfCounters } from './editorPerfCounters';
 import { loadImg, isSpriteReady } from '../render/imageCache';
 import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
+import { HALF_BLOCK_NONE, halfBlockRect, isHalfBlockOrientation } from "../levels/halfBlockGeometry";
 
 /** Helper type: function that returns whether a room element is selected. */
 export type IsElementSelected = (type: string, uid: number) => boolean;
@@ -310,14 +311,14 @@ export function drawEditorCrumbleBlocks(
       ctx.strokeStyle = sel ? 'rgba(220,160,50,0.90)' : 'rgba(200,150,60,0.55)';
       ctx.lineWidth = sel ? 2 : 1;
       ctx.stroke();
-    } else if (b.halfBlockOrientation === 1) {
-      // Half-width pillar — narrow rect (half the block's AABB width), plus
-      // a faint outline of the full block extent, mirroring drawHalfBlockRect.
-      const halfW = wPx / 2;
-      ctx.fillRect(xPx, yPx, halfW, hPx);
+    } else if (isHalfBlockOrientation(b.halfBlockOrientation ?? HALF_BLOCK_NONE)) {
+      // Half-block — the solid half named by its orientation, plus a faint
+      // outline of the full block extent, mirroring drawHalfBlockRect.
+      const solid = halfBlockRect(xPx, yPx, wPx, hPx, b.halfBlockOrientation ?? HALF_BLOCK_NONE);
+      ctx.fillRect(solid.x, solid.y, solid.w, solid.h);
       ctx.strokeStyle = sel ? 'rgba(220,160,50,0.90)' : 'rgba(200,150,60,0.55)';
       ctx.lineWidth = sel ? 2 : 1;
-      ctx.strokeRect(xPx, yPx, halfW, hPx);
+      ctx.strokeRect(solid.x, solid.y, solid.w, solid.h);
       ctx.strokeStyle = 'rgba(200,150,60,0.3)';
       ctx.lineWidth = 1;
       ctx.strokeRect(xPx, yPx, wPx, hPx);

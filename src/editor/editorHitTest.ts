@@ -11,6 +11,7 @@ import type { EditorRoomData, EditorWall, EditorTransition } from './editorState
 import { BLOCK_SIZE_SMALL } from '../levels/roomDef';
 import { isStairsSolidAtLocalPx } from '../levels/stairsGeometry';
 import { getMaterialFootprintSize, MATERIAL_SAND } from '../sim/pixelMaterials/pixelMaterialTypes';
+import { halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 // ── Basic hit-test primitives ────────────────────────────────────────────────
 
@@ -240,14 +241,12 @@ function cellOverlapsEditorPoints(
  * materials need native-PIXEL precision, not block-cell precision, because
  * some runtime wall geometry is narrower than a full 8x8 block:
  *
- *   - Half-width pillars (`EditorWall.halfBlockOrientation === 1`): the
- *     runtime wall rect is only 4px wide (see `gameRoomWalls.ts`:
- *     `rawWWorld = Math.max(BLOCK_SIZE_MEDIUM / 2, wBlock * (BLOCK_SIZE_MEDIUM / 2))`
- *     when the flag is set), always anchored at the wall's left edge
- *     (`xBlock * BLOCK_SIZE_SMALL`). A block-cell-granularity check would
- *     treat the ENTIRE 8x8 block as solid and incorrectly reject placement
- *     in the empty right half — this function tests the real 4px-wide AABB
- *     instead, matching runtime exactly.
+ *   - Half-blocks (`EditorWall.halfBlockOrientation` 0-3): the runtime wall
+ *     rect covers only half the authored extent, on the side the orientation
+ *     names — see `halfBlockWorldRect` in levels/halfBlockGeometry.ts, which
+ *     both this and `gameRoomWalls.ts` go through. A block-cell-granularity
+ *     check would treat the ENTIRE 8x8 block as solid and incorrectly reject
+ *     placement in the empty half.
  *   - Stairs (`EditorWall.stairsOrientation !== undefined`): solid only where
  *     the stair template mask is, matching `buildSolidMaskFromWorld`'s
  *     step-rectangle expansion at runtime. Sand may be placed in a stair's
@@ -277,12 +276,13 @@ function cellOverlapsEditorPoints(
 export function isPixelMaterialSolidAtPixel(room: EditorRoomData, xPixel: number, yPixel: number): boolean {
   for (const w of room.interiorWalls) {
     if (w.isPlatformFlag === 1) continue;
-    const x0 = w.xBlock * BLOCK_SIZE_SMALL;
-    const y0 = w.yBlock * BLOCK_SIZE_SMALL;
-    const wPx = w.halfBlockOrientation === 1
-      ? Math.max(BLOCK_SIZE_SMALL / 2, w.wBlock * (BLOCK_SIZE_SMALL / 2))
-      : Math.max(BLOCK_SIZE_SMALL, w.wBlock * BLOCK_SIZE_SMALL);
-    const hPx = Math.max(BLOCK_SIZE_SMALL, w.hBlock * BLOCK_SIZE_SMALL);
+    const solid = halfBlockWorldRect(
+      w.xBlock, w.yBlock, w.wBlock, w.hBlock, w.halfBlockOrientation, BLOCK_SIZE_SMALL,
+    );
+    const x0 = solid.x;
+    const y0 = solid.y;
+    const wPx = solid.w;
+    const hPx = solid.h;
     if (!(xPixel >= x0 && xPixel < x0 + wPx && yPixel >= y0 && yPixel < y0 + hPx)) continue;
     // Stairs are only solid where the template mask is — mirrors the runtime
     // `buildSolidMaskFromWorld` expansion so the editor and the sand sim agree.

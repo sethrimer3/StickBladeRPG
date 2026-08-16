@@ -48,6 +48,7 @@ import {
 } from './editorLayers';
 import { anchorForMaterial } from './editorPixelMaterialTool';
 import { bumpSelectionRevision } from './editorSelectionCache';
+import { HALF_BLOCK_NONE, halfBlockOrientationForRotationSteps } from "../levels/halfBlockGeometry";
 
 // ── Placement dimension helpers ───────────────────────────────────────────────
 
@@ -762,7 +763,11 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       ? platformEdgeMap[state.placementRotationSteps % 4]
       : 0;
 
-    const halfBlockOrientation: 0 | 1 = item.isHalfBlockItem === 1 ? 1 : 0;
+    // A half-block rotates with the same Q/E placement steps as ramps and
+    // platforms — each step turns the solid half a quarter-turn clockwise.
+    const halfBlockOrientation: number = item.isHalfBlockItem === 1
+      ? halfBlockOrientationForRotationSteps(state.placementRotationSteps)
+      : HALF_BLOCK_NONE;
 
     if (item.isBouncePadItem === 1) {
       const bounceW = getPlacementWidth(item, state.placementRotationSteps);
@@ -871,7 +876,9 @@ function placeAt(state: EditorState, bx: number, by: number): void {
         crumbleSmoothRamp = (state.placementFlipH ? (base ^ 1) : base) as 0 | 1 | 2 | 3;
       }
 
-      const crumblePillar: 0 | 1 | undefined = item.isHalfBlockItem === 1 ? 1 : undefined;
+      const crumbleHalfBlock: number | undefined = item.isHalfBlockItem === 1
+        ? halfBlockOrientationForRotationSteps(state.placementRotationSteps)
+        : undefined;
 
       // Direction follows the same 90°-CW rotation steps used for ramps/
       // platforms/plain spikes: 0=up, 1=right, 2=down, 3=left (see
@@ -913,7 +920,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
         rampOrientation: crumbleRamp,
         stairsOrientation: crumbleStairs,
         smoothRampOrientation: crumbleSmoothRamp,
-        halfBlockOrientation: crumblePillar,
+        halfBlockOrientation: crumbleHalfBlock,
         variant: state.pendingCrumbleVariant,
         isSecretFlag: state.pendingBlockPlacementModifier === 'secret' ? 1 : undefined,
         blockTheme: placementBlockTheme,

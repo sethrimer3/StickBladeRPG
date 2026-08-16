@@ -13,6 +13,7 @@ import type { TransitionDirection } from '../levels/roomDef';
 import { canSelectElementType, canMutateElement, LAYER_IDS } from './editorLayers';
 import { ELEMENT_ADAPTERS, ALL_ELEMENT_TYPES, type MarqueeRect } from './editorElementRegistry';
 import { editorPerfCounters } from './editorPerfCounters';
+import { HALF_BLOCK_NONE, isHalfBlockOrientation, rotateHalfBlockOrientation } from "../levels/halfBlockGeometry";
 export { deleteAtCursor, deleteAtCursorBrushed } from './editorDeleteTool';
 
 // ── Select tool ──────────────────────────────────────────────────────────────
@@ -300,6 +301,10 @@ export function rotateSelectedElement(state: EditorState): boolean {
     } else if (wall.smoothRampOrientation !== undefined) {
       wall.smoothRampOrientation = ((wall.smoothRampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
       changed = true;
+    } else if (isHalfBlockOrientation(wall.halfBlockOrientation)) {
+      // A half-block's solid half turns a quarter-turn clockwise per press.
+      wall.halfBlockOrientation = rotateHalfBlockOrientation(wall.halfBlockOrientation);
+      changed = true;
     }
     // A square wall's dimensions are unchanged by a width/height swap — this
     // is a genuine no-op, not just "rotation isn't visually distinguishable".
@@ -332,6 +337,9 @@ export function rotateSelectedElement(state: EditorState): boolean {
       changed = true;
     } else if (block.smoothRampOrientation !== undefined) {
       block.smoothRampOrientation = ((block.smoothRampOrientation + 1) % 4) as 0 | 1 | 2 | 3;
+      changed = true;
+    } else if (isHalfBlockOrientation(block.halfBlockOrientation ?? HALF_BLOCK_NONE)) {
+      block.halfBlockOrientation = rotateHalfBlockOrientation(block.halfBlockOrientation!);
       changed = true;
     }
     if (block.spikeDirection === undefined && block.wBlock !== block.hBlock) {

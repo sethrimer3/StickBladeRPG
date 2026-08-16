@@ -38,6 +38,7 @@ import {
   SURFACE_RIM_STYLE_INDEX_DEFAULT,
   internSurfaceRimStyle,
 } from '../render/walls/surfaceRimStyle';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 // Re-export RoomWallTemplate so existing callers that import it from here are unaffected.
 export type { RoomWallTemplate };

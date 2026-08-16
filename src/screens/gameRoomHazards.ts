@@ -41,6 +41,7 @@ import {
 import { resolveWallSoundHardnessIndex } from './gameRoomWalls';
 import { wallShapeOrientationIndex } from '../levels/stairsGeometry';
 import { raycastToWallWithNormal } from '../sim/clusters/radiantWebBeams';
+import { HALF_BLOCK_NONE, halfBlockWorldRect } from "../levels/halfBlockGeometry";
 
 /**
  * Half-thickness of a laser beam's solid/damaging cross-section (world
