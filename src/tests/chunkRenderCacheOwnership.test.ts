@@ -279,17 +279,29 @@ test('gameScreen does not clear the bake-forbidden flag inside the gameplay fram
   const here = path.dirname(fileURLToPath(import.meta.url));
   const src  = readFileSync(path.join(here, '..', 'screens', 'gameScreen.ts'), 'utf8');
 
-  const forbidIdx = src.indexOf('FP.setBakeForbiddenInGameplay(true)');
-  assert.ok(forbidIdx > 0, 'expected the gameplay path to forbid baking');
-  const endFrameIdx = src.indexOf('FP.endFrame()', forbidIdx);
-  assert.ok(endFrameIdx > forbidIdx, 'expected the gameplay path to end the frame');
+  // Comments discuss these calls at length (including this fix), so strip them
+  // before scanning — matching prose instead of code is exactly how the first
+  // version of this guard silently passed.
+  const codeLines = src.split('\n').map((line) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return '';
+    return line.split('//')[0];
+  });
 
-  const gameplayTail = src.slice(forbidIdx, endFrameIdx);
-  const clears = gameplayTail.match(/FP\.setBakeForbiddenInGameplay\(false\)/g) ?? [];
+  const forbidLine = codeLines.findIndex(l => l.includes('FP.setBakeForbiddenInGameplay(true)'));
+  assert.ok(forbidLine > 0, 'expected the gameplay path to forbid baking');
+
+  // Every non-gameplay branch clears the flag and returns BEFORE this point, so
+  // everything after it is the gameplay tail: no clear may appear there.
+  const offenders = codeLines
+    .slice(forbidLine + 1)
+    .map((l, i) => ({ line: forbidLine + 2 + i, text: l }))
+    .filter(e => e.text.includes('FP.setBakeForbiddenInGameplay(false)'));
+
   assert.deepEqual(
-    clears, [],
-    'the gameplay frame path must not clear the bake-forbidden flag before endFrame(); ' +
-      'every non-gameplay branch already clears it for itself, and a clear here ' +
+    offenders, [],
+    'the gameplay frame path must not clear the bake-forbidden flag; every ' +
+      'non-gameplay branch already clears it for itself, and a clear here ' +
       'manufactures one spurious bake unlock per frame',
   );
 });
