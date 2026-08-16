@@ -175,4 +175,37 @@ describe('Stickman Solid Black Outline', () => {
     const restoreCalls = calls.filter(c => c.op === 'restore');
     assert.equal(saveCalls.length, restoreCalls.length);
   });
+
+  test('stickman head is 5x5 pixels and limbs are 1 pixel with integer pixel snapping and crisp caps', () => {
+    const body = createStickRangerBody(103.4, 78.6);
+    const { ctx, calls } = createRecordingContext();
+
+    renderStickRangerBody(ctx, body, 0.3, 0.7, 1, false, false);
+
+    // Line width should be 1 pixel
+    const lineWidthCalls = calls.filter(c => c.op === 'stroke');
+    assert.equal(lineWidthCalls.length, 5);
+
+    // All lineTo and moveTo points should be integers (crisp pixel snap)
+    const moveTos = calls.filter(c => c.op === 'moveTo');
+    for (const m of moveTos) {
+      assert.equal(Number.isInteger(m.args[0]), true, `moveTo X must be integer: ${m.args[0]}`);
+      assert.equal(Number.isInteger(m.args[1]), true, `moveTo Y must be integer: ${m.args[1]}`);
+    }
+    const lineTos = calls.filter(c => c.op === 'lineTo');
+    for (const l of lineTos) {
+      assert.equal(Number.isInteger(l.args[0]), true, `lineTo X must be integer: ${l.args[0]}`);
+      assert.equal(Number.isInteger(l.args[1]), true, `lineTo Y must be integer: ${l.args[1]}`);
+    }
+
+    // Head fills should have width 5 and height 5, and integer coordinates
+    const headFills = calls.filter(c => c.op === 'fillRect');
+    assert.equal(headFills.length, 5);
+    for (const h of headFills) {
+      assert.equal(Number.isInteger(h.args[0]), true, `fillRect X must be integer: ${h.args[0]}`);
+      assert.equal(Number.isInteger(h.args[1]), true, `fillRect Y must be integer: ${h.args[1]}`);
+      assert.equal(h.args[2], 5, 'head width must be 5px');
+      assert.equal(h.args[3], 5, 'head height must be 5px');
+    }
+  });
 });

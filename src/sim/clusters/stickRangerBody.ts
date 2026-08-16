@@ -1413,55 +1413,33 @@ function findTopSolidY(solid: SolidMask, x: number, refY: number, scanAbove: num
 }
 
 /**
- * Detects whether there is a step-up obstacle of 1 block or less (<= 8.8 world units/pixels)
- * in front of the stickman in the direction of movement.
- *
- * Probes the SolidMask ahead of the stickman to find the highest solid surface
- * that has open air above it and adequate headroom clearance.
+ * Probes a range of distances ahead from an origin X to detect a step-up obstacle.
  */
-export function detectStickmanStepUp(
+function probeForStepUp(
   body: StickRangerBody,
-  solid: SolidMask | null,
+  solid: SolidMask,
   moveDirection: number,
+  originX: number,
+  originFloorY: number,
 ): StickmanStepUpInfo | null {
-  if (solid === null || moveDirection === 0) return null;
-
-  const activeFoot = body.swingFoot;
-  const plantedFoot = activeFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
-
-  const footL_Y = body.y[SR_FOOT_L];
-  const footR_Y = body.y[SR_FOOT_R];
-  const baseFloorY = Math.max(footL_Y, footR_Y);
-
   const hipX = body.x[SR_HIP];
-  const activeFootX = body.x[activeFoot];
-  const plantedFootX = body.x[plantedFoot];
+  let best: StickmanStepUpInfo | null = null;
 
-  const forwardEdgeX = moveDirection > 0
-    ? Math.max(activeFootX, hipX, plantedFootX)
-    : Math.min(activeFootX, hipX, plantedFootX);
-
-  // Find the solid floor directly beneath the leading edge of the stickman
-  const currentFloorY = findTopSolidY(solid, forwardEdgeX, baseFloorY, 4) ?? baseFloorY;
-
-  let bestCandidate: StickmanStepUpInfo | null = null;
-
-  // Probe a immediate range of distances ahead (1 to 4 pixels)
   for (let d = 1; d <= 4; d++) {
-    const probeX = Math.round(forwardEdgeX + moveDirection * d);
+    const probeX = Math.round(originX + moveDirection * d);
 
     // If the wall continues higher than STICKMAN_STEP_UP_MAX_RISE above base floor,
     // this probe column is part of a tall wall (> 1 block) and cannot be stepped up.
-    const tallWallTestY = Math.floor(currentFloorY - STICKMAN_STEP_UP_MAX_RISE - 1);
+    const tallWallTestY = Math.floor(originFloorY - STICKMAN_STEP_UP_MAX_RISE - 1);
     if (isSolidAt(solid, probeX, tallWallTestY)) {
       continue;
     }
 
     // Scan upward from floor level to find the highest solid pixel at probeX
-    const topSolidY = findTopSolidY(solid, probeX, currentFloorY, STICKMAN_STEP_UP_MAX_RISE);
+    const topSolidY = findTopSolidY(solid, probeX, originFloorY, STICKMAN_STEP_UP_MAX_RISE);
     if (topSolidY === null) continue;
 
-    const rise = currentFloorY - topSolidY;
+    const rise = originFloorY - topSolidY;
     if (rise < 1.0 || rise > STICKMAN_STEP_UP_MAX_RISE) continue;
 
     // Check open air directly above the top solid pixel
@@ -1494,12 +1472,52 @@ export function detectStickmanStepUp(
       rise,
     };
 
-    if (bestCandidate === null || candidate.rise > bestCandidate.rise) {
-      bestCandidate = candidate;
+    if (best === null || candidate.rise > best.rise) {
+      best = candidate;
     }
   }
 
-  return bestCandidate;
+  return best;
+}
+
+/**
+ * Detects whether there is a step-up obstacle of 1 block or less (<= 8.8 world units/pixels)
+ * in front of the stickman in the direction of movement.
+ *
+ * Probes the SolidMask ahead of both the active swing foot and the leading body edge
+ * to ensure smooth climbing even when the leading foot is already on top of the stairs.
+ */
+export function detectStickmanStepUp(
+  body: StickRangerBody,
+  solid: SolidMask | null,
+  moveDirection: number,
+): StickmanStepUpInfo | null {
+  if (solid === null || moveDirection === 0) return null;
+
+  const activeFoot = body.swingFoot;
+  const plantedFoot = activeFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
+
+  const activeFootX = body.x[activeFoot];
+  const activeFootY = body.y[activeFoot];
+  const plantedFootX = body.x[plantedFoot];
+  const plantedFootY = body.y[plantedFoot];
+  const hipX = body.x[SR_HIP];
+
+  const forwardEdgeX = moveDirection > 0
+    ? Math.max(activeFootX, hipX, plantedFootX)
+    : Math.min(activeFootX, hipX, plantedFootX);
+
+  // 1. Probe ahead of active foot (vital for stepping up when trailing foot is on lower step while leading foot is on top landing)
+  const activeFootFloorY = findTopSolidY(solid, activeFootX, activeFootY, 4) ?? activeFootY;
+  const activeCandidate = probeForStepUp(body, solid, moveDirection, activeFootX, activeFootFloorY);
+  if (activeCandidate !== null) {
+    return activeCandidate;
+  }
+
+  // 2. Probe ahead of leading edge (when approaching a step from flat ground)
+  const leadingFloorY = findTopSolidY(solid, forwardEdgeX, Math.max(activeFootY, plantedFootY), 4) ?? Math.max(activeFootY, plantedFootY);
+  const leadingCandidate = probeForStepUp(body, solid, moveDirection, forwardEdgeX, leadingFloorY);
+  return leadingCandidate;
 }
 
 /**
@@ -1839,30 +1857,30 @@ function stepBodyFrame(
     if (stepUp !== null) {
       const activeKnee = activeFoot === SR_FOOT_L ? SR_KNEE_L : SR_KNEE_R;
 
-      if (body.y[activeFoot] > stepUp.targetFootY + 0.5) {
-        // Stage 1: Lift foot and knee vertically in front of the step
-        const footDy = stepUp.targetFootY - body.y[activeFoot];
-        body.y[activeFoot] += footDy * 0.7;
-        body.prevY[activeFoot] += footDy * 0.7;
-        const kneeDy = stepUp.targetKneeY - body.y[activeKnee];
-        body.y[activeKnee] += kneeDy * 0.7;
-        body.prevY[activeKnee] += kneeDy * 0.7;
-        body.x[activeKnee] = (body.x[SR_HIP] + body.x[activeFoot]) * 0.5;
-      } else {
-        // Stage 2: Foot is elevated above stepTopY; step forward onto the tread
-        const footDx = (stepUp.targetFootX - body.x[activeFoot]) * 0.7;
-        body.x[activeFoot] += footDx;
-        body.y[activeFoot] = stepUp.targetFootY;
-        body.prevY[activeFoot] = stepUp.targetFootY;
-        body.x[activeKnee] = stepUp.targetKneeX;
-        body.y[activeKnee] = stepUp.targetKneeY;
-        body.prevY[activeKnee] = stepUp.targetKneeY;
+      // 1. Smooth vertical lift of swing foot (natural 0.85 px/frame arc)
+      if (body.y[activeFoot] > stepUp.targetFootY) {
+        const liftFootY = Math.min(body.y[activeFoot] - stepUp.targetFootY, 0.85);
+        body.y[activeFoot] -= liftFootY;
+        body.prevY[activeFoot] -= liftFootY;
       }
 
-      // Elevate hip and torso toward standing height on top of the step without injecting velocity
+      // 2. Smooth knee bend / leg raise animation
+      if (body.y[activeKnee] > stepUp.targetKneeY) {
+        const liftKneeY = Math.min(body.y[activeKnee] - stepUp.targetKneeY, 0.75);
+        body.y[activeKnee] -= liftKneeY;
+        body.prevY[activeKnee] -= liftKneeY;
+      }
+      body.x[activeKnee] += moveDirection * 0.35;
+      body.prevX[activeKnee] += moveDirection * 0.35;
+
+      // 3. Smooth forward stride of swing foot onto the step
+      body.x[activeFoot] += moveDirection * 0.4;
+      body.prevX[activeFoot] += moveDirection * 0.4;
+
+      // 4. Smooth torso and hip elevation toward standing height atop the step
       const targetHipY = stepUp.targetFootY - 9.0;
       if (body.y[SR_HIP] > targetHipY) {
-        const hipLift = Math.min(body.y[SR_HIP] - targetHipY, 1.2);
+        const hipLift = Math.min(body.y[SR_HIP] - targetHipY, 0.5);
         body.y[SR_HIP] -= hipLift;
         body.prevY[SR_HIP] -= hipLift;
         body.y[SR_CHEST] -= hipLift;
@@ -1870,13 +1888,12 @@ function stepBodyFrame(
         body.y[SR_HEAD] -= hipLift;
         body.prevY[SR_HEAD] -= hipLift;
       }
-      body.x[SR_HIP] += moveDirection * STEER_HIP_PUSH;
-      body.x[SR_CHEST] += moveDirection * STEER_CHEST_PUSH;
+      body.x[SR_HIP] += moveDirection * 0.3;
+      body.x[SR_CHEST] += moveDirection * 0.25;
 
-      // Stride handoff: only once the swing foot is placed on the step surface
-      const footPlacedOnStep =
-        body.y[activeFoot] <= stepUp.targetFootY + 1.2 &&
-        (body.x[activeFoot] - stepUp.targetFootX) * moveDirection >= -1.0;
+      // 5. Stride handoff once swing foot has completed the step onto the tread
+      const strideLead = (body.x[activeFoot] - body.x[plantedFoot]) * moveDirection;
+      const footPlacedOnStep = body.y[activeFoot] <= stepUp.targetFootY + 1.5 && strideLead >= 3.0;
       if (footPlacedOnStep || body.swingFrames >= 20) {
         body.swingFoot = plantedFoot;
         body.swingFrames = 0;

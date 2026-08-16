@@ -84,8 +84,8 @@ export function renderGrapple(ctx: CanvasRenderingContext2D, snapshot: WorldSnap
     // The stickman hangs by that hand, so the rope ends at the hand itself —
     // interpolated on the body's own clock, the same as the figure is drawn.
     const alpha = getStickRangerRenderAlpha(stickBody);
-    px = getStickRangerRenderX(stickBody, stickHandIndex, alpha) * scalePx + offsetXPx;
-    py = getStickRangerRenderY(stickBody, stickHandIndex, alpha) * scalePx + offsetYPx;
+    px = Math.round(getStickRangerRenderX(stickBody, stickHandIndex, alpha) * scalePx + offsetXPx);
+    py = Math.round(getStickRangerRenderY(stickBody, stickHandIndex, alpha) * scalePx + offsetYPx);
   } else if (playerCluster !== undefined) {
     const halfW = playerCluster.halfWidthWorld * scalePx;
     const offsetDir = playerCluster.isFacingLeftFlag === 1 ? -1 : 1;

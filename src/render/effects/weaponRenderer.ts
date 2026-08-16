@@ -562,8 +562,8 @@ export class WeaponRenderer {
 
     const angleRad = pose.angleRad;
 
-    const originXPx = this._anchor.xWorld * zoom + ox;
-    const originYPx = this._anchor.yWorld * zoom + oy;
+    const originXPx = Math.round(this._anchor.xWorld * zoom + ox);
+    const originYPx = Math.round(this._anchor.yWorld * zoom + oy);
 
     ctx.save();
 

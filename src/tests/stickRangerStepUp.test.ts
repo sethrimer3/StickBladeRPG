@@ -151,7 +151,7 @@ test('stickman walks right and steps up onto a 1-block (8px) ledge', () => {
   assert.ok(body.y[SR_HIP] > 85, 'hip starts at lower level');
 
   // Walk right toward and onto the step
-  advanceBodyFrames(body, mask, 1, 50);
+  advanceBodyFrames(body, mask, 1, 80);
 
   // Assert stickman crossed onto the step surface
   assert.ok(body.x[SR_HIP] > 110, `stickman should cross onto step (x > 110), got x=${body.x[SR_HIP]}`);
@@ -170,7 +170,7 @@ test('stickman walks left and steps up onto a 1-block (8px) ledge', () => {
   advanceBodyFrames(body, mask, 0, 30);
   assert.ok(body.y[SR_HIP] > 85);
 
-  advanceBodyFrames(body, mask, -1, 50);
+  advanceBodyFrames(body, mask, -1, 80);
 
   assert.ok(body.x[SR_HIP] < 116, `stickman should cross left onto step (x < 116), got x=${body.x[SR_HIP]}`);
   assert.ok(body.y[SR_HIP] <= stepTopY - 5, `stickman hip should climb onto step, got y=${body.y[SR_HIP]}`);
@@ -199,7 +199,7 @@ test('stickman walks up a multi-step staircase (4px risers)', () => {
   advanceBodyFrames(body, mask, 0, 30);
 
   // Walk up all 4 steps
-  advanceBodyFrames(body, mask, 1, 240);
+  advanceBodyFrames(body, mask, 1, 350);
 
   assert.ok(body.x[SR_HIP] > 145, `stickman should reach top of stairs (x > 145), got x=${body.x[SR_HIP]}`);
   assert.ok(body.y[SR_HIP] <= 84 - 5, `stickman should ascend to top step (y <= 79), got y=${body.y[SR_HIP]}`);
@@ -224,7 +224,7 @@ test('stickman walks up a continuous ramp slope', () => {
   advanceBodyFrames(body, mask, 0, 30);
 
   // Walk right up the ramp
-  advanceBodyFrames(body, mask, 1, 260);
+  advanceBodyFrames(body, mask, 1, 350);
 
   assert.ok(body.x[SR_HIP] > 140, `stickman should climb ramp (x > 140), got x=${body.x[SR_HIP]}`);
   assert.ok(body.y[SR_HIP] < 80, `stickman should ascend ramp, got y=${body.y[SR_HIP]}`);
@@ -309,4 +309,65 @@ test('stickman maintains upright posture during and after stepping up', () => {
 
   assert.ok(median > 10, `median height should stay upright, got ${median}`);
   assert.ok(minHeight > 2.5, `minimum height should not collapse, got ${minHeight}`);
+});
+
+test('stickman steps off the top of stairs onto a flat landing without getting stuck', () => {
+  const widthPx = 400;
+  const heightPx = 150;
+  const mask = new SolidMask(widthPx, heightPx);
+
+  // 3-step staircase with a long top landing:
+  // Base floor: y = 100
+  // Step 1: y = 92 from x = 80
+  // Step 2: y = 84 from x = 110
+  // Top landing: y = 76 from x = 140 all the way to x = 400
+  mask.markRect(0, 100, widthPx, heightPx);
+  mask.markRect(80, 92, widthPx, heightPx);
+  mask.markRect(110, 84, widthPx, heightPx);
+  mask.markRect(140, 76, widthPx, heightPx);
+
+  const body = createStickRangerBody(60, 100 - 9.6);
+  advanceBodyFrames(body, mask, 0, 30);
+
+  // Walk all the way up the stairs and continue across the flat landing
+  advanceBodyFrames(body, mask, 1, 400);
+
+  // Stickman should have stepped off the stairs and reached far onto the top landing (x > 200)
+  assert.ok(
+    body.x[SR_HIP] > 200,
+    `stickman should step off top of stairs onto landing (x > 200), got x=${body.x[SR_HIP]}`,
+  );
+  assert.ok(
+    body.y[SR_HIP] <= 76 - 5,
+    `stickman hip should be on top landing elevation (y <= 71), got y=${body.y[SR_HIP]}`,
+  );
+});
+
+test('stickman step-up progresses smoothly without teleporting', () => {
+  const floorY = 100;
+  const stepTopY = 92;
+  const mask = createSteppedSolidMask(300, 150, floorY, { x0: 108, x1: 300, topY: stepTopY });
+  const body = createStickRangerBody(100, floorY - 9.6);
+
+  advanceBodyFrames(body, mask, 0, 30);
+
+  let maxSingleFrameFootRise = 0;
+  let prevFootL_Y = body.y[SR_FOOT_L];
+  let prevFootR_Y = body.y[SR_FOOT_R];
+
+  for (let frame = 0; frame < 80; frame++) {
+    stepStickRangerBody(body, mask, 1, SR_FRAME_MS);
+    const riseL = prevFootL_Y - body.y[SR_FOOT_L];
+    const riseR = prevFootR_Y - body.y[SR_FOOT_R];
+    if (riseL > maxSingleFrameFootRise) maxSingleFrameFootRise = riseL;
+    if (riseR > maxSingleFrameFootRise) maxSingleFrameFootRise = riseR;
+    prevFootL_Y = body.y[SR_FOOT_L];
+    prevFootR_Y = body.y[SR_FOOT_R];
+  }
+
+  // Smooth stepping at ~0.85 px/frame instead of teleporting 5-8 px in a single frame
+  assert.ok(
+    maxSingleFrameFootRise <= 2.0,
+    `maximum single-frame foot lift should be <= 2.0 px/frame (smooth), got ${maxSingleFrameFootRise}`,
+  );
 });

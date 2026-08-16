@@ -77,8 +77,11 @@ export const OUTLINE_NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> 
             [0,  1],
 ];
 
-/** Size of the head square in world units (native pixels). Matches Stick Ranger. */
-export const HEAD_SIZE_WORLD = 4.8;
+/** Size of the head square in world units (native pixels). */
+export const HEAD_SIZE_WORLD = 5;
+
+/** Limb thickness in world units (native pixels). */
+export const LIMB_THICKNESS_WORLD = 1;
 
 const _weaponAnchorScratch = createWeaponGripAnchor();
 
@@ -87,6 +90,9 @@ const _weaponAnchorScratch = createWeaponGripAnchor();
  *
  * Draws a 1-pixel solid black outline in the 4 cardinal directions (corners clipped)
  * behind the figure, followed by the foreground stickman body.
+ *
+ * All coordinates snap to integer pixels for a crisp, non-blurry appearance.
+ * Limbs are 1 pixel wide and the head is 5x5 pixels.
  *
  * @param ctx        Canvas 2D context.
  * @param body       The simulated softbody.
@@ -106,11 +112,11 @@ export function renderStickRangerBody(
   isEnemy = false,
 ): void {
   const alpha = getStickRangerRenderAlpha(body);
-  const toScreenX = (i: number): number => getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx;
-  const toScreenY = (i: number): number => getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx;
+  const toScreenX = (i: number): number => Math.round(getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx);
+  const toScreenY = (i: number): number => Math.round(getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx);
 
   const color = isEnemy ? ENEMY_FIGURE_COLOR : FIGURE_COLOR;
-  const headSizePx = HEAD_SIZE_WORLD * scalePx;
+  const headSizePx = Math.max(1, Math.round(HEAD_SIZE_WORLD * scalePx));
   const outlineThicknessPx = scalePx;
 
   let toGripX = 0;
@@ -118,9 +124,11 @@ export function renderStickRangerBody(
   if (isTwoHandGrip) {
     const handX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
     const handY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
-    toGripX = handX * scalePx + offsetXPx;
-    toGripY = handY * scalePx + offsetYPx;
+    toGripX = Math.round(handX * scalePx + offsetXPx);
+    toGripY = Math.round(handY * scalePx + offsetYPx);
   }
+
+  const halfHeadPx = Math.floor(headSizePx * 0.5);
 
   const drawFigurePass = (passColor: string, dxPx: number, dyPx: number): void => {
     ctx.strokeStyle = passColor;
@@ -147,19 +155,19 @@ export function renderStickRangerBody(
     }
     ctx.stroke();
 
-    // Head: filled square centred on the head point.
+    // Head: filled 5x5 square centred on the head point, pixel-snapped.
     ctx.fillRect(
-      toScreenX(SR_HEAD) + dxPx - headSizePx * 0.5,
-      toScreenY(SR_HEAD) + dyPx - headSizePx * 0.5,
+      toScreenX(SR_HEAD) - halfHeadPx + dxPx,
+      toScreenY(SR_HEAD) - halfHeadPx + dyPx,
       headSizePx,
       headSizePx,
     );
   };
 
   ctx.save();
-  ctx.lineWidth = Math.max(1, scalePx);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1, Math.round(LIMB_THICKNESS_WORLD * scalePx));
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'miter';
 
   // 1. Draw 1-pixel solid black outline in 4 cardinal directions (clipped corners).
   for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
@@ -188,8 +196,8 @@ export function renderStickRangerWeapon(
 ): void {
   computeWeaponGripAnchor(body, def, 1, _weaponAnchorScratch);
 
-  const originXPx = _weaponAnchorScratch.xWorld * scalePx + offsetXPx;
-  const originYPx = _weaponAnchorScratch.yWorld * scalePx + offsetYPx;
+  const originXPx = Math.round(_weaponAnchorScratch.xWorld * scalePx + offsetXPx);
+  const originYPx = Math.round(_weaponAnchorScratch.yWorld * scalePx + offsetYPx);
   // At rest the blade follows the carry pose, not the arm: shoulder → hand
   // points almost straight down on this rig, which reads as a dropped weapon.
   const angleRad = isSwinging
