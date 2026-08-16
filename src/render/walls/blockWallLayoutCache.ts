@@ -29,6 +29,9 @@ import {
   SURFACE_RIM_STYLE_INDEX_DEFAULT,
 } from './surfaceRimStyle';
 import { isHalfBlockOrientation } from "../../levels/halfBlockGeometry";
+import {
+  generateGrassPixels, DEFAULT_GRASS_PARAMS, DEFAULT_GRASS_PALETTE,
+} from './proceduralGrass';
 
 // ── Fast layout signature hash ─────────────────────────────────────────────────
 
@@ -156,6 +159,11 @@ export interface CachedWallLayout {
    */
   subTileRimPixels: CachedSubTileRimPixel[];
   /**
+   * Grass overlay pixels, precomputed per layout. Empty unless some wall
+   * carries the Grass block overlay.
+   */
+  grassPixels: CachedGrassPixel[];
+  /**
    * Authoritative tile-level open-air exposure, built from the same
    * `occupied` set above but room-bounds aware (out-of-bounds neighbours
    * never count as open air — unlike the raw N/E/S/W `isWallOccupied`
@@ -189,6 +197,8 @@ export interface CachedWallLayout {
 
   /** Sub-tile shape rim pixels grouped by chunk key. */
   subTileRimByChunkKey: Map<string, CachedSubTileRimPixel[]>;
+  /** Grass overlay pixels grouped by chunk key. */
+  grassByChunkKey: Map<string, CachedGrassPixel[]>;
   /** 1×1 occupied tiles grouped by chunk key. */
   occupiedByChunkKey: Map<string, CachedTileCoord[]>;
   /** Platform tiles grouped by chunk key. */
@@ -640,6 +650,82 @@ function _buildSubTileRimPixels(
   return out;
 }
 
+// ── Grass block overlay ──────────────────────────────────────────────────────
+
+export interface CachedGrassPixel {
+  readonly xWorldPx: number;
+  readonly yWorldPx: number;
+  /** Index into `GRASS_FILL_STYLES`. */
+  readonly shade: number;
+}
+
+/** Precomposited CSS colours for each grass palette step, built once. */
+export const GRASS_FILL_STYLES: readonly string[] = DEFAULT_GRASS_PALETTE;
+
+/**
+ * Generates grass pixels for every wall carrying the Grass block overlay.
+ *
+ * Grass grows from upward-facing surface pixels, so the anchors come from the
+ * same global solidity view the sub-tile rim uses — full wall tiles plus the
+ * rasterized silhouettes of stairs, ramps and half-blocks. That means grass
+ * follows a staircase's treads and a half-block's top exactly like it follows
+ * a plain block, with no shape-specific handling here.
+ *
+ * Anchors are restricted to the painted walls' own footprints, so painting one
+ * block never grows grass on its neighbour, while SOLIDITY stays global — a
+ * block butted against another correctly has no exposed top to grow from.
+ */
+function _buildGrassPixels(
+  walls: WallSnapshot,
+  subTileSolidPixels: ReadonlySet<string>,
+  fullSolidTiles: ReadonlySet<string>,
+  blockSizePx: number,
+  widthBlocks: number,
+  heightBlocks: number,
+): CachedGrassPixel[] {
+  const roomWidthPx = widthBlocks * blockSizePx;
+  const roomHeightPx = heightBlocks * blockSizePx;
+
+  const isSolid = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= roomWidthPx || y >= roomHeightPx) return false;
+    if (fullSolidTiles.has(wallTileKey(Math.floor(x / blockSizePx), Math.floor(y / blockSizePx)))) return true;
+    return subTileSolidPixels.has(_pixelKey(x, y));
+  };
+
+  const anchors: { x: number; y: number }[] = [];
+  const seen = new Set<string>();
+  let anyGrass = false;
+
+  for (let wi = 0; wi < walls.count; wi++) {
+    if (walls.isInvisibleFlag[wi] === 1) continue;
+    const styleIndex = walls.surfaceRimStyleIndex[wi];
+    if (styleIndex === SURFACE_RIM_STYLE_INDEX_DEFAULT) continue;
+    const style = walls.surfaceRimStyleTable[styleIndex];
+    if (!style || style.kind !== 'grass') continue;
+    anyGrass = true;
+
+    const x0 = Math.floor(walls.xWorld[wi]);
+    const y0 = Math.floor(walls.yWorld[wi]);
+    const x1 = Math.ceil(walls.xWorld[wi] + walls.wWorld[wi]);
+    const y1 = Math.ceil(walls.yWorld[wi] + walls.hWorld[wi]);
+    for (let x = x0; x < x1; x++) {
+      for (let y = y0; y < y1; y++) {
+        if (!isSolid(x, y)) continue;
+        if (isSolid(x, y - 1)) continue; // not an upward-facing surface pixel
+        const key = _pixelKey(x, y);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        anchors.push({ x, y });
+      }
+    }
+  }
+
+  if (!anyGrass || anchors.length === 0) return [];
+
+  return generateGrassPixels(anchors, isSolid, DEFAULT_GRASS_PARAMS)
+    .map(p => ({ xWorldPx: p.x, yWorldPx: p.y, shade: p.shade }));
+}
+
 // ── Layout cache builder ──────────────────────────────────────────────────────
 
 /**
@@ -843,6 +929,9 @@ export function buildWallLayout(
   const subTileRimPixels = _buildSubTileRimPixels(
     walls, subTileSolidPixels, fullSolidTiles, blockSizePx, widthBlocks, heightBlocks,
   );
+  const grassPixels = _buildGrassPixels(
+    walls, subTileSolidPixels, fullSolidTiles, blockSizePx, widthBlocks, heightBlocks,
+  );
   // Custom work is placement-bounded and skipped entirely when no custom style
   // exists. The old room-wide tile BFS is intentionally no longer constructed.
   const customRim = _buildCustomSurfaceRimPixels(
@@ -868,6 +957,7 @@ export function buildWallLayout(
     customSurfaceRimPixels: customRim.pixels,
     customSurfaceRimRenderData: customRim.renderData,
     subTileRimPixels,
+    grassPixels,
     surfaceExposureMap,
     ambientDepthsByKey: new Map<string, Map<string, number>>(),
     solid2x2Map: _buildSolid2x2Map(walls, blockSizePx),
@@ -878,6 +968,7 @@ export function buildWallLayout(
     solid2x2ByChunkKey:   new Map(),
     customSurfaceRimByChunkKey: new Map(),
     subTileRimByChunkKey: new Map(),
+    grassByChunkKey: new Map(),
   };
 
   // Build per-chunk buckets AFTER all arrays are populated so the bucket maps
@@ -909,6 +1000,18 @@ function _buildChunkBuckets(layout: CachedWallLayout, walls: WallSnapshot): void
     if (arr === undefined) {
       arr = [];
       layout.customSurfaceRimByChunkKey.set(ck, arr);
+    }
+    arr.push(pixel);
+  }
+
+  for (const pixel of layout.grassPixels) {
+    const col = Math.floor(pixel.xWorldPx / BSZ);
+    const row = Math.floor(pixel.yWorldPx / BSZ);
+    const ck = `${Math.floor(col / CHUNK_SIZE_BLOCKS)},${Math.floor(row / CHUNK_SIZE_BLOCKS)}`;
+    let arr = layout.grassByChunkKey.get(ck);
+    if (arr === undefined) {
+      arr = [];
+      layout.grassByChunkKey.set(ck, arr);
     }
     arr.push(pixel);
   }

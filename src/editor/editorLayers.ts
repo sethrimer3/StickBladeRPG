@@ -161,6 +161,8 @@ export function getLayerForElementType(type: SelectedElementType): LayerId {
 const CATEGORY_DEFAULT_LAYER: Readonly<Record<PaletteCategory, LayerId>> = {
   blocks: 'terrain',
   specialBlocks: 'dynamicGeometry',
+  // Overlays decorate terrain blocks, so they live on the terrain layer.
+  blockOverlays: 'terrain',
   enemies: 'enemies',
   triggers: 'roomStructure',
   fields: 'fields',

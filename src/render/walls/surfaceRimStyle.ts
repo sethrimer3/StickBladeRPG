@@ -37,6 +37,8 @@ export interface SurfaceRimStyle {
    * omits it behaves exactly as the pre-overlay rim styles did.
    */
   readonly kind: BlockOverlayKind;
+  /** Brighten-kind presentation. Ignored by every other kind. */
+  readonly mode: SurfaceRimMode;
   /** Hex color WITHOUT a leading '#', e.g. "ff7a18". */
   readonly color: string;
   readonly widthPx: number;

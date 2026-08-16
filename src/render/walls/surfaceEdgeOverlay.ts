@@ -416,6 +416,7 @@ export const surfaceEdgeOverlayDiag = {
   convexCornerRectsDrawnLastFrame: 0,
   concaveCornerRectsDrawnLastFrame: 0,
   subTileRimPixelsDrawnLastFrame: 0,
+  grassPixelsDrawnLastFrame: 0,
   tilesSkippedDarknessLastFrame: 0,
 };
 
@@ -475,6 +476,19 @@ export interface SurfaceEdgeOverlayParams {
     yWorldPx: number;
     depth: number;
   }[];
+  /**
+   * Grass block-overlay pixels, precomputed by `blockWallLayoutCache.ts`.
+   * Fully opaque (grass replaces the block's own pixels rather than tinting
+   * them), so unlike the rim bands these carry a palette index rather than an
+   * alpha.
+   */
+  grassPixels?: readonly {
+    xWorldPx: number;
+    yWorldPx: number;
+    shade: number;
+  }[];
+  /** Palette lookup for `grassPixels[].shade`. */
+  grassFillStyles?: readonly string[];
 }
 
 /** Width (in world pixels, same units as `SurfaceRimStyle.widthPx`) of one band-unit at the current scale. */
@@ -534,6 +548,7 @@ export function renderSurfaceEdgeOverlayPass(
   let convexCornerRectsDrawn = 0;
   let concaveCornerRectsDrawn = 0;
   let subTileRimPixelsDrawn = 0;
+  let grassPixelsDrawn = 0;
   let skippedDarkness = 0;
 
   ctx.save();
@@ -578,6 +593,9 @@ export function renderSurfaceEdgeOverlayPass(
     const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
 
     const customStyle = params.getStyleForTile?.(col, row);
+    // A non-brighten overlay (grass) replaces the edge highlight outright —
+    // that is the whole point of painting one on, so the bands never also run.
+    if (customStyle && customStyle.kind !== 'brighten') continue;
     if (params.customRimPixels && customStyle && customStyle.mode !== 'default') continue;
     const isCustom = !!customStyle && customStyle.mode !== 'default';
     if (isCustom && customStyle!.mode === 'none') continue; // 'none': suppress overlay entirely for this tile
@@ -620,6 +638,7 @@ export function renderSurfaceEdgeOverlayPass(
     if (darknessMul === null) continue; // already counted as skipped in pass A when the tile also has a mask entry
 
     const customStyle = params.getStyleForTile?.(col, row);
+    if (customStyle && customStyle.kind !== 'brighten') continue; // grass owns this tile
     if (params.customRimPixels && customStyle && customStyle.mode !== 'default') continue;
     const isCustom = !!customStyle && customStyle.mode !== 'default';
     if (isCustom && customStyle!.mode === 'none') continue;
@@ -671,6 +690,36 @@ export function renderSurfaceEdgeOverlayPass(
     }
   }
 
+  // ── Pass E: Grass block overlay ─────────────────────────────────────────────
+  // Drawn last of the edge treatments and fully opaque: grass REPLACES the
+  // block's pixels rather than tinting them, which is what lets it read as
+  // part of the sprite instead of a wash laid over it. Ambient darkness still
+  // applies, via globalAlpha, so grass never glows out of an unlit room.
+  if (params.grassPixels && params.grassFillStyles) {
+    for (const pixel of params.grassPixels) {
+      const col = Math.floor(pixel.xWorldPx / blockSizePx);
+      const row = Math.floor(pixel.yWorldPx / blockSizePx);
+      if (!_inFilterRange(col, row, params)) continue;
+      const darknessMul = _darknessMulAtTile(col, row, params);
+      if (darknessMul === null) { skippedDarkness++; continue; }
+
+      const fill = params.grassFillStyles[pixel.shade];
+      if (fill === undefined) continue;
+
+      const x0 = Math.round(pixel.xWorldPx * scalePx + offsetXPx);
+      const x1 = Math.round((pixel.xWorldPx + 1) * scalePx + offsetXPx);
+      const y0 = Math.round(pixel.yWorldPx * scalePx + offsetYPx);
+      const y1 = Math.round((pixel.yWorldPx + 1) * scalePx + offsetYPx);
+      if (x1 <= x0 || y1 <= y0) continue;
+
+      ctx.globalAlpha = darknessMul;
+      ctx.fillStyle = fill;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      grassPixelsDrawn++;
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // ── Pass C: 'inverted'-mode interior darkening for deeper tiles ─────────────
   // Tiles with zero exposed cardinal sides never appear in `masks` (Pass A),
   // so this is the only pass that can darken them. One O(1) map-lookup rect
@@ -714,6 +763,7 @@ export function renderSurfaceEdgeOverlayPass(
     surfaceEdgeOverlayDiag.convexCornerRectsDrawnLastFrame = convexCornerRectsDrawn;
     surfaceEdgeOverlayDiag.concaveCornerRectsDrawnLastFrame = concaveCornerRectsDrawn;
     surfaceEdgeOverlayDiag.subTileRimPixelsDrawnLastFrame = subTileRimPixelsDrawn;
+    surfaceEdgeOverlayDiag.grassPixelsDrawnLastFrame = grassPixelsDrawn;
     surfaceEdgeOverlayDiag.tilesSkippedDarknessLastFrame = skippedDarkness;
   }
 }

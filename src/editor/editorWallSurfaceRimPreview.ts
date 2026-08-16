@@ -15,7 +15,7 @@
 
 import type { EditorRoomData, EditorWall } from './editorElementTypes';
 import { BLOCK_SIZE_SMALL, BLOCK_SIZE_MEDIUM, blockThemeToIndex, WALL_THEME_DEFAULT_INDEX } from '../levels/roomDef';
-import { buildWallLayout, type CachedWallLayout } from '../render/walls/blockWallLayoutCache';
+import { buildWallLayout, GRASS_FILL_STYLES, type CachedWallLayout } from '../render/walls/blockWallLayoutCache';
 import type { WallSnapshot } from '../render/snapshotTypes';
 import { hashSurfaceRimStyle, normalizeSurfaceRimStyle, type SurfaceRimStyle, internSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
 import { renderSurfaceEdgeOverlayPass } from '../render/walls/surfaceEdgeOverlay';
@@ -186,5 +186,7 @@ export function drawEditorSurfaceRimOverlay(
     customRimPixels: layout.customSurfaceRimPixels,
     customRimRenderData: layout.customSurfaceRimRenderData,
     subTileRimPixels: layout.subTileRimPixels,
+    grassPixels: layout.grassPixels,
+    grassFillStyles: GRASS_FILL_STYLES,
   });
 }

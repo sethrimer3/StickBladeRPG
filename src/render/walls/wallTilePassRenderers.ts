@@ -48,7 +48,7 @@ import {
 import { getLegacyShadedSprite, getLegacyUnshadedSprite } from './legacyBlockShading';
 import * as FP from '../../debug/perfFreezeProfiler';
 import type { CachedWallLayout } from './blockWallLayoutCache';
-import { isWallOccupied } from './blockWallLayoutCache';
+import { isWallOccupied, GRASS_FILL_STYLES } from './blockWallLayoutCache';
 import type { CachedTileCoord, ShapedWallInfo, HalfBlockWallInfo } from './blockWallLayoutCache';
 import { getSurfaceMaskAtTile, type SurfaceMask } from '../../sim/world/surfaceExposure';
 import {
@@ -599,6 +599,10 @@ export function renderSurfaceEdgeOverlayPass(
     subTileRimPixels: pctx.chunkKey !== null
       ? (pctx.wallLayout.subTileRimByChunkKey.get(pctx.chunkKey) ?? [])
       : pctx.wallLayout.subTileRimPixels,
+    grassPixels: pctx.chunkKey !== null
+      ? (pctx.wallLayout.grassByChunkKey.get(pctx.chunkKey) ?? [])
+      : pctx.wallLayout.grassPixels,
+    grassFillStyles: GRASS_FILL_STYLES,
   });
 }
 

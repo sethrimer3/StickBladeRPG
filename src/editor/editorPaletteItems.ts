@@ -12,10 +12,12 @@
  */
 
 import type { BlockTheme } from '../levels/roomDef';
+import type { BlockOverlayKind } from '../render/walls/surfaceRimStyle';
 
 export const PALETTE_CATEGORIES = [
   'blocks',
   'specialBlocks',
+  'blockOverlays',
   'enemies',
   'triggers',
   'fields',
@@ -37,6 +39,7 @@ export type PaletteCategory = typeof PALETTE_CATEGORIES[number];
 export const PALETTE_CATEGORY_LABELS: Readonly<Record<PaletteCategory, string>> = {
   blocks: 'Blocks',
   specialBlocks: 'Special Blocks',
+  blockOverlays: 'Block Overlays',
   enemies: 'Enemies',
   triggers: 'Triggers',
   fields: 'Fields',
@@ -77,6 +80,12 @@ export interface PaletteItem {
   isSmoothRampItem?: 1;
   /** 1 if this palette item places a half-block (half of its extent solid; rotate with Q/E). */
   isHalfBlockItem?: 1;
+  /**
+   * The Block Overlay this item paints onto existing blocks. Overlay items
+   * never place geometry — they set the overlay on whatever block is already
+   * under the cursor. See render/walls/surfaceRimStyle.ts.
+   */
+  blockOverlayKind?: BlockOverlayKind;
   /** 1 if this palette item paints ambient-light blocker tiles. */
   isAmbientLightBlockerItem?: 1;
   /** 1 if this palette item paints dark ambient-light blocker tiles (also draws a black background overlay). */
@@ -174,6 +183,12 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'spike_1x1', label: '1×1 Spike',  category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isSpikeItem: 1, spikeSize: '1x1' },
   { id: 'spike_2x2', label: '2×2 Spike',  category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isSpikeItem: 1, spikeSize: '2x2' },
   { id: 'laser_emitter', label: 'Laser Emitter', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isLaserItem: 1 },
+
+  // Block Overlays — painted onto existing blocks rather than placed.
+  // 'Brighten' is the original exposed-edge highlight, exposed here as one
+  // overlay among others rather than as a separate hard-coded system.
+  { id: 'overlay_brighten', label: 'Brighten', category: 'blockOverlays', defaultWidthBlocks: 1, defaultHeightBlocks: 1, blockOverlayKind: 'brighten' },
+  { id: 'overlay_grass', label: 'Grass', category: 'blockOverlays', defaultWidthBlocks: 1, defaultHeightBlocks: 1, blockOverlayKind: 'grass' },
   // Enemies
   { id: 'enemy_rolling', label: 'Rolling Enemy', category: 'enemies' },
   { id: 'enemy_flying_eye', label: 'Flying Eye', category: 'enemies' },

@@ -36,6 +36,7 @@ import {
   isCellCoveredByWaterZone,
   isCellCoveredByLavaZone,
   isCellCoveredByTimeStopField,
+  hitTestWall,
 } from './editorHitTest';
 import {
   getBrushCells, getFillBrushCells, type FillKind,
@@ -49,6 +50,9 @@ import {
 import { anchorForMaterial } from './editorPixelMaterialTool';
 import { bumpSelectionRevision } from './editorSelectionCache';
 import { HALF_BLOCK_NONE, halfBlockOrientationForRotationSteps } from "../levels/halfBlockGeometry";
+import {
+  GRASS_BLOCK_OVERLAY, surfaceRimStylesEqual, type BlockOverlayKind,
+} from '../render/walls/surfaceRimStyle';
 
 // ── Placement dimension helpers ───────────────────────────────────────────────
 
@@ -125,6 +129,13 @@ export function placeAtCursor(state: EditorState): boolean {
 
   const uidBefore = state.nextUid;
 
+  // Block Overlays paint onto blocks that already exist — they never place
+  // geometry and never allocate a uid, so they take their own path before the
+  // placement preflight below (which exists to guard NEW geometry).
+  if (item.blockOverlayKind !== undefined) {
+    return paintBlockOverlayAtCursor(state, item.blockOverlayKind);
+  }
+
   // Brush painting: tile-like items support multi-cell brushes.
   const isBrushable =
     item.category === 'blocks' ||
@@ -167,6 +178,50 @@ export function placeAtCursor(state: EditorState): boolean {
 
   placeAt(state, state.cursorBlockX, state.cursorBlockY);
   return state.nextUid !== uidBefore;
+}
+
+/**
+ * Paints a Block Overlay onto every interior wall under the current brush.
+ *
+ * 'brighten' is the default presentation, so painting it clears any overlay
+ * override rather than storing one — which makes Brighten double as the eraser
+ * that returns a block to the standard exposed-edge highlight.
+ *
+ * Returns true only if some wall actually changed, so an undo entry is never
+ * recorded for a no-op stroke (repainting the same overlay, or painting empty
+ * space).
+ */
+function paintBlockOverlayAtCursor(state: EditorState, kind: BlockOverlayKind): boolean {
+  const room = state.roomData;
+  if (room === null) return false;
+
+  const cells = state.brushMode === 'single'
+    ? [{ x: state.cursorBlockX, y: state.cursorBlockY }]
+    : getBrushCells(
+      state.brushMode,
+      state.cursorBlockX, state.cursorBlockY,
+      state.brushRectStartBlockX, state.brushRectStartBlockY,
+      1, 1,
+    );
+
+  const next = kind === 'grass' ? GRASS_BLOCK_OVERLAY : undefined;
+  let changed = false;
+
+  for (const cell of cells) {
+    if (!isInsideRoom(room, cell.x, cell.y)) continue;
+    for (const wall of room.interiorWalls) {
+      if (!hitTestWall(wall, cell.x, cell.y)) continue;
+      const current = wall.surfaceRim;
+      const same = next === undefined
+        ? current === undefined
+        : current !== undefined && surfaceRimStylesEqual(current, next);
+      if (same) continue;
+      wall.surfaceRim = next;
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 /** Result of a whole-operation brush preflight — see `evaluateBrushOperation`. */

@@ -17,6 +17,13 @@ import type { PaletteItem } from './editorState';
 import { THEME_BLOCK_SPRITE_URL, makeBlockPreviewShapeCss, makePaletteCardShell, makePreviewContainer } from './editorUIHelpers';
 import { getKineticBlockSpriteUrls } from '../render/specialBlocks/specialBlockSprites';
 import { getDecorativeObjectSpriteUrl } from '../render/decorativeObjects/decorativeObjectCatalogue';
+import { BLOCK_SIZE_SMALL } from '../levels/roomDef';
+import type { WallSnapshot } from '../render/snapshotTypes';
+import { buildWallLayout, GRASS_FILL_STYLES } from '../render/walls/blockWallLayoutCache';
+import { renderSurfaceEdgeOverlayPass } from '../render/walls/surfaceEdgeOverlay';
+import { DEFAULT_SURFACE_RIM_STYLE, GRASS_BLOCK_OVERLAY } from '../render/walls/surfaceRimStyle';
+import { SHAPE_ORIENTATION_NONE } from '../levels/stairsGeometry';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 
 // ── Warning log deduplication ────────────────────────────────────────────────
 
@@ -525,6 +532,86 @@ function _appendFallbackGlyph(container: HTMLElement, glyph: string): void {
   container.appendChild(g);
 }
 
+/**
+ * Builds the palette preview for a Block Overlay item.
+ *
+ * Renders the overlay over one INVISIBLE 2×2 block: the block itself is never
+ * drawn, so the card shows exactly what the overlay contributes on top of
+ * whatever sprite it is eventually painted onto.
+ *
+ * This deliberately runs the real pipeline — a synthetic one-wall snapshot
+ * through `buildWallLayout`, then `renderSurfaceEdgeOverlayPass` — rather than
+ * approximating the look with CSS. An approximation would silently drift from
+ * the in-game appearance every time the overlay is tuned, which is exactly the
+ * kind of lie a palette preview must not tell.
+ */
+function _makeBlockOverlayPreview(item: PaletteItem): HTMLDivElement {
+  const wrap = makePreviewContainer();
+
+  // A 4×4-block room with the 2×2 block centred at block (1,1): the margin
+  // keeps every side genuinely exposed (the room border is never open air) and
+  // leaves headroom for grass blades above the surface.
+  const B = BLOCK_SIZE_SMALL;
+  const ROOM_BLOCKS = 4;
+  const sizePx = ROOM_BLOCKS * B;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = sizePx;
+  canvas.height = sizePx;
+  canvas.style.cssText = `
+    width: 40px; height: 40px; display: block;
+    image-rendering: pixelated;
+  `;
+
+  const ctx = canvas.getContext('2d');
+  if (ctx !== null) {
+    const style = item.blockOverlayKind === 'grass'
+      ? GRASS_BLOCK_OVERLAY
+      : DEFAULT_SURFACE_RIM_STYLE;
+
+    const snapshot: WallSnapshot = {
+      count: 1,
+      xWorld: Float32Array.from([B]),
+      yWorld: Float32Array.from([B]),
+      wWorld: Float32Array.from([2 * B]),
+      hWorld: Float32Array.from([2 * B]),
+      isPlatformFlag: new Uint8Array(1),
+      platformEdge: new Uint8Array(1),
+      themeIndex: new Uint8Array(1).fill(255),
+      isInvisibleFlag: new Uint8Array(1),
+      rampOrientationIndex: new Uint8Array(1).fill(SHAPE_ORIENTATION_NONE),
+      halfBlockOrientation: new Uint8Array(1).fill(HALF_BLOCK_NONE),
+      surfaceRimStyleIndex: Uint16Array.from([0]),
+      surfaceRimStyleTable: [style],
+    };
+
+    const layout = buildWallLayout(snapshot, B, ROOM_BLOCKS, ROOM_BLOCKS, `palette:${item.id}`);
+
+    renderSurfaceEdgeOverlayPass(ctx, {
+      surfaceExposureMap: layout.surfaceExposureMap,
+      ambientDepths: null,
+      isBlockTintEnabled: false,
+      offsetXPx: 0,
+      offsetYPx: 0,
+      scalePx: 1,
+      blockSizePx: B,
+      filterColMinBlocks: 0,
+      filterColMaxBlocks: ROOM_BLOCKS - 1,
+      filterRowMinBlocks: 0,
+      filterRowMaxBlocks: ROOM_BLOCKS - 1,
+      getStyleForTile: (col, row) => layout.tileSurfaceRim.get(`${col},${row}`) ?? null,
+      customRimPixels: layout.customSurfaceRimPixels,
+      customRimRenderData: layout.customSurfaceRimRenderData,
+      subTileRimPixels: layout.subTileRimPixels,
+      grassPixels: layout.grassPixels,
+      grassFillStyles: GRASS_FILL_STYLES,
+    });
+  }
+
+  wrap.appendChild(canvas);
+  return wrap;
+}
+
 function _makeProceduralPreview(visual: ProceduralVisual): HTMLDivElement {
   const wrap = makePreviewContainer();
   const shape = document.createElement('div');
@@ -777,7 +864,9 @@ export function makePalettePreviewCard(
 ): HTMLDivElement {
   let previewEl: HTMLDivElement;
 
-  if (item.category === 'specialBlocks') {
+  if (item.category === 'blockOverlays') {
+    previewEl = _makeBlockOverlayPreview(item);
+  } else if (item.category === 'specialBlocks') {
     previewEl = _makeSpecialBlockPreview(item, blockTheme);
   } else if (item.category === 'decorativeObjects' || item.isDecorativeObjectItem === 1) {
     const objectType = item.decorativeObjectType ?? (item.id.startsWith('decorative_') ? item.id.slice('decorative_'.length) : item.id);
