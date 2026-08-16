@@ -564,7 +564,15 @@ function _makeBlockOverlayPreview(item: PaletteItem): HTMLDivElement {
   `;
 
   const ctx = canvas.getContext('2d');
-  if (ctx !== null) {
+  if (ctx !== null && item.blockOverlayKind === 'none') {
+    // The eraser. There is nothing to render — that IS the result — so show a
+    // faint outline of where the block would be, rather than a blank card that
+    // reads as a broken preview.
+    ctx.strokeStyle = 'rgba(200,200,200,0.35)';
+    ctx.setLineDash([2, 2]);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(B + 0.5, B + 0.5, 2 * B - 1, 2 * B - 1);
+  } else if (ctx !== null) {
     const style = item.blockOverlayKind === 'grass'
       ? GRASS_BLOCK_OVERLAY
       : DEFAULT_SURFACE_RIM_STYLE;

@@ -31,6 +31,13 @@ export type BlockOverlayKind = 'brighten' | 'grass';
 
 export const BLOCK_OVERLAY_KINDS: readonly BlockOverlayKind[] = ['brighten', 'grass'];
 
+/**
+ * What a palette overlay item paints. 'none' is not a `BlockOverlayKind`
+ * because it stores nothing at all — absence of a style already means "no
+ * overlay" — so it exists only as an eraser in the editor.
+ */
+export type BlockOverlayPaint = BlockOverlayKind | 'none';
+
 export interface SurfaceRimStyle {
   /**
    * Which overlay this wall draws. Defaults to 'brighten', so a style that
@@ -49,11 +56,14 @@ export interface SurfaceRimStyle {
 }
 
 /**
- * Sentinel `wallSurfaceRimStyleIndex` value meaning "use the default
- * (original hard-coded) exposed-edge presentation" — mirrors the
- * `wallThemeIndex === 255` "use room default" sentinel convention, but sized
- * for a Uint16Array since the rim style table can exceed 255 entries in a
- * large room with many distinct custom styles.
+ * Sentinel `wallSurfaceRimStyleIndex` value meaning the wall carries NO block
+ * overlay — it renders as its bare sprite with no edge treatment at all.
+ *
+ * Blocks used to get the exposed-edge highlight automatically, and this
+ * sentinel meant "use that default presentation". Now that the highlight is a
+ * paintable overlay ('brighten'), an unpainted block gets nothing and the
+ * highlight is opt-in per block. Sized for a Uint16Array since the table can
+ * exceed 255 entries in a room with many distinct overlays.
  */
 export const SURFACE_RIM_STYLE_INDEX_DEFAULT = 0xFFFF;
 
@@ -205,6 +215,7 @@ const _CODE_FALLOFF: readonly SurfaceRimFalloff[] = ['hard', 'linear', 'smooth',
  * omitting any that equal the default so common cases stay short.
  */
 export type CompactSurfaceRimStyle =
+  | readonly [kind: 'B']
   | readonly [kind: 'G']
   | readonly [mode: 'n']
   | readonly [mode: 's', color?: string, widthPx?: number, opacity?: number]
@@ -213,22 +224,26 @@ export type CompactSurfaceRimStyle =
 
 export function encodeSurfaceRimStyle(style: SurfaceRimStyle): CompactSurfaceRimStyle {
   const canonical = normalizeSurfaceRimStyle(style);
+  // An explicitly painted Brighten in its standard presentation. Uppercase,
+  // like the other kind-level codes, so it never collides with the lowercase
+  // brighten-mode codes below.
+  if (canonical.kind === 'brighten' && canonical.mode === 'default') return ['B'];
   // Non-brighten overlays encode as a single uppercase kind code, kept
   // distinct from the lowercase brighten-mode codes so the two namespaces can
   // never collide as more overlay kinds are added.
   if (canonical.kind === 'grass') return ['G'];
-  if (canonical.mode === 'default') {
-    throw new Error('encodeSurfaceRimStyle: default styles must not be interned');
-  }
   if (canonical.mode === 'none') return ['n'];
+  // 'default' was handled by the ['B'] early return above; narrowing it away
+  // here keeps the mode-code lookups below total.
+  const mode = canonical.mode as Exclude<SurfaceRimMode, 'default'>;
   const values: Array<string | number | undefined> = [
-    _MODE_CODE[canonical.mode], canonical.color, canonical.widthPx,
+    _MODE_CODE[mode], canonical.color, canonical.widthPx,
     Math.round(canonical.opacity * 1000) / 1000,
   ];
   if (canonical.mode !== 'solid') values.push(_FALLOFF_CODE[canonical.falloff]);
   if (canonical.mode === 'inverted') values.push(Math.round(canonical.interiorDarkness * 1000) / 1000);
   const defaults: Array<string | number> = [
-    _MODE_CODE[canonical.mode], DEFAULT_SURFACE_RIM_STYLE.color,
+    _MODE_CODE[mode], DEFAULT_SURFACE_RIM_STYLE.color,
     DEFAULT_SURFACE_RIM_STYLE.widthPx, DEFAULT_SURFACE_RIM_STYLE.opacity,
   ];
   if (canonical.mode !== 'solid') defaults.push(_FALLOFF_CODE[DEFAULT_SURFACE_RIM_STYLE.falloff]);
@@ -240,6 +255,7 @@ export function encodeSurfaceRimStyle(style: SurfaceRimStyle): CompactSurfaceRim
 export function decodeSurfaceRimStyle(entry: unknown): SurfaceRimStyle {
   if (!Array.isArray(entry) || entry.length === 0) return DEFAULT_SURFACE_RIM_STYLE;
   if (entry[0] === 'G') return GRASS_BLOCK_OVERLAY;
+  if (entry[0] === 'B') return DEFAULT_SURFACE_RIM_STYLE;
   const [codeRaw, colorRaw, widthRaw, opacityRaw, falloffRaw, interiorRaw] = entry;
   const mode = _CODE_MODE[codeRaw as string];
   if (mode === undefined) return DEFAULT_SURFACE_RIM_STYLE;
@@ -267,9 +283,11 @@ void _MODE_CODE; // retained for documentation/symmetry with _CODE_MODE
  * / `wallSurfaceRimStyleTable` (mirrors the per-wall `themeIndex` convention).
  */
 export function internSurfaceRimStyle(table: SurfaceRimStyle[], style: SurfaceRimStyle | undefined): number {
+  // Absence — not "equals the standard brighten look" — is what means "no
+  // overlay". A wall explicitly painted Brighten must intern a real entry, or
+  // it would be indistinguishable from an unpainted one and render bare.
   if (style === undefined) return SURFACE_RIM_STYLE_INDEX_DEFAULT;
   const normalized = normalizeSurfaceRimStyle(style);
-  if (isDefaultSurfaceRimStyle(normalized)) return SURFACE_RIM_STYLE_INDEX_DEFAULT;
   for (let i = 0; i < table.length; i++) {
     if (surfaceRimStylesEqual(table[i], normalized)) return i;
   }

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { DEFAULT_SURFACE_RIM_STYLE } from '../render/walls/surfaceRimStyle';
 import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { WallSnapshot } from '../render/snapshotTypes';
@@ -57,8 +58,8 @@ function makeWallSnapshot(rects: Array<{ x: number; y: number; w: number; h: num
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: new Uint8Array(count).fill(255),
     halfBlockOrientation: new Uint8Array(count).fill(HALF_BLOCK_NONE),
-    surfaceRimStyleIndex: new Uint16Array(count).fill(0xFFFF),
-    surfaceRimStyleTable: [],
+    surfaceRimStyleIndex: new Uint16Array(count).fill(0),
+    surfaceRimStyleTable: [DEFAULT_SURFACE_RIM_STYLE],
   };
 }
 
@@ -105,6 +106,10 @@ function makeParams(overrides: Partial<SurfaceEdgeOverlayParams> & Pick<SurfaceE
     filterColMaxBlocks: 0x7FFFFFFF,
     filterRowMinBlocks: 0,
     filterRowMaxBlocks: 0x7FFFFFFF,
+    // Blocks carry no overlay until one is painted, so these band-geometry
+    // fixtures paint Brighten everywhere. Tests that care about the unpainted
+    // case, or about other overlays, override this.
+    getStyleForTile: () => DEFAULT_SURFACE_RIM_STYLE,
     ...overrides,
   };
 }

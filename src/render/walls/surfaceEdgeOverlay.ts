@@ -593,9 +593,13 @@ export function renderSurfaceEdgeOverlayPass(
     const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
 
     const customStyle = params.getStyleForTile?.(col, row);
+    // No overlay painted — no edge treatment at all. Blocks used to get the
+    // highlight automatically; it is now opt-in per block via the Brighten
+    // overlay, so an unpainted block renders as its bare sprite.
+    if (!customStyle) continue;
     // A non-brighten overlay (grass) replaces the edge highlight outright —
     // that is the whole point of painting one on, so the bands never also run.
-    if (customStyle && customStyle.kind !== 'brighten') continue;
+    if (customStyle.kind !== 'brighten') continue;
     if (params.customRimPixels && customStyle && customStyle.mode !== 'default') continue;
     const isCustom = !!customStyle && customStyle.mode !== 'default';
     if (isCustom && customStyle!.mode === 'none') continue; // 'none': suppress overlay entirely for this tile
@@ -638,7 +642,8 @@ export function renderSurfaceEdgeOverlayPass(
     if (darknessMul === null) continue; // already counted as skipped in pass A when the tile also has a mask entry
 
     const customStyle = params.getStyleForTile?.(col, row);
-    if (customStyle && customStyle.kind !== 'brighten') continue; // grass owns this tile
+    if (!customStyle) continue; // no overlay painted on this tile
+    if (customStyle.kind !== 'brighten') continue; // grass owns this tile
     if (params.customRimPixels && customStyle && customStyle.mode !== 'default') continue;
     const isCustom = !!customStyle && customStyle.mode !== 'default';
     if (isCustom && customStyle!.mode === 'none') continue;

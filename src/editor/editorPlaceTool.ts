@@ -51,7 +51,8 @@ import { anchorForMaterial } from './editorPixelMaterialTool';
 import { bumpSelectionRevision } from './editorSelectionCache';
 import { HALF_BLOCK_NONE, halfBlockOrientationForRotationSteps } from "../levels/halfBlockGeometry";
 import {
-  GRASS_BLOCK_OVERLAY, surfaceRimStylesEqual, type BlockOverlayKind,
+  GRASS_BLOCK_OVERLAY, DEFAULT_SURFACE_RIM_STYLE, surfaceRimStylesEqual,
+  type BlockOverlayPaint,
 } from '../render/walls/surfaceRimStyle';
 
 // ── Placement dimension helpers ───────────────────────────────────────────────
@@ -183,15 +184,15 @@ export function placeAtCursor(state: EditorState): boolean {
 /**
  * Paints a Block Overlay onto every interior wall under the current brush.
  *
- * 'brighten' is the default presentation, so painting it clears any overlay
- * override rather than storing one — which makes Brighten double as the eraser
- * that returns a block to the standard exposed-edge highlight.
+ * Blocks carry no overlay until one is painted, so 'brighten' stores a real
+ * style (it is opt-in like any other overlay) and 'none' is the eraser that
+ * removes whatever was there.
  *
  * Returns true only if some wall actually changed, so an undo entry is never
  * recorded for a no-op stroke (repainting the same overlay, or painting empty
  * space).
  */
-function paintBlockOverlayAtCursor(state: EditorState, kind: BlockOverlayKind): boolean {
+function paintBlockOverlayAtCursor(state: EditorState, kind: BlockOverlayPaint): boolean {
   const room = state.roomData;
   if (room === null) return false;
 
@@ -204,7 +205,9 @@ function paintBlockOverlayAtCursor(state: EditorState, kind: BlockOverlayKind): 
       1, 1,
     );
 
-  const next = kind === 'grass' ? GRASS_BLOCK_OVERLAY : undefined;
+  const next = kind === 'none' ? undefined
+    : kind === 'grass' ? GRASS_BLOCK_OVERLAY
+      : DEFAULT_SURFACE_RIM_STYLE;
   let changed = false;
 
   for (const cell of cells) {

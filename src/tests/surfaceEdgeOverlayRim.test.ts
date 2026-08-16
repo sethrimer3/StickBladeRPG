@@ -95,7 +95,9 @@ test("'none' mode: suppresses all overlay output for that tile, unaffected tiles
   const { ctx, rects } = makeFakeCtx();
   const params = makeParams({
     surfaceExposureMap: wallLayout.surfaceExposureMap,
-    getStyleForTile: (col, row) => (col === 2 && row === 2) ? normalizeSurfaceRimStyle({ mode: 'none' }) : null,
+    getStyleForTile: (col, row) => (col === 2 && row === 2)
+      ? normalizeSurfaceRimStyle({ mode: 'none' })
+      : DEFAULT_SURFACE_RIM_STYLE,
   });
   renderSurfaceEdgeOverlayPass(ctx, params);
 
@@ -178,18 +180,23 @@ test('custom styles never overlap each other or the trimmed side bands (no doubl
   assert.equal(findOverlap(rects), null, 'no two drawn rects may overlap under a custom style either');
 });
 
-test("'default' style from the resolver reproduces the exact same draw count as no resolver at all", () => {
+test("an explicitly painted Brighten renders the standard bands, and no resolver renders nothing", () => {
   const snapshot = makeWallSnapshot([{ x: 2 * BLOCK_SIZE, y: 2 * BLOCK_SIZE, w: BLOCK_SIZE, h: BLOCK_SIZE }]);
   const wallLayout = getWallLayoutCache(snapshot, BLOCK_SIZE, 10, 10);
 
-  const baseline = makeFakeCtx();
-  renderSurfaceEdgeOverlayPass(baseline.ctx, makeParams({ surfaceExposureMap: wallLayout.surfaceExposureMap }));
+  // Unpainted: blocks no longer highlight automatically, so nothing draws.
+  const unpainted = makeFakeCtx();
+  renderSurfaceEdgeOverlayPass(unpainted.ctx, makeParams({
+    surfaceExposureMap: wallLayout.surfaceExposureMap,
+    getStyleForTile: () => null,
+  }));
+  assert.equal(unpainted.rects.length, 0, 'an unpainted block must draw no edge treatment');
 
+  // Painted Brighten in its standard presentation: the full band geometry.
   const withDefault = makeFakeCtx();
   renderSurfaceEdgeOverlayPass(withDefault.ctx, makeParams({
     surfaceExposureMap: wallLayout.surfaceExposureMap,
     getStyleForTile: () => normalizeSurfaceRimStyle({ mode: 'default' }),
   }));
-
-  assert.deepEqual(withDefault.rects, baseline.rects);
+  assert.ok(withDefault.rects.length > 0, 'a painted Brighten must draw the standard bands');
 });

@@ -598,7 +598,11 @@ function _buildSubTileRimPixels(
     const style = styleIndex === SURFACE_RIM_STYLE_INDEX_DEFAULT
       ? undefined
       : walls.surfaceRimStyleTable[styleIndex];
-    if (style && style.mode !== 'default') continue; // custom/none: owned by the custom rim pass
+    // Only shapes explicitly painted with the standard Brighten overlay get an
+    // outline. An unpainted shape gets nothing (the highlight is opt-in now),
+    // grass draws its own, and custom brighten modes belong to the custom rim
+    // pass.
+    if (!style || style.kind !== 'brighten' || style.mode !== 'default') continue;
     const x0 = Math.floor(walls.xWorld[wi]);
     const y0 = Math.floor(walls.yWorld[wi]);
     const x1 = Math.ceil(walls.xWorld[wi] + walls.wWorld[wi]);

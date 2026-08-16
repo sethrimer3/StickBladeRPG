@@ -12,7 +12,7 @@
  */
 
 import type { BlockTheme } from '../levels/roomDef';
-import type { BlockOverlayKind } from '../render/walls/surfaceRimStyle';
+import type { BlockOverlayPaint } from '../render/walls/surfaceRimStyle';
 
 export const PALETTE_CATEGORIES = [
   'blocks',
@@ -85,7 +85,7 @@ export interface PaletteItem {
    * never place geometry — they set the overlay on whatever block is already
    * under the cursor. See render/walls/surfaceRimStyle.ts.
    */
-  blockOverlayKind?: BlockOverlayKind;
+  blockOverlayKind?: BlockOverlayPaint;
   /** 1 if this palette item paints ambient-light blocker tiles. */
   isAmbientLightBlockerItem?: 1;
   /** 1 if this palette item paints dark ambient-light blocker tiles (also draws a black background overlay). */
@@ -189,6 +189,7 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   // overlay among others rather than as a separate hard-coded system.
   { id: 'overlay_brighten', label: 'Brighten', category: 'blockOverlays', defaultWidthBlocks: 1, defaultHeightBlocks: 1, blockOverlayKind: 'brighten' },
   { id: 'overlay_grass', label: 'Grass', category: 'blockOverlays', defaultWidthBlocks: 1, defaultHeightBlocks: 1, blockOverlayKind: 'grass' },
+  { id: 'overlay_none', label: 'None', category: 'blockOverlays', defaultWidthBlocks: 1, defaultHeightBlocks: 1, blockOverlayKind: 'none' },
   // Enemies
   { id: 'enemy_rolling', label: 'Rolling Enemy', category: 'enemies' },
   { id: 'enemy_flying_eye', label: 'Flying Eye', category: 'enemies' },

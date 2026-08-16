@@ -65,14 +65,12 @@ import {
   TILE_MASK_W,
   TILE_TABLE,
   drawFallbackTile,
-  drawVertexOverlays,
   drawPlatformLine,
   drawRampTriangle,
   drawStairsShape,
   applyStairsClipPath,
   applyRampClipPath,
 } from './wallTileDrawHelpers';
-import { surfaceRimSuppressesBakedEdge } from './surfaceRimStyle';
 import type { GraphicsQuality } from '../../ui/renderSettings';
 import { getTileCornerDarkness, renderTileSmoothDarkness } from './smoothAmbientShadow';
 
@@ -369,7 +367,7 @@ export function render1x1Pass(
   let hadFallbacks = false;
 
   const { wallLayout, ambientDepths, offsetXPx, offsetYPx, scalePx, blockSizePx,
-          roomTheme, isWorldMode, isBlockTintEnabled, activeWorldNumber,
+          roomTheme, isBlockTintEnabled, activeWorldNumber,
           sprites, coveredBy2x2Keys, tileSizeScreen,
           filterColMinBlocks, filterColMaxBlocks, filterRowMinBlocks, filterRowMaxBlocks,
           chunkKey } = pctx;
@@ -439,7 +437,12 @@ export function render1x1Pass(
     // booleans above, which still drive the TILE_TABLE auto-tiling sprite
     // pick and are unaffected by this.
     const openAirSidesMask = surfaceMaskToOpenAirBits(getSurfaceMaskAtTile(wallLayout.surfaceExposureMap, col, row));
-    const suppressBakedEdgeShading = surfaceRimSuppressesBakedEdge(wallLayout.tileSurfaceRim.get(tileKey));
+    // Base sprites are always drawn UNSHADED. Edge highlighting is no longer
+    // automatic: it comes solely from the Brighten block overlay, painted per
+    // block and drawn by renderSurfaceEdgeOverlayPass. Baking a second copy
+    // into the sprite cache would double it wherever one IS painted, and show
+    // an unremovable highlight everywhere it is not.
+    const suppressBakedEdgeShading = true;
 
     if (import.meta.env?.DEV) {
       _recordWallCellDiag(col, row, '1x1', openAirSidesMask, false);
@@ -548,17 +551,9 @@ export function render1x1Pass(
       }
     }
 
-    // Vertex overlays only in world 1+ legacy mode.
-    if (!suppressBakedEdgeShading && isWorldMode && spec.variant === 'corner') {
-      if (!isSpriteReady(sprites.vertex)) {
-        hadFallbacks = true;
-      } else {
-        drawVertexOverlays(
-          ctx, sprites.vertex, wallLayout.occupied, col, row, tileX, tileY, tileSizeScreen,
-          northSolid, eastSolid, southSolid, westSolid,
-        );
-      }
-    }
+    // The legacy world-1 corner vertex overlays used to draw here. They were
+    // part of the automatic baked edge highlight, so they are gone along with
+    // it — edge treatment now comes only from a painted Brighten overlay.
   }
   return hadFallbacks;
 }
@@ -641,7 +636,12 @@ export function renderPlatformPass(
     const tileY = Math.round(row * blockSizePx * scalePx + offsetYPx);
 
     const platformEdgeForTile = tile.platformEdge;
-    const suppressBakedEdgeShading = surfaceRimSuppressesBakedEdge(tile.surfaceRimStyle);
+    // Base sprites are always drawn UNSHADED. Edge highlighting is no longer
+    // automatic: it comes solely from the Brighten block overlay, painted per
+    // block and drawn by renderSurfaceEdgeOverlayPass. Baking a second copy
+    // into the sprite cache would double it wherever one IS painted, and show
+    // an unremovable highlight everywhere it is not.
+    const suppressBakedEdgeShading = true;
     const platTheme: BlockTheme | null = wallLayout.tileTheme.get(key) ?? roomTheme;
     const platMaterial = themeToProceduralMaterial(platTheme, activeWorldNumber);
 
@@ -764,9 +764,12 @@ export function renderShapedWallPass(
       ? indexToBlockTheme(walls.themeIndex[wi])
       : roomTheme;
     const material = themeToProceduralMaterial(theme, activeWorldNumber);
-    const wallStyleIndex = walls.surfaceRimStyleIndex[wi];
-    const wallStyle = wallStyleIndex === 0xFFFF ? undefined : walls.surfaceRimStyleTable[wallStyleIndex];
-    const suppressBakedEdgeShading = surfaceRimSuppressesBakedEdge(wallStyle);
+    // Base sprites are always drawn UNSHADED. Edge highlighting is no longer
+    // automatic: it comes solely from the Brighten block overlay, painted per
+    // block and drawn by renderSurfaceEdgeOverlayPass. Baking a second copy
+    // into the sprite cache would double it wherever one IS painted, and show
+    // an unremovable highlight everywhere it is not.
+    const suppressBakedEdgeShading = true;
 
     const drawFallbackShape = (fillColor: string, edgeColor: string): void => {
       if (isStairs) {
@@ -877,29 +880,23 @@ export function renderHalfBlockPass(
     const halfBlockTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
       ? indexToBlockTheme(walls.themeIndex[wi])
       : roomTheme;
-    const styleIndex = walls.surfaceRimStyleIndex[wi];
-    const style = styleIndex === 0xFFFF ? undefined : walls.surfaceRimStyleTable[styleIndex];
-    const suppressBakedEdgeShading = surfaceRimSuppressesBakedEdge(style);
+    // No overlay lookup here: a half-block draws as a flat fill and any edge
+    // treatment comes from the painted overlay, via the overlay pass.
     const isLegacyBR2 = (halfBlockTheme === null) && (activeWorldNumber === 0);
     let halfBlockFill: string;
-    let halfBlockEdgeColor: string;
     if (halfBlockTheme === 'dirt') {
-      halfBlockFill = '#5a3e1b'; halfBlockEdgeColor = '#8b6914';
+      halfBlockFill = '#5a3e1b';
     } else if (halfBlockTheme === 'brownRock' || (halfBlockTheme === null && !isLegacyBR2)) {
-      halfBlockFill = '#4a3828'; halfBlockEdgeColor = '#7a5840';
+      halfBlockFill = '#4a3828';
     } else {
-      halfBlockFill = '#1a2535'; halfBlockEdgeColor = '#5080b0';
+      halfBlockFill = '#1a2535';
     }
 
     const halfBlockWidthPx = wwPx;
     ctx.fillStyle = halfBlockFill;
+    // No outline stroke: that was an automatic edge highlight, and edge
+    // treatment now comes only from a painted Brighten overlay.
     ctx.fillRect(Math.round(wxPx), Math.round(wyPx), Math.round(halfBlockWidthPx), Math.round(whPx));
-    if (!suppressBakedEdgeShading) {
-      ctx.strokeStyle = halfBlockEdgeColor;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(Math.round(wxPx) + 0.5, Math.round(wyPx) + 0.5,
-        Math.round(halfBlockWidthPx) - 1, Math.round(whPx) - 1);
-    }
   }
   return false;
 }
