@@ -80,6 +80,17 @@ export interface ZoneLoadProgress {
 interface ZoneLoadState {
   worldNumber:  number;
   roomIds:      readonly string[];
+  /**
+   * Room the player will actually be standing in when this load releases, or
+   * null when the caller did not name one.  Scopes the directed-entry gate —
+   * see `_gatingRoomIds`.
+   */
+  entryRoomId:  string | null;
+  /**
+   * True once the whole zone's entry-viewport tasks have been queued (done
+   * after the gate opens, so the load itself only pays for the gating set).
+   */
+  fullZoneQueued: boolean;
   /** Index into roomIds for the next room to attempt building. */
   buildIdx:     number;
   /** Active incremental build generator, or null when idle. */
@@ -261,11 +272,16 @@ export class ZoneResidentLoader {
    * @param worldNumber        Target zone.
    * @param residentRoomManager  To pre-register resident shells.
    * @param force              If true, restart even if already loading this zone.
+   * @param entryRoomId        Room the player will occupy when the load releases.
+   *   Scopes the directed-entry readiness gate to that room's own crossings
+   *   (see `_gatingRoomIds`).  Omit only when the entry point is genuinely
+   *   unknown; the gate then falls back to the whole zone.
    */
   startZoneLoad(
     worldNumber: number,
     residentRoomManager: ResidentRoomManager,
     force = false,
+    entryRoomId: string | null = null,
   ): void {
     if (!force && this._activeZone?.worldNumber === worldNumber) return;
 
@@ -284,16 +300,29 @@ export class ZoneResidentLoader {
       if (room !== undefined) residentRoomManager.ensureResident(room);
     }
     
-    // Pin all zone rooms so nothing they contribute to zone readiness can be
-    // evicted mid-load.  Both caches must be pinned together: the runtime cache
-    // backs `isEntryFullyPrepared`, the render-chunk store backs entry-viewport
-    // coverage, and readiness requires both for every room in the zone.
+    // Pin every zone room's RUNTIME entry: base readiness needs all of them,
+    // and a resident WorldState is a flat ~700 KB of typed arrays — bounded
+    // and predictable.
     this._runtimeCache.setPinnedRooms(roomIds);
-    setPinnedPrewarmRooms(roomIds);
+
+    // Render CHUNKS are a different story and must NOT all be pinned.  One
+    // directed entry's swept viewport is several 256x256 chunk canvases
+    // (~256 KB each) and a 25-room zone has ~48 entries, so pinning the whole
+    // zone put hundreds of MB permanently out of the memory budget's reach:
+    // `evictStalePrewarmedChunks` skips protected rooms, so it ran every slice,
+    // found nothing evictable, and allocation grew unbounded until canvas
+    // backing stores began failing — after which coverage could never complete
+    // and the load screen never released.  Only the rooms the gate actually
+    // waits on are pinned.  The rest of the zone warms speculatively behind
+    // gameplay and stays evictable under pressure, where an uncovered crossing
+    // simply falls back to `entryWarm` as designed.
+    setPinnedPrewarmRooms(this._gatingRoomIds(roomIds, entryRoomId));
 
     this._activeZone = {
       worldNumber,
       roomIds,
+      entryRoomId,
+      fullZoneQueued: false,
       buildIdx:      0,
       activeGen:     null,
       activeRoomId:  null,
@@ -838,6 +867,10 @@ export class ZoneResidentLoader {
       if (roomIds.length === 0) { this._preloadAbandoned.add(target); return false; }
       this._neighbourPreload = {
         worldNumber: target, roomIds,
+        // Speculative preloading has no entry room and no blocking gate: it
+        // warms the whole zone itself on completion, so neither the gate
+        // scoping nor the post-gate queue applies here.
+        entryRoomId: null, fullZoneQueued: true,
         buildIdx: 0, activeGen: null, activeRoomId: null, activeGenT0: 0,
         decodeStarted: new Set(), yieldFrames: 0, builtCount: 0, failedCount: 0,
         t0: performance.now(), tasksQueued: false, prepIdx: 0, prepDone: new Set(),
@@ -1017,6 +1050,56 @@ export class ZoneResidentLoader {
     }
   }
 
+  /**
+   * The subset of `zoneRoomIds` whose directed entries gate the loading screen:
+   * the entry room plus every same-zone room one transition away from it.
+   *
+   * Passing this subset to `collectZoneEntryReadinessReport` yields exactly the
+   * radius-1 directed entries — `entry->neighbour`, `neighbour->entry`, and any
+   * neighbour-to-neighbour link — because that function only counts a
+   * transition when BOTH endpoints are in the list it is given.
+   *
+   * Rationale: nothing about standing in `glade` requires `dark_depths ->
+   * dark_teleporter` to be warm.  Gating on all 48 of a zone's crossings meant
+   * every one of them had to be simultaneously resident in chunk memory before
+   * the player could move, which is both slow and unbounded.  Crossings outside
+   * this set warm in the background; if the player outruns that warming, the
+   * crossing takes `entryWarm`, which is the designed fallback.
+   *
+   * Falls back to the whole zone when no entry room is known or it is not part
+   * of this zone, preserving the previous behaviour for callers that cannot
+   * name one.
+   */
+  private _gatingRoomIds(
+    zoneRoomIds: readonly string[],
+    entryRoomId: string | null,
+  ): string[] {
+    if (entryRoomId === null || !zoneRoomIds.includes(entryRoomId)) {
+      return [...zoneRoomIds];
+    }
+    const inZone = new Set(zoneRoomIds);
+    const gating = new Set<string>([entryRoomId]);
+    const entryRoom = this._registry.get(entryRoomId);
+    if (entryRoom !== undefined) {
+      for (const trans of entryRoom.transitions) {
+        if (inZone.has(trans.targetRoomId)) gating.add(trans.targetRoomId);
+      }
+    }
+    // Rooms that lead INTO the entry room matter too: the player can turn
+    // around immediately, and that crossing is the one most likely to be taken
+    // first.  A one-way link into the entry room would otherwise be missed,
+    // since it does not appear in the entry room's own transition list.
+    for (const roomId of zoneRoomIds) {
+      if (gating.has(roomId)) continue;
+      const room = this._registry.get(roomId);
+      if (room === undefined) continue;
+      for (const trans of room.transitions) {
+        if (trans.targetRoomId === entryRoomId) { gating.add(roomId); break; }
+      }
+    }
+    return [...gating];
+  }
+
   /** True once the base-readiness snapshot has been emitted for this session. */
   private _diagSnapshotTaken = false;
   /** Serialised last-emitted unresolved snapshot, for change detection. */
@@ -1070,14 +1153,21 @@ export class ZoneResidentLoader {
 
     if (!baseReady) return false;
 
-    // ── Stage 2: directed-entry readiness ─────────────────────────────────
+    // ── Stage 2: directed-entry readiness (radius-1 scoped) ───────────────
+    // Only the gating subset is queued and awaited while the overlay is up.
+    // Queueing the whole zone here instead would put ~48 swept viewports in
+    // the warm queue ahead of the handful that actually block the player, and
+    // the scheduler drains that queue in order.  The remainder is queued once
+    // the gate opens (see below), so it warms behind gameplay.
+    //
     // Idempotent: re-ensures a task exists for every uncovered requirement on
     // every frame, so a requirement can never be left waiting on a task that
     // was never created, was dropped, or terminated without achieving
     // coverage.  (The previous one-shot `tasksQueued` latch is what allowed a
     // permanent stall — see addZoneEntryViewportTasks' doc comment.)
+    const gatingIds = this._gatingRoomIds(state.roomIds, state.entryRoomId);
     const queueResult = addZoneEntryViewportTasks(
-      state.roomIds, this._registry, this._runtimeCache, vpWPx, vpHPx, scalePx,
+      gatingIds, this._registry, this._runtimeCache, vpWPx, vpHPx, scalePx,
     );
     state.tasksQueued = true;
 
@@ -1087,13 +1177,41 @@ export class ZoneResidentLoader {
     runChunkPrewarmSliceNow(16);
 
     const entryReport = collectZoneEntryReadinessReport(
-      state.roomIds, this._registry, this._runtimeCache, vpWPx, vpHPx, scalePx,
+      gatingIds, this._registry, this._runtimeCache, vpWPx, vpHPx, scalePx,
     );
     const allReady = entryReport.failures.length === 0;
 
     this._emitZoneLoadDiagnostic(state, incompleteRooms, queueResult, entryReport, allReady);
 
+    if (allReady) this._queueFullZoneWarm(state, vpWPx, vpHPx, scalePx);
+
     return allReady;
+  }
+
+  /**
+   * Queues entry-viewport warming for the whole zone, once, after the gate has
+   * opened.  These tasks run behind gameplay through the ordinary idle/frame
+   * slice path and their rooms are deliberately left unpinned, so the prewarm
+   * memory budget can reclaim them.
+   */
+  private _queueFullZoneWarm(
+    state:   ZoneLoadState,
+    vpWPx:   number,
+    vpHPx:   number,
+    scalePx: number,
+  ): void {
+    if (state.fullZoneQueued) return;
+    state.fullZoneQueued = true;
+    const result = addZoneEntryViewportTasks(
+      state.roomIds, this._registry, this._runtimeCache, vpWPx, vpHPx, scalePx,
+    );
+    if (import.meta.env?.DEV) {
+      console.log(
+        `[zoneLoader] gate open for world=${state.worldNumber}; queued ${result.added} ` +
+        `background entry-warm task(s) for the remaining ${result.required - result.covered} ` +
+        'uncovered crossing(s)',
+      );
+    }
   }
 
   /**
@@ -1136,7 +1254,14 @@ export class ZoneResidentLoader {
         fullyPreparedCount:   state.prepDone.size,
         notYetPreparedKeys:   state.roomIds.filter(id => !state.prepDone.has(id)),
       },
+      // Scoped to the radius-1 gating set, NOT the whole zone — see
+      // `_gatingRoomIds`.  `gatingRooms` is echoed so a reader can tell at a
+      // glance whether a small `required` means "nearly done" or "the gate is
+      // scoped narrowly".
       directedEntryRequirements: {
+        entryRoomId:    state.entryRoomId,
+        gatingRooms:    this._gatingRoomIds(state.roomIds, state.entryRoomId).length,
+        zoneRooms:      state.roomIds.length,
         required:       entryReport.required,
         satisfied:      entryReport.satisfied,
         unsatisfied:    entryReport.failures.length,

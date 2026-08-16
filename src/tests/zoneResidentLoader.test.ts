@@ -483,10 +483,11 @@ describe('ZoneResidentLoader', () => {
     }
   });
 
-  test('startZoneLoad pins the zone in both the runtime cache and the chunk store', () => {
-    // The two pin-sets must be kept in step: readiness requires a prepared
-    // runtime entry AND covered prewarm chunks for every zone room, so a room
-    // pinned in only one of them is still evictable from the other.
+  test('with no entry room named, startZoneLoad pins the whole zone in both stores', () => {
+    // Fallback behaviour: a caller that cannot name the room the player will
+    // occupy gets the old whole-zone gate, so readiness is never weakened by
+    // an omitted argument.  Callers that DO name one get the scoped gate —
+    // see the scoped-gate tests below.
     const registry = ringZone(4, 95);
     const cache    = new RoomRuntimeCache(2); // capacity below zone size
     const loader   = new ZoneResidentLoader(registry, cache);
@@ -506,6 +507,82 @@ describe('ZoneResidentLoader', () => {
       assert.ok(getPinnedPrewarmRoomIds().has(id), `${id} must be pinned in the chunk store too`);
     }
     setPinnedPrewarmRooms([]);
+  });
+
+  test('naming an entry room scopes the chunk-store pin set to radius 1', () => {
+    // A directed entry's swept viewport is several ~256 KB chunk canvases, and
+    // the eviction pass skips pinned rooms entirely.  Pinning a whole 25-room
+    // zone therefore put hundreds of MB permanently beyond the memory budget's
+    // reach — allocation grew unbounded, canvas builds began failing, coverage
+    // could never complete, and the load screen never released.  Only the rooms
+    // the gate waits on may be pinned.
+    const registry = ringZone(6, 91);
+    const cache    = new RoomRuntimeCache();
+    const loader   = new ZoneResidentLoader(registry, cache);
+    const manager  = new ResidentRoomManager();
+
+    const ids   = [...registry.keys()];
+    const entry = ids[0];
+    loader.startZoneLoad(91, manager, false, entry);
+    try {
+      const pinned = getPinnedPrewarmRoomIds();
+      // Ring topology: the entry room's only same-zone links are next and prev.
+      const expected = new Set([entry, ids[1], ids[ids.length - 1]]);
+      for (const id of expected) {
+        assert.ok(pinned.has(id), `${id} is radius-1 from the entry room and must be pinned`);
+      }
+      for (const id of ids) {
+        if (expected.has(id)) continue;
+        assert.ok(
+          !pinned.has(id),
+          `${id} is beyond radius 1 and must stay evictable, or the memory budget cannot act`,
+        );
+      }
+      // The runtime cache is a different matter: base readiness needs every
+      // room, and a resident world is a bounded ~700 KB, so all stay pinned.
+      for (const id of ids) {
+        cache.set(id, {
+          renderRevision: -1, wallTemplate: buildRoomWallTemplate(registry.get(id)!),
+          edgeExtension: null, blockerKeys: new Set(), darkBlockerKeys: new Set(), wallDecorations: [],
+        });
+      }
+      for (const id of ids) {
+        assert.ok(cache.has(id), `${id} must stay pinned in the runtime cache`);
+      }
+    } finally {
+      setPinnedPrewarmRooms([]);
+    }
+  });
+
+  test('the gate awaits only radius-1 crossings, not every crossing in the zone', () => {
+    // The whole point of the scoped gate: entering `ring0` must not wait on
+    // `ring3 -> ring4` on the far side of the zone.  Counted through the same
+    // readiness function the loader calls, given the same room-id subset.
+    const registry = ringZone(6, 92);
+    const cache    = new RoomRuntimeCache();
+    const ids      = [...registry.keys()];
+    const entry    = ids[0];
+
+    for (const [id, r] of registry) {
+      cache.set(id, {
+        renderRevision: -1, wallTemplate: buildRoomWallTemplate(r), edgeExtension: null,
+        blockerKeys: new Set(), darkBlockerKeys: new Set(), wallDecorations: [],
+      });
+    }
+
+    const wholeZone = collectZoneEntryReadinessReport(ids, registry, cache, 480, 270, 1);
+    const gating    = [entry, ids[1], ids[ids.length - 1]];
+    const scoped    = collectZoneEntryReadinessReport(gating, registry, cache, 480, 270, 1);
+
+    assert.ok(
+      scoped.required < wholeZone.required,
+      `the scoped gate must demand strictly less than the whole zone ` +
+        `(scoped=${scoped.required}, zone=${wholeZone.required})`,
+    );
+    // Ring of 6: entry<->next and entry<->prev are the only links with both
+    // endpoints inside the gating set — 4 directed crossings, versus 12 zone-wide.
+    assert.strictEqual(scoped.required, 4, 'the gate must cover exactly the radius-1 crossings');
+    assert.strictEqual(wholeZone.required, 12, 'sanity: the unscoped zone demands every crossing');
   });
 
   test('readiness reports the exact failing subcondition, not a bare false', () => {

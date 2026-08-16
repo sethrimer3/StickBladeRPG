@@ -909,7 +909,9 @@ export function startGameScreen(
     manager: residentRoomManager,
     buildScheduler: residentBuildScheduler,
     zoneLoader: {
-      startZoneLoad: (worldNumber) => { _zoneLoader.startZoneLoad(worldNumber, residentRoomManager); },
+      startZoneLoad: (worldNumber, entryRoomId) => {
+        _zoneLoader.startZoneLoad(worldNumber, residentRoomManager, false, entryRoomId);
+      },
       getZoneRoomIds: (worldNumber) => _zoneLoader.getZoneRoomIds(worldNumber),
       tickZoneLoad: () => _zoneLoader.tickZoneLoad(residentRoomManager, RESIDENT_CAMPAIGN_SEED, virtualWidthPx, virtualHeightPx, camera.zoom),
       getZoneProgress: () => _zoneLoader.getZoneProgress(residentRoomManager),
@@ -1051,7 +1053,7 @@ export function startGameScreen(
   // progress through `initialZoneLoad`.
   {
     const _startWorldNumber = currentRoom.worldNumber ?? 1;
-    _zoneLoader.startZoneLoad(_startWorldNumber, residentRoomManager);
+    _zoneLoader.startZoneLoad(_startWorldNumber, residentRoomManager, false, currentRoom.id);
     const _zoneRoomIds = _zoneLoader.getZoneRoomIds(_startWorldNumber);
     const _hasWork = !_zoneLoader.isZoneReady(_startWorldNumber, residentRoomManager);
     if (_hasWork) {

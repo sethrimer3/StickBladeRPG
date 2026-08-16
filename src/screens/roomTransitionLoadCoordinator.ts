@@ -122,7 +122,11 @@ export type TransitionBuildSchedulerPort = Pick<ResidentBuildScheduler,
  * both.
  */
 export interface TransitionZoneLoaderPort {
-  startZoneLoad(worldNumber: number): void;
+  /**
+   * @param entryRoomId Room the player will occupy once the load releases.
+   *   Scopes the directed-entry readiness gate to that room's own crossings.
+   */
+  startZoneLoad(worldNumber: number, entryRoomId: string | null): void;
   getZoneRoomIds(worldNumber: number): string[];
   /** One zone-load tick; returns true when the zone is fully ready. */
   tickZoneLoad(): boolean;
@@ -474,7 +478,7 @@ export class RoomTransitionLoadCoordinator {
         dir,
         targetWorldNumber,
       });
-      d.zoneLoader.startZoneLoad(targetWorldNumber);
+      d.zoneLoader.startZoneLoad(targetWorldNumber, room.id);
       d.overlay.showZoneLoad(targetWorldNumber, d.zoneLoader.getZoneRoomIds(targetWorldNumber).length, false);
       d.profiler.begin(room.id, 'crossZoneDeferred', false);
       d.profiler.end(room, null);
