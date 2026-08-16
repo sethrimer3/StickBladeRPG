@@ -225,7 +225,15 @@ async function boot(): Promise<void> {
   } catch (error) {
     console.error('[main] Unexpected menu-animation preparation failure; continuing startup:', error);
   }
-  await initAndStart();
+  try {
+    await initAndStart();
+  } catch (error) {
+    // Never leave the overlay covering the screen with no explanation — a
+    // startup failure here would otherwise look like an infinite loading bar.
+    console.error('[main] Startup failed:', error);
+    loadingScreen.showError(error);
+    return;
+  }
   loadingScreen.destroy();
 }
 

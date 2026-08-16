@@ -679,7 +679,14 @@ export interface RoomJsonBakedWallTemplate {
   soundHardnessIndex: number[];
   isInvisibleFlag: number[];
   rampOrientationIndex: number[];
-  halfBlockOrientation: number[];
+  /**
+   * Per-wall half-block orientation (0–3, or `HALF_BLOCK_NONE`).  Absent on
+   * baked templates written before the half-block rename (they carried the
+   * older `isPillarHalfWidthFlag` field instead).  Such templates fail the
+   * array-length check in `hydrateAndValidateBakedWallTemplate` and fall back
+   * to `buildRoomWallTemplate()`, so the missing data is never guessed at.
+   */
+  halfBlockOrientation?: number[];
   isIceFlag: number[];
   isUltraIceFlag: number[];
   /**

@@ -150,7 +150,7 @@ export function auditRoomJson(rawJson: string): RoomFileAuditEntry | null {
       b.xWorld.length + b.yWorld.length + b.wWorld.length + b.hWorld.length +
       b.isPlatformFlag.length + b.platformEdge.length + b.themeIndex.length +
       b.soundHardnessIndex.length + b.isInvisibleFlag.length +
-      b.rampOrientationIndex.length + b.halfBlockOrientation.length +
+      b.rampOrientationIndex.length + (b.halfBlockOrientation?.length ?? 0) +
       b.isIceFlag.length + b.isUltraIceFlag.length;
     bakedTemplateBytesEstimate = totalElements * 4;
   }

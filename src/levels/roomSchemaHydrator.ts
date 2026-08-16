@@ -732,7 +732,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
       soundHardnessIndex:    b.soundHardnessIndex.slice(),
       isInvisibleFlag:       b.isInvisibleFlag.slice(),
       rampOrientationIndex:  b.rampOrientationIndex.slice(),
-      halfBlockOrientation: b.halfBlockOrientation.slice(),
+      halfBlockOrientation: (b.halfBlockOrientation ?? []).slice(),
       isIceFlag:             b.isIceFlag.slice(),
       isUltraIceFlag:        b.isUltraIceFlag.slice(),
       // Absent on saves predating the Surface Rim system (schemaVersion < 2) —

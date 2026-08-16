@@ -738,7 +738,7 @@ export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
       soundHardnessIndex:    b.soundHardnessIndex.slice(),
       isInvisibleFlag:       b.isInvisibleFlag.slice(),
       rampOrientationIndex:  b.rampOrientationIndex.slice(),
-      halfBlockOrientation: b.halfBlockOrientation.slice(),
+      halfBlockOrientation: (b.halfBlockOrientation ?? []).slice(),
       isIceFlag:             b.isIceFlag.slice(),
       isUltraIceFlag:        b.isUltraIceFlag.slice(),
       rimStyleIndex:         (b.rimStyleIndex ?? []).slice(),
