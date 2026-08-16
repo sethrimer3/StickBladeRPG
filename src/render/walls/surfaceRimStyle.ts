@@ -146,12 +146,6 @@ export function isDefaultSurfaceRimStyle(style: SurfaceRimStyle): boolean {
   return surfaceRimStylesEqual(style, DEFAULT_SURFACE_RIM_STYLE);
 }
 
-/** Custom and none modes replace the production baked/default edge treatment. */
-export function surfaceRimSuppressesBakedEdge(style: SurfaceRimStyle | null | undefined): boolean {
-  return style !== null && style !== undefined
-    && (style.kind !== 'brighten' || style.mode !== 'default');
-}
-
 export function surfaceRimStylesEqual(a: SurfaceRimStyle, b: SurfaceRimStyle): boolean {
   const ca = normalizeSurfaceRimStyle(a);
   const cb = normalizeSurfaceRimStyle(b);

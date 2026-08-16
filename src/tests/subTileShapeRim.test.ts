@@ -25,6 +25,7 @@ import type { WallSnapshot } from '../render/snapshotTypes';
 import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import { getSurfaceMaskAtTile } from '../sim/world/surfaceExposure';
 import { encodeStairsOrientationIndex, SHAPE_ORIENTATION_NONE } from '../levels/stairsGeometry';
+import { DEFAULT_SURFACE_RIM_STYLE } from '../render/walls/surfaceRimStyle';
 import {
   HALF_BLOCK_NONE, HALF_BLOCK_LEFT, HALF_BLOCK_RIGHT, HALF_BLOCK_TOP, HALF_BLOCK_BOTTOM,
   halfBlockWorldRect,
@@ -52,8 +53,10 @@ function snapshot(specs: Spec[]): WallSnapshot {
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: Uint8Array.from(specs.map(s => s.shape ?? SHAPE_ORIENTATION_NONE)),
     halfBlockOrientation: Uint8Array.from(specs.map(s => s.half ?? HALF_BLOCK_NONE)),
-    surfaceRimStyleIndex: new Uint16Array(count).fill(0xFFFF),
-    surfaceRimStyleTable: [],
+    // Shapes only get an outline where the Brighten overlay is painted —
+    // blocks no longer highlight automatically — so every fixture paints it.
+    surfaceRimStyleIndex: new Uint16Array(count).fill(0),
+    surfaceRimStyleTable: [DEFAULT_SURFACE_RIM_STYLE],
   };
 }
 

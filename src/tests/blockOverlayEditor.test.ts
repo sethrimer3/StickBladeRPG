@@ -59,9 +59,9 @@ test('a Block Overlays palette tab exists and is labelled', () => {
   assert.equal(PALETTE_CATEGORY_LABELS.blockOverlays, 'Block Overlays');
 });
 
-test('the tab offers Brighten and Grass, and every overlay item declares its kind', () => {
+test('the tab offers Brighten, Grass and None, and every overlay item declares its kind', () => {
   const items = PALETTE_ITEMS.filter(i => i.category === 'blockOverlays');
-  assert.deepEqual(items.map(i => i.label).sort(), ['Brighten', 'Grass']);
+  assert.deepEqual(items.map(i => i.label).sort(), ['Brighten', 'Grass', 'None']);
   assert.ok(items.every(i => i.blockOverlayKind !== undefined),
     'an overlay item without a kind would place geometry instead of painting');
 });
@@ -89,14 +89,27 @@ test('painting Grass places no new geometry', () => {
   assert.equal(room.interiorWalls.length, 1, 'painting must never add a wall');
 });
 
-test('painting Brighten clears the override, restoring the standard highlight', () => {
+test('painting Brighten stores an explicit overlay — the highlight is opt-in now', () => {
+  const room = makeRoom();
+  assert.equal(room.interiorWalls[0].surfaceRim, undefined, 'a fresh block starts bare');
+
+  assert.equal(paint('overlay_brighten', 5, 5, room), true);
+  assert.equal(room.interiorWalls[0].surfaceRim?.kind, 'brighten',
+    'Brighten must be stored, not inferred — unpainted blocks render no edge');
+});
+
+test('painting None erases whatever overlay was there', () => {
   const room = makeRoom();
   paint('overlay_grass', 5, 5, room);
   assert.equal(room.interiorWalls[0].surfaceRim?.kind, 'grass');
 
-  assert.equal(paint('overlay_brighten', 5, 5, room), true);
-  assert.equal(room.interiorWalls[0].surfaceRim, undefined,
-    'Brighten is the default presentation, so it stores no override');
+  assert.equal(paint('overlay_none', 5, 5, room), true);
+  assert.equal(room.interiorWalls[0].surfaceRim, undefined);
+});
+
+test('an unpainted block has no overlay, so it renders no edge treatment', () => {
+  const room = makeRoom();
+  assert.equal(room.interiorWalls[0].surfaceRim, undefined);
 });
 
 test('repainting the same overlay reports no change, so no undo entry is recorded', () => {

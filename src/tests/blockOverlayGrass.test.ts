@@ -20,18 +20,19 @@ import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import {
   DEFAULT_SURFACE_RIM_STYLE, GRASS_BLOCK_OVERLAY,
   normalizeSurfaceRimStyle, surfaceRimStylesEqual, hashSurfaceRimStyle,
-  encodeSurfaceRimStyle, decodeSurfaceRimStyle, surfaceRimSuppressesBakedEdge,
+  encodeSurfaceRimStyle, decodeSurfaceRimStyle,
+  internSurfaceRimStyle, SURFACE_RIM_STYLE_INDEX_DEFAULT,
   type SurfaceRimStyle,
 } from '../render/walls/surfaceRimStyle';
 import {
   generateGrassPixels, collectGrassAnchors, DEFAULT_GRASS_PARAMS,
 } from '../render/walls/proceduralGrass';
-import { SHAPE_ORIENTATION_NONE } from '../levels/stairsGeometry';
+import { SHAPE_ORIENTATION_NONE, encodeStairsOrientationIndex } from '../levels/stairsGeometry';
 import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 
 const B = 8;
 
-function snapshot(specs: { x: number; y: number; w: number; h: number; style?: SurfaceRimStyle }[]): WallSnapshot {
+function snapshot(specs: { x: number; y: number; w: number; h: number; style?: SurfaceRimStyle; shape?: number }[]): WallSnapshot {
   const table = specs.flatMap(s => (s.style ? [s.style] : []));
   const count = specs.length;
   return {
@@ -44,7 +45,7 @@ function snapshot(specs: { x: number; y: number; w: number; h: number; style?: S
     platformEdge: new Uint8Array(count),
     themeIndex: new Uint8Array(count).fill(255),
     isInvisibleFlag: new Uint8Array(count),
-    rampOrientationIndex: new Uint8Array(count).fill(SHAPE_ORIENTATION_NONE),
+    rampOrientationIndex: Uint8Array.from(specs.map(s => s.shape ?? SHAPE_ORIENTATION_NONE)),
     halfBlockOrientation: new Uint8Array(count).fill(HALF_BLOCK_NONE),
     surfaceRimStyleIndex: Uint16Array.from(specs.map(s => (s.style ? table.indexOf(s.style) : 0xFFFF))),
     surfaceRimStyleTable: table,
@@ -70,11 +71,6 @@ test('every grass wall canonicalizes to one object, so the room dedup table neve
   const b = normalizeSurfaceRimStyle({ kind: 'grass', opacity: 0.1 });
   assert.equal(a, b, 'grass ignores brighten knobs and interns to a single style');
   assert.ok(surfaceRimStylesEqual(a, GRASS_BLOCK_OVERLAY));
-});
-
-test('grass suppresses the sprite-baked edge shading, like every non-default overlay', () => {
-  assert.equal(surfaceRimSuppressesBakedEdge(GRASS_BLOCK_OVERLAY), true);
-  assert.equal(surfaceRimSuppressesBakedEdge(DEFAULT_SURFACE_RIM_STYLE), false);
 });
 
 // ── Generation through the real layout cache ─────────────────────────────────
@@ -179,4 +175,43 @@ test('disabling bare patches covers every column, for callers wanting solid cove
   const anchors = Array.from({ length: 100 }, (_, x) => ({ x, y: 10 }));
   const px = generateGrassPixels(anchors, isSolid, { ...DEFAULT_GRASS_PARAMS, bareThreshold: 0 });
   assert.equal(new Set(px.map(p => p.x)).size, 100);
+});
+
+// ── Highlights are opt-in ────────────────────────────────────────────────────
+//
+// Blocks used to receive the exposed-edge highlight automatically. It is now
+// the 'brighten' overlay, painted per block, so an unpainted block must render
+// completely bare — no bands, no sub-tile outline, no baked sprite shading.
+
+test('an unpainted block produces no edge treatment at all', () => {
+  const layout = getWallLayoutCache(
+    snapshot([{ x: 2 * B, y: 2 * B, w: 2 * B, h: 2 * B }]), B, 10, 10,
+  );
+  assert.equal(layout.subTileRimPixels.length, 0);
+  assert.equal(layout.grassPixels.length, 0);
+  assert.equal(layout.customSurfaceRimPixels.length, 0);
+  assert.equal(layout.tileSurfaceRim.size, 0,
+    'an unpainted block must resolve to no overlay style at all');
+});
+
+test('an unpainted sub-tile shape gets no outline, but a Brighten-painted one does', () => {
+  const stair = { x: 2 * B, y: 2 * B, w: B, h: B, shape: encodeStairsOrientationIndex(0) };
+  const bare = getWallLayoutCache(snapshot([stair]), B, 10, 10);
+  assert.equal(bare.subTileRimPixels.length, 0, 'unpainted shapes render bare');
+
+  const painted = getWallLayoutCache(
+    snapshot([{ ...stair, style: DEFAULT_SURFACE_RIM_STYLE }]), B, 10, 10,
+  );
+  assert.ok(painted.subTileRimPixels.length > 0, 'a painted shape gets its outline back');
+});
+
+test('an explicitly painted Brighten is interned rather than collapsing to "unpainted"', () => {
+  const table: SurfaceRimStyle[] = [];
+  const index = internSurfaceRimStyle(table, DEFAULT_SURFACE_RIM_STYLE);
+  assert.notEqual(index, SURFACE_RIM_STYLE_INDEX_DEFAULT,
+    'painting Brighten must store a real entry, else it renders as unpainted');
+  assert.equal(table.length, 1);
+
+  assert.equal(internSurfaceRimStyle(table, undefined), SURFACE_RIM_STYLE_INDEX_DEFAULT,
+    'absence is what means "no overlay"');
 });

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import type { WallSnapshot } from '../render/snapshotTypes';
 import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import { renderSurfaceEdgeOverlayPass, type SurfaceEdgeOverlayParams } from '../render/walls/surfaceEdgeOverlay';
-import { normalizeSurfaceRimStyle } from '../render/walls/surfaceRimStyle';
+import { normalizeSurfaceRimStyle, DEFAULT_SURFACE_RIM_STYLE } from '../render/walls/surfaceRimStyle';
 
 /**
  * Coverage for the generalized Surface Rim modes layered onto
