@@ -475,6 +475,160 @@ function _buildCustomSurfaceRimPixels(
   return { pixels: output, renderData };
 }
 
+// ── Sub-tile shape rim (stairs / ramps / half-blocks) ────────────────────────
+//
+// Stairs, ramps and half-blocks fill only part of the tile they sit in, so the
+// tile-granular `SurfaceExposureMap` cannot describe their outline: it would
+// mark the whole tile square. These helpers instead rasterize each such wall's
+// real silhouette at world-pixel resolution and run a bounded inward BFS from
+// its exposed pixels, producing the same 3-pixel falloff the tile path draws
+// along a full block's edge — see `renderSurfaceEdgeOverlayPass`.
+//
+// Cost is bounded by the shapes themselves (a stair is at most 16×16 px), not
+// by room size, and the whole thing is skipped when a room has no shaped or
+// half-block walls at all.
+
+/** Inward falloff depth, in world pixels. Must match `_BAND_COUNT` in surfaceEdgeOverlay.ts. */
+const _SUB_TILE_RIM_DEPTH = 3;
+
+export interface CachedSubTileRimPixel {
+  readonly xWorldPx: number;
+  readonly yWorldPx: number;
+  /** 0 = outermost (on the exposed edge), up to `_SUB_TILE_RIM_DEPTH - 1` inward. */
+  readonly depth: number;
+}
+
+/**
+ * True when `wi` is a wall whose solid area is smaller than its tile footprint:
+ * stairs, legacy/smooth ramps, or a half-block. These are exactly the walls the
+ * tile-granular exposure map cannot describe.
+ */
+function _isSubTileShapedWall(walls: WallSnapshot, wi: number): boolean {
+  return !isPlainRectOrientationIndex(walls.rampOrientationIndex[wi])
+      || isHalfBlockOrientation(walls.halfBlockOrientation[wi]);
+}
+
+/**
+ * Rasterizes every visible sub-tile shape to a set of solid world-pixel keys.
+ * Returns an empty set when the room has none, so callers can cheaply skip all
+ * downstream work.
+ */
+function _buildSubTileSolidPixels(walls: WallSnapshot): Set<string> {
+  const pixels = new Set<string>();
+  for (let wi = 0; wi < walls.count; wi++) {
+    if (walls.isInvisibleFlag[wi] === 1) continue;
+    if (walls.isPlatformFlag[wi] === 1) continue;
+    if (!_isSubTileShapedWall(walls, wi)) continue;
+    const x0 = Math.floor(walls.xWorld[wi]);
+    const y0 = Math.floor(walls.yWorld[wi]);
+    const x1 = Math.ceil(walls.xWorld[wi] + walls.wWorld[wi]);
+    const y1 = Math.ceil(walls.yWorld[wi] + walls.hWorld[wi]);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (_wallContainsVisiblePixel(walls, wi, x, y)) pixels.add(_pixelKey(x, y));
+      }
+    }
+  }
+  return pixels;
+}
+
+/**
+ * Builds the pixel-accurate inward falloff for every sub-tile shape.
+ *
+ * A shape pixel sits at depth 0 when any 4-neighbour is not solid — where
+ * "solid" means either a full wall tile (`fullSolidTiles`) or another sub-tile
+ * shape's pixel, so two shapes meeting flush, or a stair resting on a floor,
+ * produce no rim along the seam. Out-of-bounds counts as solid, matching
+ * `buildSurfaceExposureMap`'s rule that the room border is never open air.
+ *
+ * Propagation stays inside the shapes' own pixels, so the band hugs the
+ * silhouette (a staircase profile, a half-block's inner face) instead of
+ * bleeding into adjacent blocks.
+ *
+ * Walls carrying a non-default Surface Rim style are excluded: those are
+ * already drawn, at the same pixel precision, by `_buildCustomSurfaceRimPixels`.
+ */
+function _buildSubTileRimPixels(
+  walls: WallSnapshot,
+  subTileSolid: ReadonlySet<string>,
+  fullSolidTiles: ReadonlySet<string>,
+  blockSizePx: number,
+  widthBlocks: number,
+  heightBlocks: number,
+): CachedSubTileRimPixel[] {
+  if (subTileSolid.size === 0) return [];
+
+  const roomWidthPx = widthBlocks * blockSizePx;
+  const roomHeightPx = heightBlocks * blockSizePx;
+
+  const isSolidPx = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= roomWidthPx || y >= roomHeightPx) return true; // border is never open air
+    if (fullSolidTiles.has(wallTileKey(Math.floor(x / blockSizePx), Math.floor(y / blockSizePx)))) return true;
+    return subTileSolid.has(_pixelKey(x, y));
+  };
+
+  // Only shapes using the DEFAULT rim presentation participate here.
+  const eligible = new Set<string>();
+  for (let wi = 0; wi < walls.count; wi++) {
+    if (walls.isInvisibleFlag[wi] === 1) continue;
+    if (walls.isPlatformFlag[wi] === 1) continue;
+    if (!_isSubTileShapedWall(walls, wi)) continue;
+    const styleIndex = walls.surfaceRimStyleIndex[wi];
+    const style = styleIndex === SURFACE_RIM_STYLE_INDEX_DEFAULT
+      ? undefined
+      : walls.surfaceRimStyleTable[styleIndex];
+    if (style && style.mode !== 'default') continue; // custom/none: owned by the custom rim pass
+    const x0 = Math.floor(walls.xWorld[wi]);
+    const y0 = Math.floor(walls.yWorld[wi]);
+    const x1 = Math.ceil(walls.xWorld[wi] + walls.wWorld[wi]);
+    const y1 = Math.ceil(walls.yWorld[wi] + walls.hWorld[wi]);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (_wallContainsVisiblePixel(walls, wi, x, y)) eligible.add(_pixelKey(x, y));
+      }
+    }
+  }
+  if (eligible.size === 0) return [];
+
+  const depthByKey = new Map<string, number>();
+  const queue: { x: number; y: number }[] = [];
+
+  for (const key of eligible) {
+    const comma = key.indexOf(',');
+    const x = Number(key.slice(0, comma));
+    const y = Number(key.slice(comma + 1));
+    const exposed = _PIXEL_NEIGHBORS.some(([dx, dy]) => !isSolidPx(x + dx, y + dy));
+    if (!exposed) continue;
+    depthByKey.set(key, 0);
+    queue.push({ x, y });
+  }
+
+  for (let head = 0; head < queue.length; head++) {
+    const { x, y } = queue[head];
+    const depth = depthByKey.get(_pixelKey(x, y))!;
+    if (depth + 1 >= _SUB_TILE_RIM_DEPTH) continue;
+    for (const [dx, dy] of _PIXEL_NEIGHBORS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const nextKey = _pixelKey(nx, ny);
+      if (!eligible.has(nextKey) || depthByKey.has(nextKey)) continue;
+      depthByKey.set(nextKey, depth + 1);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+
+  const out: CachedSubTileRimPixel[] = [];
+  for (const [key, depth] of depthByKey) {
+    const comma = key.indexOf(',');
+    out.push({
+      xWorldPx: Number(key.slice(0, comma)),
+      yWorldPx: Number(key.slice(comma + 1)),
+      depth,
+    });
+  }
+  return out;
+}
+
 // ── Layout cache builder ──────────────────────────────────────────────────────
 
 /**
@@ -532,6 +686,12 @@ export function buildWallLayout(
   const tileSurfaceRim = new Map<string, SurfaceRimStyle>();
   const shapedWalls: ShapedWallInfo[] = [];
   const halfBlockWalls: HalfBlockWallInfo[] = [];
+  // Tiles a FULL-extent solid wall covers. `occupied` also carries half-block
+  // tiles (they must still read as occupied for lighting and neighbour
+  // detection), but those only fill half the tile, so the tile-granular
+  // exposure map below must not treat them as solid squares — their outline
+  // comes from the pixel-accurate sub-tile rim instead.
+  const fullSolidTiles = new Set<string>();
 
   for (let wi = 0; wi < walls.count; wi++) {
     // Skip invisible boundary walls
@@ -606,6 +766,7 @@ export function buildWallLayout(
           else platformStyleByKey.set(key, wallRimStyle);
         } else {
           occupied.add(key);
+          fullSolidTiles.add(key);
         }
         if (wallTheme !== null) {
           tileTheme.set(key, wallTheme);
