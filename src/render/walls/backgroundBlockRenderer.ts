@@ -61,6 +61,10 @@ if (typeof window !== 'undefined') {
     invalidateBackgroundBlockCache();
     clearAllRenderBundles();
   });
+  window.addEventListener('dw:graphics-quality-changed', () => {
+    invalidateBackgroundBlockCache();
+    clearAllRenderBundles();
+  });
 }
 
 /**

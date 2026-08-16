@@ -73,6 +73,10 @@ import {
   applyRampClipPath,
 } from './wallTileDrawHelpers';
 import { surfaceRimSuppressesBakedEdge } from './surfaceRimStyle';
+import type { GraphicsQuality } from '../../ui/renderSettings';
+import { getTileCornerDarkness, renderTileSmoothDarkness } from './smoothAmbientShadow';
+
+const _EMPTY_BLOCKERS: ReadonlySet<string> = new Set();
 
 // Dev-mode set of theme keys that have already triggered a missing-sprite warning.
 const _warnedMissingThemes: Set<string> = import.meta.env?.DEV ? new Set() : (null as unknown as Set<string>);
@@ -252,6 +256,10 @@ export interface WallTilePassContext {
    * null = scan the full arrays (fallback / non-chunk path).
    */
   chunkKey: string | null;
+  graphicsQuality?: GraphicsQuality;
+  ambientBlockerKeys?: ReadonlySet<string>;
+  roomWidthBlocks?: number;
+  roomHeightBlocks?: number;
 }
 
 // ── Pass 1: 2×2 full-sprite blocks ───────────────────────────────────────────
@@ -400,10 +408,22 @@ export function render1x1Pass(
 
     if (coveredBy2x2Keys.has(tileKey)) {
       if (isBlockTintEnabled) {
-        const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
-        if (darknessAlpha > 0) {
-          ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-          ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+        if (pctx.graphicsQuality === 'high') {
+          const corners = getTileCornerDarkness(
+            col, row,
+            wallLayout.occupied,
+            pctx.ambientBlockerKeys ?? _EMPTY_BLOCKERS,
+            ambientDepths,
+            pctx.roomWidthBlocks ?? 0x7FFFFFFF,
+            pctx.roomHeightBlocks ?? 0x7FFFFFFF,
+          );
+          renderTileSmoothDarkness(ctx, tileX, tileY, tileSizeScreen, corners.d00, corners.d10, corners.d01, corners.d11);
+        } else {
+          const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
+          if (darknessAlpha > 0) {
+            ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+            ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+          }
         }
       }
       continue;
@@ -509,10 +529,22 @@ export function render1x1Pass(
     }
 
     if (isBlockTintEnabled) {
-      const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
-      if (darknessAlpha > 0) {
-        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-        ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+      if (pctx.graphicsQuality === 'high') {
+        const corners = getTileCornerDarkness(
+          col, row,
+          wallLayout.occupied,
+          pctx.ambientBlockerKeys ?? _EMPTY_BLOCKERS,
+          ambientDepths,
+          pctx.roomWidthBlocks ?? 0x7FFFFFFF,
+          pctx.roomHeightBlocks ?? 0x7FFFFFFF,
+        );
+        renderTileSmoothDarkness(ctx, tileX, tileY, tileSizeScreen, corners.d00, corners.d10, corners.d01, corners.d11);
+      } else {
+        const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
+        if (darknessAlpha > 0) {
+          ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+          ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+        }
       }
     }
 
@@ -644,10 +676,22 @@ export function renderPlatformPass(
 
     const tileKey = key;
     if (isBlockTintEnabled) {
-      const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
-      if (darknessAlpha > 0) {
-        ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
-        ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+      if (pctx.graphicsQuality === 'high') {
+        const corners = getTileCornerDarkness(
+          col, row,
+          wallLayout.occupied,
+          pctx.ambientBlockerKeys ?? _EMPTY_BLOCKERS,
+          ambientDepths,
+          pctx.roomWidthBlocks ?? 0x7FFFFFFF,
+          pctx.roomHeightBlocks ?? 0x7FFFFFFF,
+        );
+        renderTileSmoothDarkness(ctx, tileX, tileY, tileSizeScreen, corners.d00, corners.d10, corners.d01, corners.d11);
+      } else {
+        const darknessAlpha = (ambientDepths?.get(tileKey) ?? 0);
+        if (darknessAlpha > 0) {
+          ctx.fillStyle = `rgba(0,0,0,${darknessAlpha})`;
+          ctx.fillRect(tileX, tileY, tileSizeScreen, tileSizeScreen);
+        }
       }
     }
   }

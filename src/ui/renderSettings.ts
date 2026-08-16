@@ -30,13 +30,19 @@ export type GraphicsQuality = 'low' | 'med' | 'high';
 const DEFAULT_GRAPHICS_QUALITY: GraphicsQuality = 'med';
 
 export function getGraphicsQuality(): GraphicsQuality {
+  if (typeof localStorage === 'undefined') return DEFAULT_GRAPHICS_QUALITY;
   const value = localStorage.getItem(GRAPHICS_QUALITY_STORAGE_KEY);
   if (value === 'low' || value === 'med' || value === 'high') return value;
   return DEFAULT_GRAPHICS_QUALITY;
 }
 
 export function setGraphicsQuality(quality: GraphicsQuality): void {
-  localStorage.setItem(GRAPHICS_QUALITY_STORAGE_KEY, quality);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(GRAPHICS_QUALITY_STORAGE_KEY, quality);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('dw:graphics-quality-changed', { detail: { quality } }));
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

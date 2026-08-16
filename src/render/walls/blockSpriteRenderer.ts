@@ -36,7 +36,8 @@ import {
   deletePrewarmEntry,
   getPrewarmDummyCtx,
 } from './wallChunkPrewarmStore';
-import { computeRenderStateKey, type PrewarmAdoptResult, getCacheBundle } from './roomRenderCacheStore';
+import { computeRenderStateKey, type PrewarmAdoptResult, getCacheBundle, clearAllRenderBundles } from './roomRenderCacheStore';
+import { getGraphicsQuality } from '../../ui/renderSettings';
 // Re-export prewarm store management API so existing import paths continue to work.
 export {
   evictPrewarmedWallChunks,
@@ -85,6 +86,13 @@ import { renderSeamOverlayPass } from './seamBlending';
 
 // Re-export dark-blocker helpers so existing call-sites keep their import path.
 export { setActiveDarkAmbientBlockers, renderDarkAmbientBlockerOverlay } from './darkBlockerOverlay';
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('dw:graphics-quality-changed', () => {
+    _chunkCache.invalidateAll();
+    clearAllRenderBundles();
+  });
+}
 
 /** Active sprite set for world-number mode. */
 let _sprites: BlockSpriteSet = getBlockSpriteSet(0);
@@ -1182,6 +1190,10 @@ function _doRenderWallTilesDirect(
     sprites: _sprites,
     coveredBy2x2Keys: _coveredBy2x2Keys,
     chunkKey,
+    graphicsQuality: getGraphicsQuality(),
+    ambientBlockerKeys: _activeAmbientBlockerKeys,
+    roomWidthBlocks: _activeRoomWidthBlocks,
+    roomHeightBlocks: _activeRoomHeightBlocks,
   };
 
   ctx.save();
