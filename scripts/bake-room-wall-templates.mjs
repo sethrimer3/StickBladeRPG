@@ -279,7 +279,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
         if (fs[i] !== fs[j] || ts[i] !== ts[j] || sh[i] !== sh[j] || iv[i] !== iv[j]) continue;
         if (rs[i] !== rs[j]) continue;
         if (ro[i] !== 255 || ro[j] !== 255) continue;
-        if (ph[i] !== 0  || ph[j] !== 0)  continue;
+        if (ph[i] !== HALF_BLOCK_NONE || ph[j] !== HALF_BLOCK_NONE) continue;
         // Horizontal merge: same Y and H, contiguous/overlapping on X axis
         if (Math.abs(ys[i] - ys[j]) <= WALL_MERGE_EPSILON &&
             Math.abs(hs[i] - hs[j]) <= WALL_MERGE_EPSILON) {

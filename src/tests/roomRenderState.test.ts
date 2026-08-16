@@ -10,6 +10,7 @@
  * chunks are silently discarded as `staleRenderState`.
  */
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { RoomDef, RoomWallTemplate } from '../levels/roomDef';
 import { computeRenderStateKey } from '../render/walls/roomRenderCacheStore';
@@ -177,7 +178,7 @@ function makeEmptyTemplate(): RoomWallTemplate {
     soundHardnessIndex: new Uint8Array(0),
     isInvisibleFlag: new Uint8Array(0),
     rampOrientationIndex: new Uint8Array(0),
-    halfBlockOrientation: new Uint8Array(0),
+    halfBlockOrientation: new Uint8Array(0).fill(HALF_BLOCK_NONE),
     isIceFlag: new Uint8Array(0),
     isUltraIceFlag: new Uint8Array(0),
     rimStyleIndex: new Uint16Array(0),

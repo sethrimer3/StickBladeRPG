@@ -143,8 +143,9 @@ export function* buildRoomWallTemplateIncremental(
   // Two rectangles may merge if they share a complete face AND have the same
   // isPlatformFlag (platform walls must not merge with solid walls).
   // Shaped walls — stairs and legacy ramps, both encoded as ro !== 255 — and
-  // half-width pillars (ph === 1) are never merged: their solid area is not the
-  // bounding rectangle, so a merged rect would over-report solidity.
+  // half-blocks (ph !== HALF_BLOCK_NONE) are never merged: their solid area is
+  // not the authored bounding rectangle, so a merged rect would over-report
+  // solidity.
   //
   // Each outer while-loop iteration finds at most one merge.  After each
   // iteration the deadline is checked: if the budget (WALL_MERGE_BUDGET_MS) has
@@ -165,9 +166,9 @@ export function* buildRoomWallTemplateIncremental(
         // Never merge walls with different Surface Rim styles — a merged AABB
         // would lose the per-block distinction (mirrors the themeIndex check above).
         if (rs[i] !== rs[j]) continue;
-        // Never merge shaped walls (stairs, legacy ramps) or half-width pillars
+        // Never merge shaped walls (stairs, legacy ramps) or half-blocks
         if (ro[i] !== 255 || ro[j] !== 255) continue;
-        if (ph[i] !== 0 || ph[j] !== 0) continue;
+        if (ph[i] !== HALF_BLOCK_NONE || ph[j] !== HALF_BLOCK_NONE) continue;
         // Horizontal merge: same Y, same H, contiguous on X axis
         if (
           Math.abs(ys[i] - ys[j]) <= WALL_MERGE_EPSILON_WORLD &&

@@ -12,7 +12,7 @@
  * placement preview already drew the crack overlay for this case). This file
  * covers the fix: crumble spikes now route correctly through placeAtCursor,
  * and the Falling modifier — architecturally unable to represent ramp/
- * stairs/pillar/spike shapes (EditorFallingBlock has no orientation/spike
+ * stairs/half-block/spike shapes (EditorFallingBlock has no orientation/spike
  * fields) — no longer silently degrades those shapes into plain rectangular
  * falling tiles.
  */
@@ -130,7 +130,7 @@ test('wouldPlacementSucceedAt reports a crumble-spike placement as occupied agai
 
 // ── Falling modifier cannot silently degrade a shaped block ────────────────
 
-const SHAPED_BLOCK_ITEM_IDS = ['stairs_1x1', 'stairs_2x2', 'ramp_1x1', 'ramp_2x2', 'pillar_half_width', 'spike_1x1', 'spike_2x2'];
+const SHAPED_BLOCK_ITEM_IDS = ['stairs_1x1', 'stairs_2x2', 'ramp_1x1', 'ramp_2x2', 'half_block', 'spike_1x1', 'spike_2x2'];
 
 for (const id of SHAPED_BLOCK_ITEM_IDS) {
   for (const modifier of ['tough', 'sensitive', 'crumbling'] as const) {

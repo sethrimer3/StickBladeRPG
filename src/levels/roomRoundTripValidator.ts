@@ -128,7 +128,7 @@ export interface RoundTripValidationResult {
  *  1. Solid cell coverage (no cells added or dropped)
  *  2. Per-cell theme (no theme changes)
  *  3. 1×1 vs 2×2 visual grain (cells that had hBlock=1 remain hBlock=1)
- *  4. Special wall count (platforms/stairs/ramps/pillars)
+ *  4. Special wall count (platforms/stairs/ramps/half-blocks)
  *  5. Water zone cell coverage
  *  6. Lava zone cell coverage
  *  7. Ambient blocker cells (clear and dark identity)

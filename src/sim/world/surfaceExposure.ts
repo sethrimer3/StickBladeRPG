@@ -140,7 +140,7 @@ export interface TileSolidityGrid {
   /**
    * Optional sub-tile geometry probe, in world pixels.
    *
-   * Stairs, ramps and half-width pillars occupy a tile only *partially*, so
+   * Stairs, ramps and half-blocks occupy a tile only *partially*, so
    * they are deliberately NOT reported by `isSolidAt` — a full-tile square
    * rim around a diagonal stair would be wrong. But their solid pixels still
    * have to suppress a neighbouring full block's rim wherever the two are
@@ -243,7 +243,7 @@ function computeConnectedOpenAir(
  *      region, when `options.connectedOpenAirOnly` is set.
  *   5. (optional) The neighbour cell's sub-tile geometry does not fully cover
  *      the shared edge, when `grid.isSubTileSolidAtPx` is supplied — see that
- *      hook's doc comment for why stairs/ramps/half pillars need it.
+ *      hook's doc comment for why stairs/ramps/half-blocks need it.
  *
  * Out-of-bounds neighbours never count as open air, and internal sides
  * between two solid tiles are never exposed.
@@ -264,7 +264,7 @@ export function buildSurfaceExposureMap(
     return true;
   };
 
-  // ── Sub-tile geometry (stairs / ramps / half pillars) ───────────────────────
+  // ── Sub-tile geometry (stairs / ramps / half-blocks) ───────────────────────
   const probeSubTile = grid.isSubTileSolidAtPx;
   const bs = grid.blockSizePx;
 

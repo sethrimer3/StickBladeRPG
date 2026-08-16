@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -69,7 +70,7 @@ function makeWallSnapshot(rects: Array<{ x: number; y: number; w: number; h: num
     themeIndex: new Uint8Array(count).fill(255), // 255 = room default
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: new Uint8Array(count).fill(255), // 255 = not a ramp
-    halfBlockOrientation: new Uint8Array(count),
+    halfBlockOrientation: new Uint8Array(count).fill(HALF_BLOCK_NONE),
     surfaceRimStyleIndex: new Uint16Array(count).fill(0xFFFF),
     surfaceRimStyleTable: [],
   };

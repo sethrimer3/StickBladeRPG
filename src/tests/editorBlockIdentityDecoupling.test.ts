@@ -8,6 +8,7 @@
  * byte-for-byte unchanged.
  */
 import assert from 'node:assert/strict';
+import { HALF_BLOCK_LEFT } from '../levels/halfBlockGeometry';
 import { test } from 'node:test';
 import { jsonToEditorRoomData, editorRoomDataToJson } from '../editor/roomJson';
 import type { RoomJsonDef } from '../editor/roomJsonSchema';
@@ -113,7 +114,7 @@ test('adjacent same-theme 1x1 walls: save -> reopen in editor -> independent sel
   assert.deepEqual(afterDelete.map(w => `${w.xBlock},${w.yBlock}`).sort(), ['2,5', '4,5']);
 });
 
-test('true 2x2 walls, platforms, ramps, stairs, half-pillars, and Surface Rim overrides are never split', () => {
+test('true 2x2 walls, platforms, ramps, stairs, half-blocks, and Surface Rim overrides are never split', () => {
   const sourceJson: RoomJsonDef = {
     id: 'atomic_shapes',
     name: 'Atomic Shapes',
@@ -129,7 +130,7 @@ test('true 2x2 walls, platforms, ramps, stairs, half-pillars, and Surface Rim ov
       { xBlock: 5, yBlock: 5, wBlock: 4, hBlock: 1, isPlatform: true }, // platform
       { xBlock: 10, yBlock: 10, wBlock: 3, hBlock: 1, rampOrientation: 1 }, // ramp
       { xBlock: 15, yBlock: 15, wBlock: 3, hBlock: 1, stairsOrientation: 2 }, // stairs
-      { xBlock: 20, yBlock: 20, wBlock: 1, hBlock: 1, halfBlock: true }, // half pillar
+      { xBlock: 20, yBlock: 20, wBlock: 1, hBlock: 1, halfBlock: 'left' }, // half-block (left)
       { xBlock: 25, yBlock: 25, wBlock: 3, hBlock: 1, r: 0 }, // Surface Rim override run
     ],
     enemies: [],
@@ -149,8 +150,8 @@ test('true 2x2 walls, platforms, ramps, stairs, half-pillars, and Surface Rim ov
   assert.equal(ramp?.wBlock, 3);
   const stairs = reopened.interiorWalls.find(w => w.stairsOrientation !== undefined);
   assert.equal(stairs?.wBlock, 3);
-  const halfPillar = reopened.interiorWalls.find(w => w.halfBlockOrientation === 1);
-  assert.ok(halfPillar);
+  const halfBlockWall = reopened.interiorWalls.find(w => w.halfBlockOrientation === HALF_BLOCK_LEFT);
+  assert.ok(halfBlockWall);
   const rimWall = reopened.interiorWalls.find(w => w.surfaceRim !== undefined);
   assert.equal(rimWall?.wBlock, 3);
   const twoByTwo = reopened.interiorWalls.find(w => w.wBlock === 2 && w.hBlock === 2);

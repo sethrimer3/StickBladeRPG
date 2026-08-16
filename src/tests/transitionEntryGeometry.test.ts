@@ -9,6 +9,7 @@
  */
 
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 
 import type { RoomDef, RoomTransitionDef } from '../levels/roomDef';
@@ -280,7 +281,7 @@ test('a blocked doorway spawn resolves to a NEARBY block, not across the room', 
   // outlier had to be covered too.
   const wallAt = (x: number, y: number): unknown => ({
     xBlock: x, yBlock: y, wBlock: 1, hBlock: 1,
-    isPlatformFlag: 0, isInvisibleFlag: 0, halfBlockOrientation: 0,
+    isPlatformFlag: 0, isInvisibleFlag: 0, halfBlockOrientation: HALF_BLOCK_NONE,
   });
   // Solid 3x3 patch around the intended spawn; open ground just outside it.
   const walls: unknown[] = [];

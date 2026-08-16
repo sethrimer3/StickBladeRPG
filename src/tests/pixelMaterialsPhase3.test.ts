@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { HALF_BLOCK_LEFT } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import { createWorldState } from '../sim/world';
 import { createClusterState } from '../sim/clusters/state';
@@ -47,11 +48,11 @@ function makeState(room: EditorRoomData) {
 
 // ── Small Phase 2 fixups ────────────────────────────────────────────────────
 
-test('half-width pillar: sand rejected in the occupied 4px half, allowed in the empty half', () => {
+test('half-block: sand rejected in the occupied 4px half, allowed in the empty half', () => {
   const room = makeRoom({
     interiorWalls: [{
       uid: 1, xBlock: 3, yBlock: 3, wBlock: 1, hBlock: 1,
-      isPlatformFlag: 0, halfBlockOrientation: 1,
+      isPlatformFlag: 0, halfBlockOrientation: HALF_BLOCK_LEFT,
     }],
   } as unknown as Partial<EditorRoomData>);
   // Occupied half: native px [24,28) x [24,32).
@@ -63,7 +64,7 @@ test('half-width pillar: sand rejected in the occupied 4px half, allowed in the 
   assert.equal(canPlacePixelMaterialAt(room, 28, 25), true);
 });
 
-test('half-width pillar parity: normal full-width walls and ramps are unaffected', () => {
+test('half-block parity: normal full-width walls and ramps are unaffected', () => {
   const roomWall = makeRoom({
     interiorWalls: [{ uid: 1, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 1, isPlatformFlag: 0 }],
   } as unknown as Partial<EditorRoomData>);

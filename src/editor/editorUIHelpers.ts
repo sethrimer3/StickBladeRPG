@@ -509,17 +509,17 @@ export function makeBlockPreviewShapeCss(item: PaletteItem, theme: string): { sh
           border: 2px solid rgba(220,80,10,0.80); box-sizing: border-box;
           clip-path: polygon(0% 100%, 100% 100%, 100% 0%);`,
       };
-    case 'pillar_half_width':
-      // Narrow vertical pillar centred in the 40x40 preview cell.
+    case 'half_block':
+      // The left half of the 40x40 preview cell — the default orientation a
+      // half-block is placed with. Q/E rotate it through the other three.
       return {
         containerCss,
         shapeCss: `
-          position: absolute; left: 15px; top: 0;
-          width: 10px; height: 40px;
+          position: absolute; left: 0; top: 0;
+          width: 20px; height: 40px;
           background-color: ${fill};
           background-image: ${cssUrl(spriteUrl)};
           background-size: auto 40px; image-rendering: pixelated;
-          border-left: 1px solid rgba(255,255,255,0.15);
           border-right: 1px solid rgba(255,255,255,0.15);
         `,
       };

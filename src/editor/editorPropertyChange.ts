@@ -621,7 +621,7 @@ export function handlePropertyChange(
  *
  * Eligible for `checked === true` (normal → crumble): a selected `'wall'`
  * that is a plain block, ramp, or stairs shape (not a one-way platform,
- * half-pillar, or smooth ramp — none of which have a crumble equivalent).
+ * half-block, or smooth ramp — none of which have a crumble equivalent).
  * Eligible for `checked === false` (crumble → normal): a selected
  * `'crumbleBlock'`. Elements of other types, or walls/blocks already in the
  * requested state, are left untouched — they don't block the elements that
@@ -647,7 +647,7 @@ export function handleCrumbleModifierToggle(
   if (roomData === null || selectedElements.length === 0) return false;
 
   // Platforms are the only shape excluded from crumble support — plain rects,
-  // legacy ramps, stairs, smooth ramps, and half-width pillars can all be
+  // legacy ramps, stairs, smooth ramps, and half-blocks can all be
   // cracked.
   const isEligibleWallForCrumble = (wall: EditorWall | undefined): wall is EditorWall =>
     wall !== undefined &&

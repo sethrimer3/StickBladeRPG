@@ -10,7 +10,7 @@
  *   2. render1x1Pass        — 1×1 auto-tiling tiles
  *   3. renderPlatformPass   — one-way platform tiles
  *   4. renderShapedWallPass — stairs and legacy ramps (template-mask shapes)
- *   5. renderHalfBlockPass — narrow half-width pillar walls
+ *   5. renderHalfBlockPass — narrow half-block walls
  */
 
 import type { WallSnapshot } from '../snapshot';
@@ -786,11 +786,11 @@ export function renderShapedWallPass(
   return hadFallbacks;
 }
 
-// ── Pass 5: Half-pillar walls ─────────────────────────────────────────────────
+// ── Pass 5: Half-block walls ─────────────────────────────────────────────────
 
 /**
- * Draws all half-width pillar walls as centered narrow rectangles.
- * Returns `true` if any placeholder tile was drawn (always false — pillars use
+ * Draws all half-block walls as centered narrow rectangles.
+ * Returns `true` if any placeholder tile was drawn (always false — half-blocks use
  * immediate solid-color drawing with no sprite loading).
  */
 export function renderHalfBlockPass(
@@ -802,50 +802,50 @@ export function renderHalfBlockPass(
           filterColMinBlocks, filterColMaxBlocks, filterRowMinBlocks, filterRowMaxBlocks,
           chunkKey } = pctx;
 
-  // Pre-bucketed path: only iterate pillars that overlap this chunk.
-  const pillarList: HalfBlockWallInfo[] = chunkKey !== null
+  // Pre-bucketed path: only iterate half-blocks that overlap this chunk.
+  const halfBlockList: HalfBlockWallInfo[] = chunkKey !== null
     ? (wallLayout.halfBlockByChunkKey.get(chunkKey) ?? _EMPTY_HALF_BLOCKS)
     : wallLayout.halfBlockWalls;
 
-  for (let pi = 0; pi < pillarList.length; pi++) {
-    const wi = pillarList[pi].wallIndex;
+  for (let pi = 0; pi < halfBlockList.length; pi++) {
+    const wi = halfBlockList[pi].wallIndex;
     const wxPx = walls.xWorld[wi] * scalePx + offsetXPx;
     const wyPx = walls.yWorld[wi] * scalePx + offsetYPx;
     const wwPx = walls.wWorld[wi] * scalePx;
     const whPx = walls.hWorld[wi] * scalePx;
 
-    const pillarColFirst = Math.floor(walls.xWorld[wi] / blockSizePx);
-    const pillarRowFirst = Math.floor(walls.yWorld[wi] / blockSizePx);
-    const pillarColLast  = Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - 1;
-    const pillarRowLast  = Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - 1;
-    if (pillarColLast < filterColMinBlocks || pillarColFirst > filterColMaxBlocks) continue;
-    if (pillarRowLast < filterRowMinBlocks || pillarRowFirst > filterRowMaxBlocks) continue;
+    const halfBlockColFirst = Math.floor(walls.xWorld[wi] / blockSizePx);
+    const halfBlockRowFirst = Math.floor(walls.yWorld[wi] / blockSizePx);
+    const halfBlockColLast  = Math.ceil((walls.xWorld[wi] + walls.wWorld[wi]) / blockSizePx) - 1;
+    const halfBlockRowLast  = Math.ceil((walls.yWorld[wi] + walls.hWorld[wi]) / blockSizePx) - 1;
+    if (halfBlockColLast < filterColMinBlocks || halfBlockColFirst > filterColMaxBlocks) continue;
+    if (halfBlockRowLast < filterRowMinBlocks || halfBlockRowFirst > filterRowMaxBlocks) continue;
 
-    const pillarTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
+    const halfBlockTheme: BlockTheme | null = walls.themeIndex[wi] !== WALL_THEME_DEFAULT_INDEX
       ? indexToBlockTheme(walls.themeIndex[wi])
       : roomTheme;
     const styleIndex = walls.surfaceRimStyleIndex[wi];
     const style = styleIndex === 0xFFFF ? undefined : walls.surfaceRimStyleTable[styleIndex];
     const suppressBakedEdgeShading = surfaceRimSuppressesBakedEdge(style);
-    const isLegacyBR2 = (pillarTheme === null) && (activeWorldNumber === 0);
-    let pillarFill: string;
-    let pillarEdge: string;
-    if (pillarTheme === 'dirt') {
-      pillarFill = '#5a3e1b'; pillarEdge = '#8b6914';
-    } else if (pillarTheme === 'brownRock' || (pillarTheme === null && !isLegacyBR2)) {
-      pillarFill = '#4a3828'; pillarEdge = '#7a5840';
+    const isLegacyBR2 = (halfBlockTheme === null) && (activeWorldNumber === 0);
+    let halfBlockFill: string;
+    let halfBlockEdgeColor: string;
+    if (halfBlockTheme === 'dirt') {
+      halfBlockFill = '#5a3e1b'; halfBlockEdgeColor = '#8b6914';
+    } else if (halfBlockTheme === 'brownRock' || (halfBlockTheme === null && !isLegacyBR2)) {
+      halfBlockFill = '#4a3828'; halfBlockEdgeColor = '#7a5840';
     } else {
-      pillarFill = '#1a2535'; pillarEdge = '#5080b0';
+      halfBlockFill = '#1a2535'; halfBlockEdgeColor = '#5080b0';
     }
 
-    const pillarWidthPx = wwPx;
-    ctx.fillStyle = pillarFill;
-    ctx.fillRect(Math.round(wxPx), Math.round(wyPx), Math.round(pillarWidthPx), Math.round(whPx));
+    const halfBlockWidthPx = wwPx;
+    ctx.fillStyle = halfBlockFill;
+    ctx.fillRect(Math.round(wxPx), Math.round(wyPx), Math.round(halfBlockWidthPx), Math.round(whPx));
     if (!suppressBakedEdgeShading) {
-      ctx.strokeStyle = pillarEdge;
+      ctx.strokeStyle = halfBlockEdgeColor;
       ctx.lineWidth = 1;
       ctx.strokeRect(Math.round(wxPx) + 0.5, Math.round(wyPx) + 0.5,
-        Math.round(pillarWidthPx) - 1, Math.round(whPx) - 1);
+        Math.round(halfBlockWidthPx) - 1, Math.round(whPx) - 1);
     }
   }
   return false;

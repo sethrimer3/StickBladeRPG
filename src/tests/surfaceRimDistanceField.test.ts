@@ -5,6 +5,7 @@ import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import { CHUNK_SIZE_BLOCKS } from '../render/walls/chunkRenderCache';
 import { normalizeSurfaceRimStyle, type SurfaceRimStyle } from '../render/walls/surfaceRimStyle';
 import { renderSurfaceEdgeOverlayPass } from '../render/walls/surfaceEdgeOverlay';
+import { HALF_BLOCK_LEFT, HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 
 const B = 8;
 
@@ -13,7 +14,7 @@ interface WallSpec {
   style?: SurfaceRimStyle;
   platform?: number;
   shape?: number;
-  pillar?: boolean;
+  half?: number;
 }
 
 function snapshot(specs: WallSpec[], styleTable?: SurfaceRimStyle[]): WallSnapshot {
@@ -30,7 +31,7 @@ function snapshot(specs: WallSpec[], styleTable?: SurfaceRimStyle[]): WallSnapsh
     themeIndex: new Uint8Array(count).fill(255),
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: Uint8Array.from(specs.map(s => s.shape ?? 255)),
-    halfBlockOrientation: Uint8Array.from(specs.map(s => s.pillar ? 1 : 0)),
+    halfBlockOrientation: Uint8Array.from(specs.map(s => s.half ?? HALF_BLOCK_NONE)),
     surfaceRimStyleIndex: Uint16Array.from(specs.map(s => s.style ? table.indexOf(s.style) : 0xFFFF)),
     surfaceRimStyleTable: table,
   };
@@ -89,13 +90,13 @@ test('inverted distance is world-pixel based and saturates at widthPx', () => {
   assert.equal(pixels.find(p => p.xWorldPx === 17 && p.yWorldPx === 17)?.distancePx, 9);
 });
 
-test('platform, stair, ramp, half-width pillar, and rectangle pixels are clipped to visible geometry', () => {
+test('platform, stair, ramp, half-block, and rectangle pixels are clipped to visible geometry', () => {
   const style = normalizeSurfaceRimStyle({ mode: 'solid', widthPx: 3 });
   const specs: WallSpec[] = [
     { x: 8, y: 8, w: 8, h: 8, style, platform: 0 },
     { x: 24, y: 8, w: 8, h: 8, style, shape: 4 },
     { x: 40, y: 8, w: 8, h: 8, style, shape: 0 },
-    { x: 56, y: 8, w: 4, h: 8, style, pillar: true },
+    { x: 56, y: 8, w: 4, h: 8, style, half: HALF_BLOCK_LEFT },
     { x: 72, y: 8, w: 8, h: 8, style },
   ];
   const pixels = getWallLayoutCache(snapshot(specs), B, 20, 20).customSurfaceRimPixels;

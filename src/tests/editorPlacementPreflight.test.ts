@@ -11,6 +11,7 @@
  */
 
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import { EditorTool, createEditorState } from '../editor/editorState';
 import type { EditorRoomData } from '../editor/editorElementTypes';
@@ -48,7 +49,7 @@ function baseState(item: PaletteItem | null, room: EditorRoomData) {
 
 test('preflight reports occupied for a cell already covered by a wall', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.cursorBlockX = 5;
@@ -126,7 +127,7 @@ test('preflight never mutates room data or allocates a uid', () => {
 
 test('preflight result matches whether placeAtCursor actually places something', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
 

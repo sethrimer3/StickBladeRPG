@@ -842,9 +842,9 @@ export function createEditorUI(
   for (const opt of modifierOptions) makeModifierRow(opt.id, opt.label, opt.help, opt.isFalling);
 
   // The Falling modifier only produces plain rectangular EditorFallingBlock
-  // tiles (no ramp/stairs/pillar/spike shape fields exist on that type), so
+  // tiles (no ramp/stairs/half-block/spike shape fields exist on that type), so
   // it is hidden for any shaped block item — those items still support the
-  // Cracked (crumble) modifier, which does carry ramp/stairs/pillar/spike
+  // Cracked (crumble) modifier, which does carry ramp/stairs/half-block/spike
   // shape fields on EditorCrumbleBlock. Keep in sync with the placement-time
   // guard in editorPlaceTool.ts's falling-modifier branch.
   function supportsFallingModifier(item: PaletteItem): boolean {
@@ -1438,7 +1438,7 @@ export function createEditorUI(
       if (fallingSupported !== lastFallingModifierSupported) {
         lastFallingModifierSupported = fallingSupported;
         for (const row of fallingModifierRows) row.style.display = fallingSupported ? '' : 'none';
-        // A shaped item (stairs/smooth ramp/half-pillar/spike) can never
+        // A shaped item (stairs/smooth ramp/half-block/spike) can never
         // place a falling block — see editorPlaceTool.ts's matching guard.
         // Drop a stale falling selection back to 'none' rather than leaving
         // hidden UI silently armed for the next placement.

@@ -12,6 +12,7 @@
  * stability, and single-step atomic undo/redo.
  */
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import { applyEdgeResize } from '../editor/editorRoomResize';
 import { createEditorHistory } from '../editor/editorHistory';
@@ -170,7 +171,7 @@ test('interior walls are clipped (not slid) when part of the rect intersects the
   const room = makeRoom({
     interiorWalls: [{
       uid: 1, xBlock: 0, yBlock: 0, wBlock: 4, hBlock: 2,
-      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
+      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE,
     }],
   });
   const history = createEditorHistory();
@@ -185,7 +186,7 @@ test('interior wall rect straddling the removed right-edge strip is clipped in w
     widthBlocks: 12,
     interiorWalls: [{
       uid: 1, xBlock: 8, yBlock: 0, wBlock: 4, hBlock: 2, // spans x=8..11, room width 12
-      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
+      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE,
     }],
   });
   const history = createEditorHistory();
@@ -200,7 +201,7 @@ test('interior wall rect fully inside the removed strip is removed entirely', ()
     widthBlocks: 12,
     interiorWalls: [{
       uid: 1, xBlock: 10, yBlock: 0, wBlock: 2, hBlock: 2,
-      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
+      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE,
     }],
   });
   const history = createEditorHistory();

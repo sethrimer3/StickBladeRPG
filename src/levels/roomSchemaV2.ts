@@ -174,7 +174,7 @@ export function enemyFlagsToType(e: RoomJsonEnemy): SavedEnemyType {
 /**
  * A wall participates in the uniform tile-grid solid encoding iff it has
  * none of the "special" flags (platform, stairs, legacy ramp, half-width
- * pillar) — i.e. iff its solid area really is its full bounding rectangle.
+ * half-block) — i.e. iff its solid area really is its full bounding rectangle.
  */
 export function isUniformSolidWall(w: RoomJsonWall): boolean {
   if (w.r !== undefined)                   return false;
@@ -319,7 +319,7 @@ function dehydrateBgLayers(
 
 /**
  * Compresses a list of uniform solid walls into byTheme/rects/runs/points.
- * Walls with special flags (platform/stairs/ramp/pillar half) MUST be filtered out
+ * Walls with special flags (platform/stairs/ramp/half-block) MUST be filtered out
  * before calling this — they travel in `specialWalls` and bypass the grid.
  *
  * `v1Walls` are walls with hBlock === 1 that must keep their 1×1 visual grain.
@@ -400,7 +400,7 @@ export function dehydrateSolidsByTheme(
 export function dehydrateRoom(json: RoomJsonDef): SavedRoomV2 {
   const defaultTheme: BlockTheme = blockThemeRefToTheme(json.blockThemeId) ?? json.blockTheme ?? 'blackRock';
 
-  // Partition walls: special (platform/stairs/ramp/pillar) go into specialWalls;
+  // Partition walls: special (platform/stairs/ramp/half-block) go into specialWalls;
   // all uniform solid walls go through dehydrateSolidsByTheme which further
   // splits into byTheme (hBlock>1 bulk) and v1ByTheme (hBlock=1 single-row).
   const uniformWallsBulk: RoomJsonWall[] = [];

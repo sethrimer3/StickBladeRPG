@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { WallSnapshot } from '../render/snapshotTypes';
 import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
@@ -55,7 +56,7 @@ function makeWallSnapshot(rects: Array<{ x: number; y: number; w: number; h: num
     themeIndex: new Uint8Array(count).fill(255),
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: new Uint8Array(count).fill(255),
-    halfBlockOrientation: new Uint8Array(count),
+    halfBlockOrientation: new Uint8Array(count).fill(HALF_BLOCK_NONE),
     surfaceRimStyleIndex: new Uint16Array(count).fill(0xFFFF),
     surfaceRimStyleTable: [],
   };

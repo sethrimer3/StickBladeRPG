@@ -1299,6 +1299,121 @@ function collidePoint(body: StickRangerBody, i: number, solid: SolidMask | null,
   return hit;
 }
 
+/** Maximum rise in world units (pixels) for a single-block step-up (8px nominal + integration tolerance). */
+export const STICKMAN_STEP_UP_MAX_RISE = 8.8;
+
+export interface StickmanStepUpInfo {
+  targetFootX: number;
+  targetFootY: number;
+  targetKneeX: number;
+  targetKneeY: number;
+  rise: number;
+}
+
+/**
+ * Helper to find the top solid pixel at an X coordinate around a reference Y.
+ */
+function findTopSolidY(solid: SolidMask, x: number, refY: number, scanAbove: number): number | null {
+  const startY = Math.floor(refY - scanAbove);
+  const endY = Math.floor(refY + 4);
+  for (let y = startY; y <= endY; y++) {
+    if (isSolidAt(solid, x, y)) {
+      return y;
+    }
+  }
+  return null;
+}
+
+/**
+ * Detects whether there is a step-up obstacle of 1 block or less (<= 8.8 world units/pixels)
+ * in front of the stickman in the direction of movement.
+ *
+ * Probes the SolidMask ahead of the stickman to find the highest solid surface
+ * that has open air above it and adequate headroom clearance.
+ */
+export function detectStickmanStepUp(
+  body: StickRangerBody,
+  solid: SolidMask | null,
+  moveDirection: number,
+): StickmanStepUpInfo | null {
+  if (solid === null || moveDirection === 0) return null;
+
+  const activeFoot = body.swingFoot;
+  const plantedFoot = activeFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
+
+  const footL_Y = body.y[SR_FOOT_L];
+  const footR_Y = body.y[SR_FOOT_R];
+  const baseFloorY = Math.max(footL_Y, footR_Y);
+
+  const hipX = body.x[SR_HIP];
+  const activeFootX = body.x[activeFoot];
+  const plantedFootX = body.x[plantedFoot];
+
+  const forwardEdgeX = moveDirection > 0
+    ? Math.max(activeFootX, hipX, plantedFootX)
+    : Math.min(activeFootX, hipX, plantedFootX);
+
+  // Find the solid floor directly beneath the leading edge of the stickman
+  const currentFloorY = findTopSolidY(solid, forwardEdgeX, baseFloorY, 4) ?? baseFloorY;
+
+  let bestCandidate: StickmanStepUpInfo | null = null;
+
+  // Probe a immediate range of distances ahead (1 to 4 pixels)
+  for (let d = 1; d <= 4; d++) {
+    const probeX = Math.round(forwardEdgeX + moveDirection * d);
+
+    // If the wall continues higher than STICKMAN_STEP_UP_MAX_RISE above base floor,
+    // this probe column is part of a tall wall (> 1 block) and cannot be stepped up.
+    const tallWallTestY = Math.floor(currentFloorY - STICKMAN_STEP_UP_MAX_RISE - 1);
+    if (isSolidAt(solid, probeX, tallWallTestY)) {
+      continue;
+    }
+
+    // Scan upward from floor level to find the highest solid pixel at probeX
+    const topSolidY = findTopSolidY(solid, probeX, currentFloorY, STICKMAN_STEP_UP_MAX_RISE);
+    if (topSolidY === null) continue;
+
+    const rise = currentFloorY - topSolidY;
+    if (rise < 1.0 || rise > STICKMAN_STEP_UP_MAX_RISE) continue;
+
+    // Check open air directly above the top solid pixel
+    if (
+      isSolidAt(solid, probeX, topSolidY - 1) ||
+      isSolidAt(solid, probeX, topSolidY - 2) ||
+      isSolidAt(solid, probeX, topSolidY - 4)
+    ) {
+      continue;
+    }
+
+    // Headroom check: ensure stickman has vertical clearance above the step
+    if (
+      isSolidAt(solid, probeX, topSolidY - 8) ||
+      isSolidAt(solid, probeX, topSolidY - 14)
+    ) {
+      continue;
+    }
+
+    const targetFootX = probeX + moveDirection * 1.5;
+    const targetFootY = topSolidY - 0.5;
+    const targetKneeX = (hipX + targetFootX) * 0.5 + moveDirection * 0.8;
+    const targetKneeY = targetFootY - 4.2;
+
+    const candidate: StickmanStepUpInfo = {
+      targetFootX,
+      targetFootY,
+      targetKneeX,
+      targetKneeY,
+      rise,
+    };
+
+    if (bestCandidate === null || candidate.rise > bestCandidate.rise) {
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
 /**
  * Point-vs-world solidity test. `SolidMask` reports out-of-bounds as solid, so
  * room edges act as walls exactly the way Stick Ranger's clamped tile lookup
@@ -1630,18 +1745,68 @@ function stepBodyFrame(
     const activeFoot = body.swingFoot;
     const plantedFoot = activeFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
 
-    // Foot lateral movement force applied ONLY when foot speed in movement direction dips below 100 px/s
-    const footSpeedPxSec = (body.x[activeFoot] - body.prevX[activeFoot]) * moveDirection * framesPerSecond;
-    if (footSpeedPxSec < STICKMAN_MAX_STEER_SPEED_PX_PER_SEC) {
-      body.x[activeFoot] += moveDirection * STEER_FOOT_PUSH;
-    }
+    // Step-up behavior: if an obstacle <= 1 block (8px) is in front of the stickman,
+    // raise the swing leg and step up onto the higher surface.
+    const stepUp = detectStickmanStepUp(body, solid, moveDirection);
+    if (stepUp !== null) {
+      const activeKnee = activeFoot === SR_FOOT_L ? SR_KNEE_L : SR_KNEE_R;
 
-    // Hand the stride to the other leg once this one is far enough in front —
-    // or once it has clearly failed to get there (blocked foot).
-    const strideLead = (body.x[activeFoot] - body.x[plantedFoot]) * moveDirection;
-    if (strideLead >= STICKMAN_STRIDE_LEAD_DISTANCE || body.swingFrames >= STICKMAN_MAX_SWING_FRAMES) {
-      body.swingFoot = plantedFoot;
-      body.swingFrames = 0;
+      if (body.y[activeFoot] > stepUp.targetFootY + 0.5) {
+        // Stage 1: Lift foot and knee vertically in front of the step
+        const footDy = stepUp.targetFootY - body.y[activeFoot];
+        body.y[activeFoot] += footDy * 0.7;
+        body.prevY[activeFoot] += footDy * 0.7;
+        const kneeDy = stepUp.targetKneeY - body.y[activeKnee];
+        body.y[activeKnee] += kneeDy * 0.7;
+        body.prevY[activeKnee] += kneeDy * 0.7;
+        body.x[activeKnee] = (body.x[SR_HIP] + body.x[activeFoot]) * 0.5;
+      } else {
+        // Stage 2: Foot is elevated above stepTopY; step forward onto the tread
+        const footDx = (stepUp.targetFootX - body.x[activeFoot]) * 0.7;
+        body.x[activeFoot] += footDx;
+        body.y[activeFoot] = stepUp.targetFootY;
+        body.prevY[activeFoot] = stepUp.targetFootY;
+        body.x[activeKnee] = stepUp.targetKneeX;
+        body.y[activeKnee] = stepUp.targetKneeY;
+        body.prevY[activeKnee] = stepUp.targetKneeY;
+      }
+
+      // Elevate hip and torso toward standing height on top of the step without injecting velocity
+      const targetHipY = stepUp.targetFootY - 9.0;
+      if (body.y[SR_HIP] > targetHipY) {
+        const hipLift = Math.min(body.y[SR_HIP] - targetHipY, 1.2);
+        body.y[SR_HIP] -= hipLift;
+        body.prevY[SR_HIP] -= hipLift;
+        body.y[SR_CHEST] -= hipLift;
+        body.prevY[SR_CHEST] -= hipLift;
+        body.y[SR_HEAD] -= hipLift;
+        body.prevY[SR_HEAD] -= hipLift;
+      }
+      body.x[SR_HIP] += moveDirection * STEER_HIP_PUSH;
+      body.x[SR_CHEST] += moveDirection * STEER_CHEST_PUSH;
+
+      // Stride handoff: only once the swing foot is placed on the step surface
+      const footPlacedOnStep =
+        body.y[activeFoot] <= stepUp.targetFootY + 1.2 &&
+        (body.x[activeFoot] - stepUp.targetFootX) * moveDirection >= -1.0;
+      if (footPlacedOnStep || body.swingFrames >= 20) {
+        body.swingFoot = plantedFoot;
+        body.swingFrames = 0;
+      }
+    } else {
+      // Foot lateral movement force applied ONLY when foot speed in movement direction dips below 100 px/s
+      const footSpeedPxSec = (body.x[activeFoot] - body.prevX[activeFoot]) * moveDirection * framesPerSecond;
+      if (footSpeedPxSec < STICKMAN_MAX_STEER_SPEED_PX_PER_SEC) {
+        body.x[activeFoot] += moveDirection * STEER_FOOT_PUSH;
+      }
+
+      // Hand the stride to the other leg once this one is far enough in front —
+      // or once it has clearly failed to get there (blocked foot).
+      const strideLead = (body.x[activeFoot] - body.x[plantedFoot]) * moveDirection;
+      if (strideLead >= STICKMAN_STRIDE_LEAD_DISTANCE || body.swingFrames >= STICKMAN_MAX_SWING_FRAMES) {
+        body.swingFoot = plantedFoot;
+        body.swingFrames = 0;
+      }
     }
   } else {
     body.walkStepCounter = 0;

@@ -259,7 +259,7 @@ function cellOverlapsEditorPoints(
  * Runtime wall-geometry sources covered (see gameRoomWalls.ts / gameRoomHazards.ts
  * / gameRoomFallingBlocks.ts, which all push full-rect entries into the wall
  * arrays for these object types):
- *   - interior walls, INCLUDING stairs, ramps and half-width pillars (excluded only
+ *   - interior walls, INCLUDING stairs, ramps and half-blocks (excluded only
  *     when isPlatformFlag === 1, matching the one-way-platform skip in
  *     `buildSolidMaskFromWorld`).
  *   - crumble blocks, bounce pads, kinetic blocks, falling block tiles — none
@@ -319,7 +319,7 @@ export function isPixelMaterialSolidAtPixel(room: EditorRoomData, xPixel: number
 /** @deprecated Kept only as a thin block-granularity wrapper for callers/tests
  *  that don't need pixel precision. New pixel-material code should call
  *  `isPixelMaterialSolidAtPixel` directly — block-cell granularity misses the
- *  half-width-pillar distinction it exists to fix. */
+ *  half-block distinction it exists to fix. */
 export function isPixelMaterialSolidAtBlockCell(room: EditorRoomData, bx: number, by: number): boolean {
   return isPixelMaterialSolidAtPixel(room, bx * BLOCK_SIZE_SMALL, by * BLOCK_SIZE_SMALL);
 }

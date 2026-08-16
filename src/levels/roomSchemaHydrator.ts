@@ -215,7 +215,7 @@ export function hydrateSolidsByTheme(
  * Editor-only variant of `hydrateSolidsByTheme`. Behaves identically for the
  * bulk `byTheme` layer (those walls were never 1×1-grain-compressed, so they
  * keep their existing multi-cell editing semantics — true 2×2 sprites,
- * platforms, stairs, ramps, half-width pillars, etc. never pass through
+ * platforms, stairs, ramps, half-blocks, etc. never pass through
  * here). For `v1ByTheme`, every run is additionally split into independent
  * 1×1 `RoomJsonWall` entries — one per occupied cell — so each becomes its
  * own `EditorWall` with its own UID after `jsonToEditorRoomData` runs.

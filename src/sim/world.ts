@@ -188,8 +188,12 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    */
   wallRampOrientationIndex: Uint8Array;
   /**
-   * 1 if the corresponding wall is a half-width pillar (4 px wide).
-   * Only meaningful for 1×2 pillar walls.
+   * Which half of the corresponding wall's authored extent is solid
+   * (0=left, 1=right, 2=top, 3=bottom), or `HALF_BLOCK_NONE` for a normal
+   * full-extent wall. The narrowing is already applied to this wall's
+   * x/y/w/h — see `halfBlockWorldRect` in levels/halfBlockGeometry.ts — so
+   * collision and rendering need not consult this field; it exists so the
+   * layout cache and serializers can tell a half-block from a small wall.
    */
   wallHalfBlockOrientation: Uint8Array;
   /**

@@ -16,7 +16,7 @@
  * grapple and pixel-material consumer can keep treating it as an ordinary
  * rectangle, and only the AABB derivation below has to know about it.
  *
- * This replaces the earlier "half-width pillar" (`halfBlockOrientation`),
+ * This replaces the earlier "half-width pillar" (`isPillarHalfWidthFlag`),
  * which was a boolean that could only ever produce the left half. `left` is
  * byte-for-byte the geometry that flag used to produce.
  *

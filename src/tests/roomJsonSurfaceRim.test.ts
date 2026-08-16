@@ -3,6 +3,7 @@
  * Rim style table in room JSON (RoomJsonDef.rimStyles / RoomJsonWall.r).
  */
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { EditorRoomData } from '../editor/editorElementTypes';
 import type { EditorWall } from '../editor/editorElementTypes';
@@ -49,7 +50,7 @@ function makeWall(uid: number, overrides: Partial<EditorWall> = {}): EditorWall 
     uid,
     xBlock: uid, yBlock: 0, wBlock: 1, hBlock: 1,
     isPlatformFlag: 0, platformEdge: 0,
-    halfBlockOrientation: 0,
+    halfBlockOrientation: HALF_BLOCK_NONE,
     ...overrides,
   } as EditorWall;
 }

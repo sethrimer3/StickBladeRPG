@@ -1130,7 +1130,7 @@ export function renderWallSpritesWithLayout(
 }
 
 /**
- * Draws wall tiles, platforms, ramps, and half-pillars into `ctx`.
+ * Draws wall tiles, platforms, ramps, and half-blocks into `ctx`.
  *
  * `offsetXPx` / `offsetYPx` are applied to every tile position.  When called
  * from the chunk cache the offsets are set so that tiles at (colMin, rowMin)

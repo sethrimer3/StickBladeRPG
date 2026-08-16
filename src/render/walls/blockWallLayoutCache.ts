@@ -184,7 +184,7 @@ export interface CachedWallLayout {
   platformByChunkKey: Map<string, CachedTileCoord[]>;
   /** Shaped walls grouped by every chunk they overlap. */
   shapedByChunkKey: Map<string, ShapedWallInfo[]>;
-  /** Half-pillar walls grouped by every chunk they overlap. */
+  /** Half-block walls grouped by every chunk they overlap. */
   halfBlockByChunkKey: Map<string, HalfBlockWallInfo[]>;
   /**
    * 2×2 solid-wall top-left entries grouped by every chunk the 2×2 block
@@ -560,7 +560,7 @@ export function buildWallLayout(
       ? (walls.surfaceRimStyleTable[rimIdx] ?? null)
       : null;
 
-    // Half-pillar walls: add to normal occupied for lighting/neighbor purposes but
+    // Half-block walls: add to normal occupied for lighting/neighbor purposes but
     // record for separate narrow rendering.
     const isHalfBlock = isHalfBlockOrientation(walls.halfBlockOrientation[wi]);
     if (isHalfBlock) {
@@ -758,7 +758,7 @@ function _buildChunkBuckets(layout: CachedWallLayout, walls: WallSnapshot): void
     }
   }
 
-  // ── Half-pillar walls: same multi-chunk logic as shaped walls ──────────────
+  // ── Half-block walls: same multi-chunk logic as shaped walls ──────────────
   for (const hpInfo of layout.halfBlockWalls) {
     const wi = hpInfo.wallIndex;
     const colFirst = Math.floor(walls.xWorld[wi] / BSZ);

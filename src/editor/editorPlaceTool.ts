@@ -442,8 +442,8 @@ export function wouldPlacementSucceedAt(
     }
 
     // Falling modifier is only representable for plain rectangular blocks —
-    // EditorFallingBlock has no ramp/stairs/pillar/spike shape fields (each
-    // tile is always a plain square), so stairs/smooth-ramp/half-pillar/spike
+    // EditorFallingBlock has no ramp/stairs/half-block/spike shape fields (each
+    // tile is always a plain square), so stairs/smooth-ramp/half-block/spike
     // palette items never reach this branch even if a falling modifier is
     // pending (the Block Modifier panel hides those checkboxes for such
     // items — see editorUI.ts's supportsFallingModifier).
@@ -985,8 +985,8 @@ function placeAt(state: EditorState, bx: number, by: number): void {
 
     // ── Falling block tiles ──────────────────────────────────────────────────
     // Falling modifier is only representable for plain rectangular blocks —
-    // EditorFallingBlock has no ramp/stairs/pillar/spike shape fields (each
-    // tile is always a plain square), so stairs/smooth-ramp/half-pillar/spike
+    // EditorFallingBlock has no ramp/stairs/half-block/spike shape fields (each
+    // tile is always a plain square), so stairs/smooth-ramp/half-block/spike
     // palette items never reach this branch even with a falling modifier
     // pending (the Block Modifier panel hides those checkboxes for such
     // items — see editorUI.ts's supportsFallingModifier).

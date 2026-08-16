@@ -24,7 +24,7 @@ import {
 import { getPlacementStatus } from './editorLayers';
 import type { EditorRenderMask } from './editorRenderMask';
 import {
-  PREVIEW_COLOR, PREVIEW_RAMP_COLOR, PREVIEW_STAIRS_COLOR, PREVIEW_PLATFORM_COLOR, PREVIEW_PILLAR_HALF_COLOR,
+  PREVIEW_COLOR, PREVIEW_RAMP_COLOR, PREVIEW_STAIRS_COLOR, PREVIEW_PLATFORM_COLOR, PREVIEW_HALF_BLOCK_COLOR,
   CURSOR_COLOR, SELECTION_BOX_COLOR, SELECTION_BOX_BORDER,
   CRUMBLE_VARIANT_CRACK_COLOR,
   SAVE_TOMB_FOOTPRINT_W_BLOCKS, SAVE_TOMB_FOOTPRINT_H_BLOCKS,
@@ -522,7 +522,7 @@ export function drawPlacementPreview(
       platformEdge: 0,
       halfBlockOrientation: halfBlockOrientationForRotationSteps(state.placementRotationSteps),
     };
-    drawHalfBlockRect(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PILLAR_HALF_COLOR);
+    drawHalfBlockRect(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_HALF_BLOCK_COLOR);
     return;
   }
 

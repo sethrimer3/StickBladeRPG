@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { EditorRoomData, EditorWall } from '../editor/editorElementTypes';
 import { getEditorWallLayout, drawEditorSurfaceRimOverlay } from '../editor/editorWallSurfaceRimPreview';
@@ -13,7 +14,7 @@ import { editorPerfCounters, resetEditorPerfCounters } from '../editor/editorPer
 function makeWall(uid: number, overrides: Partial<EditorWall> = {}): EditorWall {
   return {
     uid, xBlock: uid * 3, yBlock: 0, wBlock: 1, hBlock: 1,
-    isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
+    isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE,
     ...overrides,
   } as EditorWall;
 }

@@ -19,7 +19,7 @@ import {
   PLATFORM_HIGHLIGHT, PLATFORM_SELECTED,
   RAMP_HIGHLIGHT, RAMP_SELECTED,
   STAIRS_HIGHLIGHT, STAIRS_SELECTED,
-  PILLAR_HALF_HIGHLIGHT, PILLAR_HALF_SELECTED,
+  HALF_BLOCK_HIGHLIGHT, HALF_BLOCK_SELECTED,
   ENEMY_COLOR, ENEMY_SELECTED,
   TRANSITION_COLOR, TRANSITION_SELECTED,
   SECRET_DOOR_COLOR, SECRET_DOOR_SELECTED,
@@ -72,7 +72,7 @@ export {
 } from './editorZoneDrawers';
 
 // ============================================================================
-// Interior walls (solid, platform, stairs, legacy ramp, half-pillar)
+// Interior walls (solid, platform, stairs, legacy ramp, half-block)
 // ============================================================================
 
 export function drawEditorWalls(
@@ -115,7 +115,7 @@ export function drawEditorWalls(
       const color = sel ? PLATFORM_SELECTED : PLATFORM_HIGHLIGHT;
       drawPlatformLine(ctx, w, offsetXPx, offsetYPx, zoom, color);
     } else if (isHalfBlock) {
-      const color = sel ? PILLAR_HALF_SELECTED : PILLAR_HALF_HIGHLIGHT;
+      const color = sel ? HALF_BLOCK_SELECTED : HALF_BLOCK_HIGHLIGHT;
       drawHalfBlockRect(ctx, w, offsetXPx, offsetYPx, zoom, color);
     } else {
       const color = sel ? WALL_SELECTED : WALL_HIGHLIGHT;

@@ -3,6 +3,7 @@
  * single/multi-selection property changes, undo/redo, and copy/paste.
  */
 import { test } from 'node:test';
+import { HALF_BLOCK_NONE } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import type { EditorRoomData, EditorWall } from '../editor/editorElementTypes';
 import { handlePropertyChange, applyPropertyToElement } from '../editor/editorPropertyChange';
@@ -14,7 +15,7 @@ import { normalizeSurfaceRimStyle, surfaceRimStylesEqual, DEFAULT_SURFACE_RIM_ST
 function makeWall(uid: number, overrides: Partial<EditorWall> = {}): EditorWall {
   return {
     uid, xBlock: uid, yBlock: 0, wBlock: 1, hBlock: 1,
-    isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
+    isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: HALF_BLOCK_NONE,
     ...overrides,
   } as EditorWall;
 }

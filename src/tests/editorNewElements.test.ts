@@ -1,9 +1,10 @@
 /**
  * editorNewElements.test.ts — Coverage for the five newly editor-exposed
  * elements: Grapple Hunter enemy, Firefly Jar, Springboard, generic
- * Breakable Block, and the Half-width Pillar.
+ * Breakable Block, and the Half Block.
  */
 import { test } from 'node:test';
+import { HALF_BLOCK_LEFT } from '../levels/halfBlockGeometry';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,7 +26,7 @@ const NEW_PALETTE_IDS = [
   'springboard',
   'breakable_block_1x1',
   'breakable_block_2x2',
-  'pillar_half_width',
+  'half_block',
 ];
 
 function makeRoom(overrides: Partial<EditorRoomData> = {}): EditorRoomData {
@@ -226,40 +227,40 @@ test('Breakable Block 2x2 placement produces four grouped cells sharing one grou
   assert.deepEqual(coords, new Set(['4,4', '5,4', '4,5', '5,5']));
 });
 
-// ── 11/12. Half-width Pillar ─────────────────────────────────────────────────
+// ── 11/12. Half Block ─────────────────────────────────────────────────
 
-test('Half-width Pillar placement sets halfBlockOrientation: 1', () => {
+test('Half Block placement sets halfBlockOrientation: HALF_BLOCK_LEFT', () => {
   const room = makeRoom();
-  const state = makeStateWithItem('pillar_half_width', room, 2, 2);
+  const state = makeStateWithItem('half_block', room, 2, 2);
   placeAtCursor(state);
   assert.equal(room.interiorWalls.length, 1);
-  assert.equal(room.interiorWalls[0].halfBlockOrientation, 1);
+  assert.equal(room.interiorWalls[0].halfBlockOrientation, HALF_BLOCK_LEFT);
 });
 
-test('the half-width pillar flag survives serialization, import, and RoomDef conversion', () => {
+test('the half-block flag survives serialization, import, and RoomDef conversion', () => {
   const room = makeRoom();
-  const state = makeStateWithItem('pillar_half_width', room, 2, 2);
+  const state = makeStateWithItem('half_block', room, 2, 2);
   placeAtCursor(state);
 
   const json = editorRoomDataToJson(room);
   const roundTripped = jsonToEditorRoomData(json, 1000).data;
-  assert.equal(roundTripped.interiorWalls.some(w => w.halfBlockOrientation === 1), true);
+  assert.equal(roundTripped.interiorWalls.some(w => w.halfBlockOrientation === HALF_BLOCK_LEFT), true);
 
   const roomDef = editorRoomDataToRoomDef(room);
-  assert.equal(roomDef.walls.some(w => w.halfBlockOrientation === 1), true);
+  assert.equal(roomDef.walls.some(w => w.halfBlockOrientation === HALF_BLOCK_LEFT), true);
 
   const reimported = roomDefToEditorRoomData(roomDef, 1000).data;
-  assert.equal(reimported.interiorWalls.some(w => w.halfBlockOrientation === 1), true);
+  assert.equal(reimported.interiorWalls.some(w => w.halfBlockOrientation === HALF_BLOCK_LEFT), true);
 });
 
-test('placing multiple half-width pillars does not merge them into a full-width wall', () => {
+test('placing multiple half-blocks does not merge them into a full-width wall', () => {
   const room = makeRoom();
-  const s1 = makeStateWithItem('pillar_half_width', room, 2, 2);
+  const s1 = makeStateWithItem('half_block', room, 2, 2);
   placeAtCursor(s1);
-  const s2 = makeStateWithItem('pillar_half_width', room, 3, 2);
+  const s2 = makeStateWithItem('half_block', room, 3, 2);
   placeAtCursor(s2);
-  assert.equal(room.interiorWalls.length, 2, 'adjacent half-width pillars must remain separate walls');
-  for (const w of room.interiorWalls) assert.equal(w.halfBlockOrientation, 1);
+  assert.equal(room.interiorWalls.length, 2, 'adjacent half-blocks must remain separate walls');
+  for (const w of room.interiorWalls) assert.equal(w.halfBlockOrientation, HALF_BLOCK_LEFT);
 });
 
 // ── 13. Selection and deletion for the new element types ───────────────────
