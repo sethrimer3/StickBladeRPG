@@ -1,5 +1,5 @@
 /**
- * Tests for the character preview wander AI and live physical simulation in the inventory screen.
+ * Tests for the character preview wander AI, native resolution rendering, and live physical simulation.
  */
 
 import assert from 'node:assert/strict';
@@ -8,6 +8,11 @@ import { describe, test } from 'node:test';
 import {
   createWanderState,
   updateWanderState,
+  getInGameUpscaleFactor,
+  NATIVE_PREVIEW_WIDTH,
+  NATIVE_PREVIEW_HEIGHT,
+  NATIVE_FLOOR_Y,
+  NATIVE_START_X,
 } from '../ui/characterPreviewRenderer';
 import {
   createStickRangerBody,
@@ -20,7 +25,7 @@ import { SolidMask } from '../sim/pixelMaterials/pixelMaterialSolid';
 
 describe('character preview wander AI', () => {
   test('createWanderState initializes 5-tile bounds (±2 tiles / ±16 world units) and 5-15s idle timer', () => {
-    const startX = 25.7;
+    const startX = NATIVE_START_X;
     const now = 1000;
     const state = createWanderState(startX, now);
 
@@ -33,7 +38,7 @@ describe('character preview wander AI', () => {
   });
 
   test('idle state does not move until decision timer expires', () => {
-    const startX = 25.7;
+    const startX = NATIVE_START_X;
     const now = 1000;
     const state = createWanderState(startX, now);
     state.nextDecisionTime = now + 6000;
@@ -44,7 +49,7 @@ describe('character preview wander AI', () => {
   });
 
   test('triggers random walk within [minX, maxX] when decision timer expires', () => {
-    const startX = 25.7;
+    const startX = NATIVE_START_X;
     const now = 1000;
     const state = createWanderState(startX, now);
     state.nextDecisionTime = now + 5000;
@@ -60,7 +65,7 @@ describe('character preview wander AI', () => {
   });
 
   test('completing a walk resets to idle with new 5-15s timer', () => {
-    const startX = 25.7;
+    const startX = NATIVE_START_X;
     const now = 1000;
     const state = createWanderState(startX, now);
     state.targetX = startX + 8;
@@ -76,7 +81,7 @@ describe('character preview wander AI', () => {
   });
 
   test('boundary safety: near left bound only moves right, near right bound only moves left', () => {
-    const startX = 25.7;
+    const startX = NATIVE_START_X;
     const now = 1000;
     const state = createWanderState(startX, now);
     state.nextDecisionTime = now;
@@ -97,16 +102,38 @@ describe('character preview wander AI', () => {
   });
 });
 
-describe('character preview physics integration', () => {
+describe('character preview native resolution and physics integration', () => {
+  test('native canvas dimensions and floor constants fit 5-tile platform and character height', () => {
+    assert.equal(NATIVE_PREVIEW_WIDTH, 48);
+    assert.equal(NATIVE_PREVIEW_HEIGHT, 52);
+    assert.equal(NATIVE_FLOOR_Y, 40.0);
+    assert.equal(NATIVE_START_X, 24.0);
+
+    const platformWidth = 5 * 8; // 40 units
+    const leftMargin = NATIVE_START_X - platformWidth * 0.5; // 4 units
+    const rightMargin = NATIVE_PREVIEW_WIDTH - (NATIVE_START_X + platformWidth * 0.5); // 4 units
+    assert.equal(leftMargin, 4);
+    assert.equal(rightMargin, 4);
+
+    const headroom = NATIVE_FLOOR_Y - 9.6 - 7.2 - 2; // ~21.2 units above head
+    assert.ok(headroom > 15, 'Sufficient headroom for weapons and gestures');
+  });
+
+  test('getInGameUpscaleFactor returns a valid positive scale factor', () => {
+    const scale = getInGameUpscaleFactor();
+    assert.ok(scale >= 1.0, 'Scale factor should be at least 1.0');
+    assert.ok(Number.isFinite(scale), 'Scale factor should be a finite number');
+  });
+
   test('stickman softbody stays on top of SolidMask floor', () => {
-    const worldW = 52;
-    const worldH = 64;
-    const floorY = 46;
+    const worldW = NATIVE_PREVIEW_WIDTH;
+    const worldH = NATIVE_PREVIEW_HEIGHT;
+    const floorY = NATIVE_FLOOR_Y;
     const solidMask = new SolidMask(worldW, worldH);
-    solidMask.markRect(0, floorY, worldW, worldH);
+    solidMask.markRect(0, Math.floor(floorY), worldW, worldH);
 
     // Spawn hip at floorY - 9.6
-    const body = createStickRangerBody(worldW * 0.5, floorY - 9.6);
+    const body = createStickRangerBody(NATIVE_START_X, floorY - 9.6);
 
     // Step physics for 60 frames (1 second) of idle standing
     for (let f = 0; f < 60; f++) {
@@ -121,13 +148,13 @@ describe('character preview physics integration', () => {
   });
 
   test('stickman steps forward when moveDirection is active', () => {
-    const worldW = 52;
-    const worldH = 64;
-    const floorY = 46;
+    const worldW = NATIVE_PREVIEW_WIDTH;
+    const worldH = NATIVE_PREVIEW_HEIGHT;
+    const floorY = NATIVE_FLOOR_Y;
     const solidMask = new SolidMask(worldW, worldH);
-    solidMask.markRect(0, floorY, worldW, worldH);
+    solidMask.markRect(0, Math.floor(floorY), worldW, worldH);
 
-    const initialHipX = worldW * 0.5;
+    const initialHipX = NATIVE_START_X;
     const body = createStickRangerBody(initialHipX, floorY - 9.6);
 
     // Settle for 10 frames

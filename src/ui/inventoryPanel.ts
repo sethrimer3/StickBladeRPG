@@ -297,19 +297,17 @@ export function showInventoryPanel(
     // Center Preview Canvas Frame
     const previewFrame = document.createElement('div');
     previewFrame.style.cssText = `
-      position: relative; width: 180px; height: 220px;
+      position: relative; width: 200px; height: 216px;
       border: 1.5px solid rgba(212, 168, 75, 0.4);
       border-radius: 6px; overflow: hidden;
       box-shadow: 0 4px 16px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.8);
+      background: rgba(14, 11, 9, 0.98);
+      display: flex; align-items: center; justify-content: center;
     `;
     stage.appendChild(previewFrame);
 
     if (!previewController) {
-      previewController = new CharacterPreviewController(previewFrame, member.equipment, {
-        width: 180,
-        height: 220,
-        scale: 3.5,
-      });
+      previewController = new CharacterPreviewController(previewFrame, member.equipment);
     } else {
       previewController.updateEquipment(member.equipment);
       if (!previewFrame.contains(previewController.canvas)) {

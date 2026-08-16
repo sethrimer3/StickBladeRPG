@@ -1,6 +1,7 @@
 /**
  * Character Preview Renderer — draws the player stickman physically standing and
- * walking in real-time within the inventory screen using actual in-game Verlet physics.
+ * walking in real-time within the inventory screen at the game's native resolution,
+ * upscaled with nearest-neighbor sampling to match the in-game pixelated look and size.
  *
  * Simulates the stickman on a solid 5-tile platform using `stepStickRangerBody` and `SolidMask`.
  * The stickman stands in place with natural standing settle physics, and randomly walks
@@ -27,14 +28,23 @@ import {
   renderStickRangerBody,
   renderStickRangerWeapon,
 } from '../render/clusters/stickRangerRenderer';
-import { getWeaponDef } from '../sim/weapons/weaponDefs';
+import { getWeaponDef, type WeaponDef } from '../sim/weapons/weaponDefs';
 import { getArmorDef, getShoeDef, isTwoHandedItem } from '../sim/items/itemCatalog';
 import type { EquipmentSlots } from '../sim/party/partyState';
 
+/** Default native virtual canvas resolution (1 world unit = 1 pixel). */
+export const NATIVE_PREVIEW_WIDTH = 48;
+export const NATIVE_PREVIEW_HEIGHT = 52;
+export const NATIVE_FLOOR_Y = 40.0;
+export const NATIVE_START_X = 24.0;
+
+/** Native virtual height of the game viewport (matches FIXED_VIRTUAL_HEIGHT_PX). */
+const GAME_VIRTUAL_HEIGHT_PX = 270;
+
 export interface CharacterPreviewOptions {
-  width?: number;
-  height?: number;
-  scale?: number;
+  nativeWidth?: number;
+  nativeHeight?: number;
+  upscale?: number;
 }
 
 export interface WanderState {
@@ -45,6 +55,22 @@ export interface WanderState {
   moveDirection: -1 | 0 | 1;
   nextDecisionTime: number;
   walkStartTime: number;
+}
+
+/**
+ * Calculates the current in-game upscale factor based on the active display or window height.
+ */
+export function getInGameUpscaleFactor(): number {
+  if (typeof window === 'undefined') return 4.0;
+  const gameCanvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
+  if (gameCanvas) {
+    const rect = gameCanvas.getBoundingClientRect();
+    if (rect.height > 0) {
+      return Math.max(1, rect.height / GAME_VIRTUAL_HEIGHT_PX);
+    }
+  }
+  const h = window.innerHeight > 0 ? window.innerHeight : 1080;
+  return Math.max(1, h / GAME_VIRTUAL_HEIGHT_PX);
 }
 
 /**
@@ -118,52 +144,69 @@ export function updateWanderState(
 }
 
 export class CharacterPreviewController {
-  private _canvas: HTMLCanvasElement;
-  private _ctx: CanvasRenderingContext2D;
+  private _deviceCanvas: HTMLCanvasElement;
+  private _deviceCtx: CanvasRenderingContext2D;
+  private _virtualCanvas: HTMLCanvasElement;
+  private _virtualCtx: CanvasRenderingContext2D;
+
   private _body: StickRangerBody;
   private _solidMask: SolidMask;
   private _wander: WanderState;
   private _equipment: EquipmentSlots;
   private _animFrameId: number | null = null;
   private _lastTime = performance.now();
-  private _scale: number;
-  private _width: number;
-  private _height: number;
-  private _worldWidth: number;
-  private _worldHeight: number;
+
+  private _nativeWidth: number;
+  private _nativeHeight: number;
+  private _upscale: number;
   private _floorY: number;
   private _startX: number;
 
   constructor(container: HTMLElement, equipment: EquipmentSlots, options: CharacterPreviewOptions = {}) {
-    this._width = options.width ?? 180;
-    this._height = options.height ?? 220;
-    this._scale = options.scale ?? 3.5;
+    this._nativeWidth = options.nativeWidth ?? NATIVE_PREVIEW_WIDTH;
+    this._nativeHeight = options.nativeHeight ?? NATIVE_PREVIEW_HEIGHT;
+    this._upscale = options.upscale ?? getInGameUpscaleFactor();
     this._equipment = equipment;
 
-    this._worldWidth = this._width / this._scale;
-    this._worldHeight = this._height / this._scale;
-    this._floorY = 46.0;
-    this._startX = this._worldWidth * 0.5;
+    this._floorY = NATIVE_FLOOR_Y;
+    this._startX = this._nativeWidth * 0.5;
 
-    this._canvas = document.createElement('canvas');
-    this._canvas.width = this._width;
-    this._canvas.height = this._height;
-    this._canvas.style.cssText = `
-      width: ${this._width}px;
-      height: ${this._height}px;
+    // 1. Offscreen Virtual Canvas (Native Game Resolution, 1 world unit = 1 pixel)
+    this._virtualCanvas = document.createElement('canvas');
+    this._virtualCanvas.width = this._nativeWidth;
+    this._virtualCanvas.height = this._nativeHeight;
+    const vCtx = this._virtualCanvas.getContext('2d');
+    if (!vCtx) throw new Error('Could not get 2d context for preview virtual canvas');
+    this._virtualCtx = vCtx;
+    this._virtualCtx.imageSmoothingEnabled = false;
+
+    // 2. Onscreen Device Canvas (Upscaled with nearest-neighbor crisp pixels)
+    const displayWidthPx = Math.round(this._nativeWidth * this._upscale);
+    const displayHeightPx = Math.round(this._nativeHeight * this._upscale);
+
+    this._deviceCanvas = document.createElement('canvas');
+    this._deviceCanvas.width = displayWidthPx;
+    this._deviceCanvas.height = displayHeightPx;
+    this._deviceCanvas.style.cssText = `
+      width: ${displayWidthPx}px;
+      height: ${displayHeightPx}px;
       display: block;
-      border-radius: 6px;
-      background: radial-gradient(circle at 50% 50%, rgba(28, 22, 16, 0.98) 0%, rgba(10, 8, 6, 1) 85%);
+      image-rendering: -moz-crisp-edges;
+      image-rendering: -webkit-crisp-edges;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border-radius: 4px;
     `;
-    container.appendChild(this._canvas);
+    container.appendChild(this._deviceCanvas);
 
-    const ctx = this._canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get 2d context for character preview canvas');
-    this._ctx = ctx;
+    const dCtx = this._deviceCanvas.getContext('2d');
+    if (!dCtx) throw new Error('Could not get 2d context for preview device canvas');
+    this._deviceCtx = dCtx;
+    this._deviceCtx.imageSmoothingEnabled = false;
 
     // Solid collision mask: solid floor below feet and outer wall boundaries
-    const maskW = Math.max(1, Math.ceil(this._worldWidth));
-    const maskH = Math.max(1, Math.ceil(this._worldHeight));
+    const maskW = Math.max(1, Math.ceil(this._nativeWidth));
+    const maskH = Math.max(1, Math.ceil(this._nativeHeight));
     this._solidMask = new SolidMask(maskW, maskH);
     this._solidMask.markRect(0, Math.floor(this._floorY), maskW, maskH);
     this._solidMask.markRect(0, 0, 1, maskH);
@@ -180,7 +223,7 @@ export class CharacterPreviewController {
   }
 
   public get canvas(): HTMLCanvasElement {
-    return this._canvas;
+    return this._deviceCanvas;
   }
 
   public get body(): StickRangerBody {
@@ -248,93 +291,81 @@ export class CharacterPreviewController {
     // Step the authentic in-game Stick Ranger physics simulation
     stepStickRangerBody(this._body, this._solidMask, this._wander.moveDirection, dtMs);
 
-    // Render frame
-    this._draw();
+    // 1. Render scene to offscreen virtual canvas at native 1:1 in-game resolution
+    this._drawNative();
+
+    // 2. Upscale offscreen virtual canvas to device canvas with crisp nearest-neighbor sampling
+    this._upscaleToDevice();
   }
 
-  private _draw(): void {
-    const ctx = this._ctx;
-    const w = this._width;
-    const h = this._height;
-    const scale = this._scale;
+  private _drawNative(): void {
+    const ctx = this._virtualCtx;
+    const w = this._nativeWidth;
+    const h = this._nativeHeight;
+    const scale = 1.0; // In-game native scale
 
     ctx.clearRect(0, 0, w, h);
 
-    // ── 1. Background & 5 Floor Tiles ───────────────────────────────────────
+    // ── 1. Native Background & 5 Stone Floor Blocks ─────────────────────────
     const tileSpanUnits = 40; // 5 tiles * 8 units
-    const platformLeftX = (this._startX - tileSpanUnits * 0.5) * scale;
-    const platformWidthPx = tileSpanUnits * scale;
-    const floorYPx = this._floorY * scale;
+    const platformLeftX = Math.round(this._startX - tileSpanUnits * 0.5);
+    const floorY = Math.round(this._floorY);
 
-    ctx.save();
-    // Ambient platform background glow
-    const centerScreenX = this._startX * scale;
-    const platGrad = ctx.createRadialGradient(
-      centerScreenX,
-      floorYPx - 10,
-      10,
-      centerScreenX,
-      floorYPx - 10,
-      platformWidthPx * 0.6,
-    );
-    platGrad.addColorStop(0, 'rgba(212, 168, 75, 0.12)');
-    platGrad.addColorStop(0.7, 'rgba(212, 168, 75, 0.02)');
-    platGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = platGrad;
+    // Dark chamber background fill with subtle center lighting
+    ctx.fillStyle = '#16120e';
     ctx.fillRect(0, 0, w, h);
 
-    // 5 In-Game Stone Floor Blocks
-    const tileSizePx = 8 * scale;
+    const grad = ctx.createRadialGradient(
+      this._startX,
+      floorY - 6,
+      2,
+      this._startX,
+      floorY - 6,
+      24,
+    );
+    grad.addColorStop(0, 'rgba(212, 168, 75, 0.16)');
+    grad.addColorStop(0.7, 'rgba(212, 168, 75, 0.04)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 5 In-Game Stone Floor Blocks (8×8 pixels each)
+    const tileSize = 8;
     for (let i = 0; i < 5; i++) {
-      const tileX = platformLeftX + i * tileSizePx;
-      const tileY = floorYPx;
-      const tileH = h - floorYPx;
+      const tileX = platformLeftX + i * tileSize;
+      const tileH = h - floorY;
 
-      // Stone block fill
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(32, 26, 18, 0.95)' : 'rgba(26, 21, 14, 0.95)';
-      ctx.fillRect(tileX, tileY, tileSizePx, tileH);
+      // Stone block body
+      ctx.fillStyle = i % 2 === 0 ? '#261f16' : '#1e1811';
+      ctx.fillRect(tileX, floorY, tileSize, tileH);
 
-      // Top beveled highlight
-      ctx.fillStyle = 'rgba(212, 168, 75, 0.35)';
-      ctx.fillRect(tileX, tileY, tileSizePx, 2);
+      // Top beveled highlight (1 pixel thick)
+      ctx.fillStyle = '#6b5428';
+      ctx.fillRect(tileX, floorY, tileSize, 1);
 
-      // Side beveled edge
-      ctx.strokeStyle = 'rgba(10, 8, 6, 0.85)';
+      // Seam outline
+      ctx.strokeStyle = '#0d0a08';
       ctx.lineWidth = 1;
-      ctx.strokeRect(tileX, tileY, tileSizePx, tileH);
+      ctx.strokeRect(tileX + 0.5, floorY + 0.5, tileSize - 1, tileH - 1);
     }
 
     // Platform bottom trim
-    ctx.strokeStyle = 'rgba(212, 168, 75, 0.3)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(platformLeftX, floorYPx);
-    ctx.lineTo(platformLeftX + platformWidthPx, floorYPx);
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(212, 168, 75, 0.4)';
+    ctx.fillRect(platformLeftX, floorY, tileSpanUnits, 1);
 
-    // ── 2. Dynamic Stickman Floor Shadow ────────────────────────────────────
+    // ── 2. Native Dynamic Floor Shadow ──────────────────────────────────────
     const currentHipX = this._body.x[SR_HIP];
-    const shadowCenterXPx = currentHipX * scale;
-    const shadowYPx = floorYPx + 1;
+    const shadowX = Math.round(currentHipX);
+    const shadowY = floorY + 1;
 
-    const shadowGrad = ctx.createRadialGradient(
-      shadowCenterXPx,
-      shadowYPx,
-      2,
-      shadowCenterXPx,
-      shadowYPx,
-      24,
-    );
-    shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
-    shadowGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.3)');
-    shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = shadowGrad;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
     ctx.beginPath();
-    ctx.ellipse(shadowCenterXPx, shadowYPx, 22, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(shadowX, shadowY, 6, 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // ── 3. Stickman Softbody ────────────────────────────────────────────────
+    // ── 3. Stickman Softbody (Native 1:1 In-Game Render) ─────────────────────
     const mainHandId = this._equipment.mainHand;
     const offHandId = this._equipment.offHand;
     const isTwoHand = mainHandId !== null && isTwoHandedItem(mainHandId);
@@ -349,35 +380,35 @@ export class CharacterPreviewController {
       ctx.save();
       ctx.strokeStyle = armorColor;
       ctx.fillStyle = armorColor;
-      ctx.lineWidth = Math.max(2, scale * 0.55);
+      ctx.lineWidth = 1;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      const chestX = this._body.x[SR_CHEST] * scale;
-      const chestY = this._body.y[SR_CHEST] * scale;
-      const hipXScreen = this._body.x[SR_HIP] * scale;
-      const hipYScreen = this._body.y[SR_HIP] * scale;
-      const shLX = this._body.x[SR_SHOULDER_L] * scale;
-      const shLY = this._body.y[SR_SHOULDER_L] * scale;
-      const shRX = this._body.x[SR_SHOULDER_R] * scale;
-      const shRY = this._body.y[SR_SHOULDER_R] * scale;
+      const chestX = Math.round(this._body.x[SR_CHEST]);
+      const chestY = Math.round(this._body.y[SR_CHEST]);
+      const hipX = Math.round(this._body.x[SR_HIP]);
+      const hipY = Math.round(this._body.y[SR_HIP]);
+      const shLX = Math.round(this._body.x[SR_SHOULDER_L]);
+      const shLY = Math.round(this._body.y[SR_SHOULDER_L]);
+      const shRX = Math.round(this._body.x[SR_SHOULDER_R]);
+      const shRY = Math.round(this._body.y[SR_SHOULDER_R]);
 
       // Chestplate / Cuirass
       ctx.beginPath();
       ctx.moveTo(shLX, shLY);
-      ctx.lineTo(chestX, chestY + 2);
+      ctx.lineTo(chestX, chestY + 1);
       ctx.lineTo(shRX, shRY);
-      ctx.lineTo(hipXScreen + 3.5, hipYScreen - 2);
-      ctx.lineTo(hipXScreen - 3.5, hipYScreen - 2);
+      ctx.lineTo(hipX + 1, hipY - 1);
+      ctx.lineTo(hipX - 1, hipY - 1);
       ctx.closePath();
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.45;
       ctx.fill();
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.95;
       ctx.stroke();
 
       // Pauldrons (shoulder pads)
-      ctx.fillRect(shLX - 2.5, shLY - 2.5, 5, 3.5);
-      ctx.fillRect(shRX - 2.5, shRY - 2.5, 5, 3.5);
+      ctx.fillRect(shLX - 1, shLY - 1, 2, 2);
+      ctx.fillRect(shRX - 1, shRY - 1, 2, 2);
       ctx.restore();
     }
 
@@ -389,31 +420,29 @@ export class CharacterPreviewController {
       ctx.save();
       ctx.strokeStyle = shoeColor;
       ctx.fillStyle = shoeColor;
-      ctx.lineWidth = Math.max(2, scale * 0.65);
+      ctx.lineWidth = 1;
       ctx.lineCap = 'round';
 
-      const fLX = this._body.x[SR_FOOT_L] * scale;
-      const fLY = this._body.y[SR_FOOT_L] * scale;
-      const fRX = this._body.x[SR_FOOT_R] * scale;
-      const fRY = this._body.y[SR_FOOT_R] * scale;
-      const kLX = this._body.x[SR_KNEE_L] * scale;
-      const kLY = this._body.y[SR_KNEE_L] * scale;
-      const kRX = this._body.x[SR_KNEE_R] * scale;
-      const kRY = this._body.y[SR_KNEE_R] * scale;
+      const fLX = Math.round(this._body.x[SR_FOOT_L]);
+      const fLY = Math.round(this._body.y[SR_FOOT_L]);
+      const fRX = Math.round(this._body.x[SR_FOOT_R]);
+      const fRY = Math.round(this._body.y[SR_FOOT_R]);
+      const kLX = Math.round(this._body.x[SR_KNEE_L]);
+      const kLY = Math.round(this._body.y[SR_KNEE_L]);
+      const kRX = Math.round(this._body.x[SR_KNEE_R]);
+      const kRY = Math.round(this._body.y[SR_KNEE_R]);
 
       // Shin guards / boots
       ctx.beginPath();
-      ctx.moveTo(kLX + (fLX - kLX) * 0.4, kLY + (fLY - kLY) * 0.4);
+      ctx.moveTo(kLX + Math.round((fLX - kLX) * 0.5), kLY + Math.round((fLY - kLY) * 0.5));
       ctx.lineTo(fLX, fLY);
-      ctx.lineTo(fLX - 2.5, fLY);
-      ctx.moveTo(kRX + (fRX - kRX) * 0.4, kRY + (fRY - kRY) * 0.4);
+      ctx.moveTo(kRX + Math.round((fRX - kRX) * 0.5), kRY + Math.round((fRY - kRY) * 0.5));
       ctx.lineTo(fRX, fRY);
-      ctx.lineTo(fRX + 2.5, fRY);
       ctx.stroke();
 
       // Boot soles
-      ctx.fillRect(fLX - 4, fLY - 1, 6, 2.5);
-      ctx.fillRect(fRX - 2, fRY - 1, 6, 2.5);
+      ctx.fillRect(fLX - 1, fLY, 3, 1);
+      ctx.fillRect(fRX - 1, fRY, 3, 1);
       ctx.restore();
     }
 
@@ -442,13 +471,26 @@ export class CharacterPreviewController {
     }
   }
 
+  private _upscaleToDevice(): void {
+    const dCtx = this._deviceCtx;
+    dCtx.imageSmoothingEnabled = false;
+    dCtx.clearRect(0, 0, this._deviceCanvas.width, this._deviceCanvas.height);
+    dCtx.drawImage(
+      this._virtualCanvas,
+      0,
+      0,
+      this._deviceCanvas.width,
+      this._deviceCanvas.height,
+    );
+  }
+
   public destroy(): void {
     if (this._animFrameId !== null) {
       cancelAnimationFrame(this._animFrameId);
       this._animFrameId = null;
     }
-    if (this._canvas.parentNode) {
-      this._canvas.parentNode.removeChild(this._canvas);
+    if (this._deviceCanvas.parentNode) {
+      this._deviceCanvas.parentNode.removeChild(this._deviceCanvas);
     }
   }
 }
@@ -457,8 +499,8 @@ export class CharacterPreviewController {
 function renderOffHandWeapon(
   ctx: CanvasRenderingContext2D,
   body: StickRangerBody,
-  def: import('../sim/weapons/weaponDefs').WeaponDef,
-  scalePx: number,
+  def: WeaponDef,
+  scalePx = 1.0,
 ): void {
   const isFacingLeft = body.facingDirection < 0;
   const offHandIndex = isFacingLeft ? SR_HAND_R : SR_HAND_L;
@@ -475,30 +517,30 @@ function renderOffHandWeapon(
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.35;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 7 * scalePx * 0.4, 12 * scalePx * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 3 * scalePx, 5 * scalePx, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.globalAlpha = 1;
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.5, scalePx * 0.75);
+    ctx.lineWidth = Math.max(1, scalePx);
     ctx.stroke();
 
     ctx.strokeStyle = '#ffd700';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, -6 * scalePx * 0.4);
-    ctx.lineTo(0, 6 * scalePx * 0.4);
-    ctx.moveTo(-4 * scalePx * 0.4, 0);
-    ctx.lineTo(4 * scalePx * 0.4, 0);
+    ctx.moveTo(0, -3 * scalePx);
+    ctx.lineTo(0, 3 * scalePx);
+    ctx.moveTo(-2 * scalePx, 0);
+    ctx.lineTo(2 * scalePx, 0);
     ctx.stroke();
   } else {
     // Dagger or light one-handed secondary blade pointed downward
     const angle = isFacingLeft ? Math.PI * 0.25 : Math.PI * 0.75;
     ctx.rotate(angle);
-    const reachPx = (def.range ?? 14) * scalePx * 0.65;
+    const reachPx = Math.max(4, Math.round((def.range ?? 14) * scalePx * 0.6));
 
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.2, scalePx * 0.75);
+    ctx.lineWidth = Math.max(1, scalePx);
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(0, 0);
