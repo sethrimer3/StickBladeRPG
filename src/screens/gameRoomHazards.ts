@@ -32,6 +32,7 @@ import {
 } from '../levels/roomDef';
 import { materialResponseToIndex, contactDamageTierToIndex, breakResistanceToIndex, windResponseTierToIndex, liquidInteractionTierToIndex, windEmissionDirectionToIndex } from '../levels/customBlockProperties';
 import {
+  initFirefly,
   SPIKE_DIR_UP,
   SPIKE_DIR_DOWN,
   SPIKE_DIR_LEFT,
@@ -52,7 +53,15 @@ const LASER_HALF_THICKNESS_WORLD = 3.0;
 /** Upper bound for a laser's wall raycast — generously larger than any room. */
 const LASER_MAX_RANGE_WORLD = 8192;
 
-const FIREFLY_AREA_SPAWN_SPEED_WORLD = 30.0;
+/** Fireflies spawned around each save tomb. */
+const SAVE_TOMB_FIREFLY_COUNT = 10;
+/**
+ * Radius of the wide area save-tomb fireflies drift around while the player is
+ * away, and the tighter radius they gather into once the player is close.
+ * The transition is driven by `updateFireflies` in sim/hazards.ts.
+ */
+const SAVE_TOMB_FIREFLY_ROAM_RADIUS_WORLD = 10 * BLOCK_SIZE_MEDIUM;
+const SAVE_TOMB_FIREFLY_FOCUS_RADIUS_WORLD = 2.2 * BLOCK_SIZE_MEDIUM;
 
 /**
  * Maps a `CrumbleVariant` string to a packed integer stored in `crumbleBlockVariant[]`.
@@ -660,15 +669,40 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
     const halfHeightWorld = area.hBlock * BLOCK_SIZE_MEDIUM * 0.5;
     const centerXWorld = area.xBlock * BLOCK_SIZE_MEDIUM + halfWidthWorld;
     const centerYWorld = area.yBlock * BLOCK_SIZE_MEDIUM + halfHeightWorld;
+    // Fireflies roam within the authored area: the tether radius is the area's
+    // half-diagonal, so the swarm stays where the designer drew it.
+    const roamRadiusWorld = Math.max(
+      BLOCK_SIZE_MEDIUM,
+      Math.sqrt(halfWidthWorld * halfWidthWorld + halfHeightWorld * halfHeightWorld),
+    );
     for (let f = 0; f < area.count && world.fireflyCount < MAX_FIREFLIES; f++) {
       const fi = world.fireflyCount++;
       world.fireflyXWorld[fi] = centerXWorld
         + nextFloatTriangle(world.rng) * halfWidthWorld;
       world.fireflyYWorld[fi] = centerYWorld
         + nextFloatTriangle(world.rng) * halfHeightWorld;
+      initFirefly(world, fi, centerXWorld, centerYWorld, roamRadiusWorld, roamRadiusWorld);
+    }
+  }
+
+  // ── Save tomb fireflies ──────────────────────────────────────────────────
+  // Each save tomb has its own swarm drifting over a wide area around it; the
+  // swarm draws in close to the tomb as the player approaches (see
+  // fireflyFocusRadiusWorld in sim/hazards.ts).
+  for (const tomb of room.saveTombs ?? []) {
+    const tombXWorld = (tomb.xBlock + 0.5) * BLOCK_SIZE_MEDIUM;
+    const tombYWorld = (tomb.yBlock + 0.5) * BLOCK_SIZE_MEDIUM;
+    for (let f = 0; f < SAVE_TOMB_FIREFLY_COUNT && world.fireflyCount < MAX_FIREFLIES; f++) {
+      const fi = world.fireflyCount++;
       const angleRad = nextFloat(world.rng) * Math.PI * 2;
-      world.fireflyVelXWorld[fi] = Math.cos(angleRad) * FIREFLY_AREA_SPAWN_SPEED_WORLD;
-      world.fireflyVelYWorld[fi] = Math.sin(angleRad) * FIREFLY_AREA_SPAWN_SPEED_WORLD;
+      const spawnRadiusWorld = nextFloat(world.rng) * SAVE_TOMB_FIREFLY_ROAM_RADIUS_WORLD;
+      world.fireflyXWorld[fi] = tombXWorld + Math.cos(angleRad) * spawnRadiusWorld;
+      world.fireflyYWorld[fi] = tombYWorld + Math.sin(angleRad) * spawnRadiusWorld;
+      initFirefly(
+        world, fi, tombXWorld, tombYWorld,
+        SAVE_TOMB_FIREFLY_ROAM_RADIUS_WORLD,
+        SAVE_TOMB_FIREFLY_FOCUS_RADIUS_WORLD,
+      );
     }
   }
 }

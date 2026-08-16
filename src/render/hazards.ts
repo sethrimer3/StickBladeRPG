@@ -762,13 +762,17 @@ export function renderHazards(
 
     if (!isScreenRectVisible(fx - 4 * zoom, fy - 4 * zoom, 8 * zoom, 8 * zoom, vpW, vpH)) continue;
 
+    // Per-firefly flicker phase, so a swarm pulses out of step rather than
+    // blinking as one block of lights.
+    const phase = world.fireflyPhaseRad[i];
+
     // Glow halo
-    const glowAlpha = 0.2 + Math.sin(tick * 0.12 + i * 5) * 0.1;
+    const glowAlpha = 0.2 + Math.sin(tick * 0.12 + phase) * 0.1;
     ctx.fillStyle = `rgba(255,215,0,${glowAlpha})`;
     ctx.fillRect(fx - 2 * zoom, fy - 2 * zoom, 4 * zoom, 4 * zoom);
 
     // Core 2×2 pixel
-    const coreAlpha = 0.8 + Math.sin(tick * 0.15 + i * 7) * 0.15;
+    const coreAlpha = 0.75 + Math.sin(tick * 0.15 + phase * 2.3) * 0.25;
     ctx.fillStyle = `rgba(255,230,50,${coreAlpha})`;
     ctx.fillRect(fx - zoom, fy - zoom, 2 * zoom, 2 * zoom);
   }

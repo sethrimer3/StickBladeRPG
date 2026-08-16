@@ -276,12 +276,45 @@ const JAR_INTERACT_RADIUS_WORLD = 10.0;
  */
 const CRUMBLE_HIT_COOLDOWN_TICKS = 30;
 
-/** Firefly wander speed (world units/s). */
-const FIREFLY_SPEED_WORLD = 30.0;
-/** Firefly direction change interval (ticks). */
-const FIREFLY_DIRECTION_CHANGE_TICKS = 90;
 /** Margin from world edges for firefly clamping (world units). */
 const FIREFLY_EDGE_MARGIN_WORLD = 12.0;
+
+// ── Firefly flight tuning ───────────────────────────────────────────────────
+//
+// A firefly flies in short bursts: it thrusts along a slowly curving heading
+// for a fraction of a second, then cuts the thrust and coasts/hovers before
+// picking a new heading.  Drag, a vertical bob, and a soft tether back towards
+// its home point do the rest.  Nothing here moves in a straight line for long,
+// which is what reads as "organic" on screen.
+
+/** Forward acceleration while a firefly is in a thrust burst (world units/s²). */
+const FIREFLY_THRUST_WORLD = 150.0;
+/** Velocity damping applied per second (air drag); caps cruise speed with thrust. */
+const FIREFLY_DRAG_PER_SEC = 3.4;
+/** Hard speed cap (world units/s). */
+const FIREFLY_MAX_SPEED_WORLD = 52.0;
+/** Shortest / longest duration of one flight segment (seconds). */
+const FIREFLY_SEGMENT_MIN_SEC = 0.18;
+const FIREFLY_SEGMENT_MAX_SEC = 0.75;
+/** Chance (0..1) that a new segment is a hover (no thrust) instead of a burst. */
+const FIREFLY_HOVER_CHANCE = 0.35;
+/** Range of heading curvature applied during a segment (radians/s). */
+const FIREFLY_TURN_RATE_MAX_RAD = 3.2;
+/** Amplitude / frequency of the per-firefly vertical bob (world units/s², rad/s). */
+const FIREFLY_BOB_ACCEL_WORLD = 26.0;
+const FIREFLY_BOB_FREQ_RAD = 3.1;
+/** Pull back towards the home point once outside the roam radius (world units/s² per unit of excess). */
+const FIREFLY_TETHER_ACCEL_PER_WORLD = 2.6;
+/** Collision half-size of a firefly used for wall tests (world units). */
+const FIREFLY_HALF_SIZE_WORLD = 1.5;
+/** How far ahead a firefly probes for walls so it veers off before hitting one (world units). */
+const FIREFLY_AVOID_LOOKAHEAD_WORLD = 9.0;
+/** Heading turn applied per second while a wall is inside the lookahead probe (radians/s). */
+const FIREFLY_AVOID_TURN_RAD = 7.0;
+/** Distance from a save tomb at which its fireflies begin gathering inwards (world units). */
+const FIREFLY_FOCUS_FAR_WORLD = 96.0;
+/** Distance from a save tomb at which its fireflies are fully gathered in (world units). */
+const FIREFLY_FOCUS_NEAR_WORLD = 24.0;
 
 /** Half-size of a springboard hitbox in world units. */
 const SPRINGBOARD_HALF_WIDTH_WORLD = BLOCK_SIZE_MEDIUM * 0.5;
@@ -303,6 +336,167 @@ function bounceAxis(
   if (pos < min) return { pos: min, vel: Math.abs(vel) };
   if (pos > max) return { pos: max, vel: -Math.abs(vel) };
   return { pos, vel };
+}
+
+/**
+ * True when a firefly-sized box centred on (xWorld, yWorld) overlaps any solid
+ * wall.  One-way platforms are skipped: a firefly is not standing on anything,
+ * so it should be able to drift through them the way it drifts through air.
+ */
+function isFireflyBlockedAt(world: WorldState, xWorld: number, yWorld: number): boolean {
+  const left = xWorld - FIREFLY_HALF_SIZE_WORLD;
+  const top = yWorld - FIREFLY_HALF_SIZE_WORLD;
+  const right = xWorld + FIREFLY_HALF_SIZE_WORLD;
+  const bottom = yWorld + FIREFLY_HALF_SIZE_WORLD;
+  for (let wi = 0; wi < world.wallCount; wi++) {
+    if (world.wallIsPlatformFlag[wi] === 1) continue;
+    // Cheap AABB reject before the stair-aware (and pricier) solid test.
+    if (right <= world.wallXWorld[wi] || left >= world.wallXWorld[wi] + world.wallWWorld[wi]) continue;
+    if (bottom <= world.wallYWorld[wi] || top >= world.wallYWorld[wi] + world.wallHWorld[wi]) continue;
+    if (aabbOverlapsWallSolid(world, wi, left, top, right, bottom)) return true;
+  }
+  return false;
+}
+
+/** Re-rolls one firefly's flight segment: a thrust burst or a hover, and its curvature. */
+function rollFireflySegment(world: WorldState, i: number): void {
+  world.fireflySegmentTimerSec[i] = nextFloatRange(world.rng, FIREFLY_SEGMENT_MIN_SEC, FIREFLY_SEGMENT_MAX_SEC);
+  world.fireflyTurnRateRad[i] = nextFloatRange(world.rng, -FIREFLY_TURN_RATE_MAX_RAD, FIREFLY_TURN_RATE_MAX_RAD);
+  const isHover = nextFloat(world.rng) < FIREFLY_HOVER_CHANCE;
+  world.fireflyThrustWorld[i] = isHover
+    ? 0
+    : FIREFLY_THRUST_WORLD * nextFloatRange(world.rng, 0.6, 1.25);
+  // A fresh burst also kicks the heading somewhere new, not just off the old one.
+  if (!isHover) {
+    world.fireflyHeadingRad[i] += nextFloatRange(world.rng, -1.6, 1.6);
+  }
+}
+
+/**
+ * Initialises one firefly's flight state.  Callers set position first; this
+ * fills in the roam tether, heading, and segment fields.
+ *
+ * @param focusRadiusWorld Roam radius used while the player is close to the
+ *   home point.  Pass `roamRadiusWorld` for fireflies that ignore the player.
+ */
+export function initFirefly(
+  world: WorldState,
+  i: number,
+  homeXWorld: number,
+  homeYWorld: number,
+  roamRadiusWorld: number,
+  focusRadiusWorld: number,
+): void {
+  world.fireflyHomeXWorld[i] = homeXWorld;
+  world.fireflyHomeYWorld[i] = homeYWorld;
+  world.fireflyRoamRadiusWorld[i] = roamRadiusWorld;
+  world.fireflyFocusRadiusWorld[i] = focusRadiusWorld;
+  world.fireflyHeadingRad[i] = nextFloat(world.rng) * Math.PI * 2;
+  world.fireflyPhaseRad[i] = nextFloat(world.rng) * Math.PI * 2;
+  world.fireflyVelXWorld[i] = 0;
+  world.fireflyVelYWorld[i] = 0;
+  rollFireflySegment(world, i);
+}
+
+/**
+ * Advances every firefly one step of burst-and-hover flight, then resolves the
+ * move against solid walls one axis at a time so a firefly can slide along a
+ * surface instead of stopping dead or tunnelling through it.
+ */
+function updateFireflies(world: WorldState, dtSec: number): void {
+  const player = world.clusters[0];
+  const playerXWorld = player !== undefined ? player.positionXWorld : 0;
+  const playerYWorld = player !== undefined ? player.positionYWorld : 0;
+  const hasPlayer = player !== undefined && player.isAliveFlag !== 0;
+
+  const timeSec = world.tick * dtSec;
+
+  for (let i = 0; i < world.fireflyCount; i++) {
+    // ── Flight segment bookkeeping ──
+    world.fireflySegmentTimerSec[i] -= dtSec;
+    if (world.fireflySegmentTimerSec[i] <= 0) rollFireflySegment(world, i);
+
+    let headingRad = world.fireflyHeadingRad[i] + world.fireflyTurnRateRad[i] * dtSec;
+
+    const xWorld = world.fireflyXWorld[i];
+    const yWorld = world.fireflyYWorld[i];
+
+    // ── Wall avoidance: veer off before the probe point hits something solid ──
+    const probeX = xWorld + Math.cos(headingRad) * FIREFLY_AVOID_LOOKAHEAD_WORLD;
+    const probeY = yWorld + Math.sin(headingRad) * FIREFLY_AVOID_LOOKAHEAD_WORLD;
+    if (isFireflyBlockedAt(world, probeX, probeY)) {
+      // Turn in whichever direction the per-firefly curvature already favours,
+      // so a firefly hugging a wall keeps curving the same way instead of
+      // jittering between the two sides.
+      const turnSign = world.fireflyTurnRateRad[i] >= 0 ? 1 : -1;
+      headingRad += turnSign * FIREFLY_AVOID_TURN_RAD * dtSec;
+    }
+    world.fireflyHeadingRad[i] = headingRad;
+
+    // ── Forces ──
+    let accelX = Math.cos(headingRad) * world.fireflyThrustWorld[i];
+    let accelY = Math.sin(headingRad) * world.fireflyThrustWorld[i];
+
+    // Vertical bob — the small up/down float every firefly has even while hovering.
+    accelY += Math.sin(timeSec * FIREFLY_BOB_FREQ_RAD + world.fireflyPhaseRad[i]) * FIREFLY_BOB_ACCEL_WORLD;
+
+    // Tether back home.  While the player is near the home point the effective
+    // radius shrinks towards the focus radius, drawing save-tomb fireflies in.
+    const homeDx = world.fireflyHomeXWorld[i] - xWorld;
+    const homeDy = world.fireflyHomeYWorld[i] - yWorld;
+    const homeDist = Math.sqrt(homeDx * homeDx + homeDy * homeDy);
+    let effectiveRadiusWorld = world.fireflyRoamRadiusWorld[i];
+    const focusRadiusWorld = world.fireflyFocusRadiusWorld[i];
+    if (hasPlayer && focusRadiusWorld < effectiveRadiusWorld) {
+      const playerDx = playerXWorld - world.fireflyHomeXWorld[i];
+      const playerDy = playerYWorld - world.fireflyHomeYWorld[i];
+      const playerDist = Math.sqrt(playerDx * playerDx + playerDy * playerDy);
+      const span = FIREFLY_FOCUS_FAR_WORLD - FIREFLY_FOCUS_NEAR_WORLD;
+      const nearFactor = Math.max(0, Math.min(1, (FIREFLY_FOCUS_FAR_WORLD - playerDist) / span));
+      effectiveRadiusWorld += (focusRadiusWorld - effectiveRadiusWorld) * nearFactor;
+    }
+    if (homeDist > effectiveRadiusWorld && homeDist > 0.001) {
+      const excess = homeDist - effectiveRadiusWorld;
+      const pull = excess * FIREFLY_TETHER_ACCEL_PER_WORLD;
+      accelX += (homeDx / homeDist) * pull;
+      accelY += (homeDy / homeDist) * pull;
+    }
+
+    // ── Integrate ──
+    let velX = (world.fireflyVelXWorld[i] + accelX * dtSec) * Math.max(0, 1 - FIREFLY_DRAG_PER_SEC * dtSec);
+    let velY = (world.fireflyVelYWorld[i] + accelY * dtSec) * Math.max(0, 1 - FIREFLY_DRAG_PER_SEC * dtSec);
+    const speed = Math.sqrt(velX * velX + velY * velY);
+    if (speed > FIREFLY_MAX_SPEED_WORLD) {
+      velX = (velX / speed) * FIREFLY_MAX_SPEED_WORLD;
+      velY = (velY / speed) * FIREFLY_MAX_SPEED_WORLD;
+    }
+
+    // ── Move, resolving each axis separately against solid walls ──
+    // A firefly that spawned inside geometry ignores collision until it is
+    // clear again, otherwise it would be pinned there forever.
+    const isStuckInWall = isFireflyBlockedAt(world, xWorld, yWorld);
+    let nextX = xWorld + velX * dtSec;
+    if (!isStuckInWall && isFireflyBlockedAt(world, nextX, yWorld)) {
+      nextX = xWorld;
+      velX = -velX * 0.4;
+      world.fireflyHeadingRad[i] = Math.PI - world.fireflyHeadingRad[i];
+    }
+    let nextY = yWorld + velY * dtSec;
+    if (!isStuckInWall && isFireflyBlockedAt(world, nextX, nextY)) {
+      nextY = yWorld;
+      velY = -velY * 0.4;
+      world.fireflyHeadingRad[i] = -world.fireflyHeadingRad[i];
+    }
+
+    // Room bounds still bounce, so a firefly can never leave the room.
+    const bx = bounceAxis(nextX, velX, FIREFLY_EDGE_MARGIN_WORLD, world.worldWidthWorld - FIREFLY_EDGE_MARGIN_WORLD);
+    const by = bounceAxis(nextY, velY, FIREFLY_EDGE_MARGIN_WORLD, world.worldHeightWorld - FIREFLY_EDGE_MARGIN_WORLD);
+
+    world.fireflyXWorld[i] = bx.pos;
+    world.fireflyYWorld[i] = by.pos;
+    world.fireflyVelXWorld[i] = bx.vel;
+    world.fireflyVelYWorld[i] = by.vel;
+  }
 }
 
 /**
@@ -1218,31 +1412,12 @@ export function applyHazards(world: WorldState): void {
         const fi = world.fireflyCount++;
         world.fireflyXWorld[fi] = jx + nextFloatRange(world.rng, -6, 6);
         world.fireflyYWorld[fi] = jy + nextFloatRange(world.rng, -6, 6);
-        const angle = nextFloat(world.rng) * Math.PI * 2;
-        world.fireflyVelXWorld[fi] = Math.cos(angle) * FIREFLY_SPEED_WORLD;
-        world.fireflyVelYWorld[fi] = Math.sin(angle) * FIREFLY_SPEED_WORLD;
+        const roamRadiusWorld = nextFloatRange(world.rng, 40, 80);
+        initFirefly(world, fi, jx, jy, roamRadiusWorld, roamRadiusWorld);
       }
     }
   }
 
   // ── Firefly movement ─────────────────────────────────────────────────────
-  for (let i = 0; i < world.fireflyCount; i++) {
-    // Periodic direction changes based on tick + index
-    if ((world.tick + i * 17) % FIREFLY_DIRECTION_CHANGE_TICKS === 0) {
-      const angle = nextFloat(world.rng) * Math.PI * 2;
-      world.fireflyVelXWorld[i] = Math.cos(angle) * FIREFLY_SPEED_WORLD;
-      world.fireflyVelYWorld[i] = Math.sin(angle) * FIREFLY_SPEED_WORLD;
-    }
-
-    world.fireflyXWorld[i] += world.fireflyVelXWorld[i] * dtSec;
-    world.fireflyYWorld[i] += world.fireflyVelYWorld[i] * dtSec;
-
-    // Clamp to world bounds and bounce
-    const bx = bounceAxis(world.fireflyXWorld[i], world.fireflyVelXWorld[i], FIREFLY_EDGE_MARGIN_WORLD, world.worldWidthWorld  - FIREFLY_EDGE_MARGIN_WORLD);
-    world.fireflyXWorld[i]    = bx.pos;
-    world.fireflyVelXWorld[i] = bx.vel;
-    const by = bounceAxis(world.fireflyYWorld[i], world.fireflyVelYWorld[i], FIREFLY_EDGE_MARGIN_WORLD, world.worldHeightWorld - FIREFLY_EDGE_MARGIN_WORLD);
-    world.fireflyYWorld[i]    = by.pos;
-    world.fireflyVelYWorld[i] = by.vel;
-  }
+  updateFireflies(world, dtSec);
 }

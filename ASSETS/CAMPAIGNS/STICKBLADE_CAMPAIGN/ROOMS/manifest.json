@@ -1,11 +1,11 @@
 {
   "campaignId": "STICKBLADE_CAMPAIGN",
   "campaignName": "StickBlade",
-  "campaignHash": "34af694e53b9e850",
+  "campaignHash": "3df668842869a626",
   "campaignVersion": 16,
   "campaignSchemaVersion": 1,
   "roomCacheVersion": 1,
-  "exportedAt": "2026-08-16T00:13:12.134Z",
+  "exportedAt": "2026-08-16T00:21:17.422Z",
   "rooms": {
     "lobby": {
       "roomId": "lobby",
@@ -202,8 +202,8 @@
     "glade": {
       "roomId": "glade",
       "file": "glade_room.json",
-      "hash": "adc543bb52404f29",
-      "updatedAt": "2026-08-16T00:12:36.255Z"
+      "hash": "f1d3a69750d3d32d",
+      "updatedAt": "2026-08-16T00:21:17.422Z"
     }
   },
   "adjacency": {

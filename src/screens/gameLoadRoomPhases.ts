@@ -643,7 +643,7 @@ function applyRoomEnvironmentAndScheduling(
 
   {
     const _t0 = import.meta.env.DEV ? performance.now() : 0;
-    skillTombRenderer.init(room.saveTombs, room.walls);
+    skillTombRenderer.init(room.saveTombs);
     skillTombEffectRenderer.init(room.skillTombs);
     const roomSkillTombs = room.skillTombs ?? [];
     for (let i = roomSkillTombs.length - 1; i >= 0; i--) {

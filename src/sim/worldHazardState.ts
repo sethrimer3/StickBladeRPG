@@ -103,8 +103,13 @@ import { MAX_NEEDLE_URCHINS, NEEDLE_URCHIN_NEEDLES_PER_BURST } from './clusters/
 export const MAX_DUST_BOOST_JARS = 16;
 /** Maximum number of firefly jars per room. */
 export const MAX_FIREFLY_JARS = 16;
-/** Maximum number of active fireflies at once. */
-export const MAX_FIREFLIES = 32;
+/**
+ * Maximum number of active fireflies at once.
+ *
+ * Headroom covers authored firefly areas, jar releases, and the swarm each
+ * save tomb spawns around itself (SAVE_TOMB_FIREFLY_COUNT per tomb).
+ */
+export const MAX_FIREFLIES = 96;
 /** Number of fireflies spawned from each broken firefly jar. */
 export const FIREFLIES_PER_JAR = 4;
 /** Maximum number of dust piles per room. */
@@ -591,6 +596,29 @@ export interface HazardWorldState {
   fireflyVelXWorld: Float32Array;
   /** Y velocity of each firefly (world units/s). */
   fireflyVelYWorld: Float32Array;
+  /** X of the point each firefly loosely roams around (world units). */
+  fireflyHomeXWorld: Float32Array;
+  /** Y of the point each firefly loosely roams around (world units). */
+  fireflyHomeYWorld: Float32Array;
+  /** Radius of the roam area around the home point (world units). */
+  fireflyRoamRadiusWorld: Float32Array;
+  /**
+   * Roam radius used while the player is near the firefly's home point
+   * (world units).  Save-tomb fireflies set this below `fireflyRoamRadiusWorld`
+   * so they gather in towards the tomb as the player approaches; every other
+   * firefly sets it equal to the roam radius and so ignores the player.
+   */
+  fireflyFocusRadiusWorld: Float32Array;
+  /** Current heading of each firefly (radians); wanders smoothly over time. */
+  fireflyHeadingRad: Float32Array;
+  /** Signed heading drift rate of each firefly (radians/s), re-rolled on turns. */
+  fireflyTurnRateRad: Float32Array;
+  /** Seconds remaining before the firefly re-rolls its turn rate / thrust burst. */
+  fireflySegmentTimerSec: Float32Array;
+  /** Current forward thrust of each firefly (world units/s²); 0 while it hovers. */
+  fireflyThrustWorld: Float32Array;
+  /** Phase offset of the per-firefly vertical bob and glow flicker (radians). */
+  fireflyPhaseRad: Float32Array;
 
   /** 1 while the player cluster is inside a water zone this tick. */
   isPlayerInWaterFlag: 0 | 1;
@@ -1137,6 +1165,15 @@ export function createHazardWorldState(): HazardWorldState {
     fireflyYWorld:                 new Float32Array(MAX_FIREFLIES),
     fireflyVelXWorld:              new Float32Array(MAX_FIREFLIES),
     fireflyVelYWorld:              new Float32Array(MAX_FIREFLIES),
+    fireflyHomeXWorld:             new Float32Array(MAX_FIREFLIES),
+    fireflyHomeYWorld:             new Float32Array(MAX_FIREFLIES),
+    fireflyRoamRadiusWorld:        new Float32Array(MAX_FIREFLIES),
+    fireflyFocusRadiusWorld:       new Float32Array(MAX_FIREFLIES),
+    fireflyHeadingRad:             new Float32Array(MAX_FIREFLIES),
+    fireflyTurnRateRad:            new Float32Array(MAX_FIREFLIES),
+    fireflySegmentTimerSec:        new Float32Array(MAX_FIREFLIES),
+    fireflyThrustWorld:            new Float32Array(MAX_FIREFLIES),
+    fireflyPhaseRad:               new Float32Array(MAX_FIREFLIES),
     isPlayerInWaterFlag:           0,
     isPlayerWasInWaterLastTickFlag: 0,
     playerWaterState:              0,

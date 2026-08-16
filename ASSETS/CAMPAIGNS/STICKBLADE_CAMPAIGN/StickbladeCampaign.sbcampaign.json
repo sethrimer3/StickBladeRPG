@@ -3,7 +3,7 @@
   "kind": "StickBladeCampaign",
   "metadata": {
     "version": 16,
-    "lastEditedAt": "2026-08-16T00:13:12.083Z"
+    "lastEditedAt": "2026-08-16T00:21:17.401Z"
   },
   "campaign": {
     "id": "STICKBLADE_CAMPAIGN",
@@ -48550,6 +48550,12 @@
           "stairs": 2
         }
       ],
+      "saveTombs": [
+        [
+          22,
+          34
+        ]
+      ],
       "fireflyAreas": [
         [
           18,
@@ -49080,7 +49086,7 @@
   ],
   "editor": {
     "createdWithBuild": "649",
-    "lastEditedIso": "2026-08-16T00:13:12.083Z"
+    "lastEditedIso": "2026-08-16T00:21:17.401Z"
   },
   "customBlockDefs": []
 }

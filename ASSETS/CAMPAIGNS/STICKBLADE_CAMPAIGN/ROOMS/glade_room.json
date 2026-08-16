@@ -238,6 +238,12 @@
       "stairs": 2
     }
   ],
+  "saveTombs": [
+    [
+      22,
+      34
+    ]
+  ],
   "fireflyAreas": [
     [
       18,
