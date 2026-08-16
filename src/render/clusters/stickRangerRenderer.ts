@@ -45,21 +45,48 @@ const SEGMENTS: ReadonlyArray<readonly [number, number]> = [
   [SR_KNEE_R, SR_FOOT_R],
 ];
 
+/** Body segments without forearm defaults, used when holding a two-handed weapon. */
+const NON_ARM_SEGMENTS: ReadonlyArray<readonly [number, number]> = [
+  [SR_CHEST, SR_HIP],
+  [SR_CHEST, SR_SHOULDER_L],
+  [SR_CHEST, SR_SHOULDER_R],
+  [SR_HIP, SR_KNEE_L],
+  [SR_HIP, SR_KNEE_R],
+  [SR_KNEE_L, SR_FOOT_L],
+  [SR_KNEE_R, SR_FOOT_R],
+];
+
 /**
  * Player figure line color. Stick Ranger draws its figures pure black, but this
  * game's dark rock makes a black stickman nearly invisible, so it is white here.
  */
-const FIGURE_COLOR = '#ffffff';
+export const FIGURE_COLOR = '#ffffff';
 /** Enemy stickmen line color (crimson dark). */
-const ENEMY_FIGURE_COLOR = '#881111';
+export const ENEMY_FIGURE_COLOR = '#881111';
+/** Solid black outline color. */
+export const OUTLINE_COLOR = '#000000';
+
+/**
+ * 4-neighbour cardinal offsets used to draw a 1-pixel solid black outline
+ * around the stickman figure with corners clipped (excluding diagonals),
+ * matching the outer-silhouette outline technique from DustWeaver player sprites.
+ */
+export const OUTLINE_NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+            [0, -1],
+  [-1,  0],          [1,  0],
+            [0,  1],
+];
 
 /** Size of the head square in world units (native pixels). Matches Stick Ranger. */
-const HEAD_SIZE_WORLD = 4.8;
+export const HEAD_SIZE_WORLD = 4.8;
 
 const _weaponAnchorScratch = createWeaponGripAnchor();
 
 /**
  * Renders the stickman softbody onto the canvas.
+ *
+ * Draws a 1-pixel solid black outline in the 4 cardinal directions (corners clipped)
+ * behind the figure, followed by the foreground stickman body.
  *
  * @param ctx        Canvas 2D context.
  * @param body       The simulated softbody.
@@ -83,58 +110,65 @@ export function renderStickRangerBody(
   const toScreenY = (i: number): number => getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx;
 
   const color = isEnemy ? ENEMY_FIGURE_COLOR : FIGURE_COLOR;
+  const headSizePx = HEAD_SIZE_WORLD * scalePx;
+  const outlineThicknessPx = scalePx;
+
+  let toGripX = 0;
+  let toGripY = 0;
+  if (isTwoHandGrip) {
+    const handX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
+    const handY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
+    toGripX = handX * scalePx + offsetXPx;
+    toGripY = handY * scalePx + offsetYPx;
+  }
+
+  const drawFigurePass = (passColor: string, dxPx: number, dyPx: number): void => {
+    ctx.strokeStyle = passColor;
+    ctx.fillStyle = passColor;
+
+    ctx.beginPath();
+    if (isTwoHandGrip) {
+      for (let s = 0; s < NON_ARM_SEGMENTS.length; s++) {
+        const [a, b] = NON_ARM_SEGMENTS[s];
+        ctx.moveTo(toScreenX(a) + dxPx, toScreenY(a) + dyPx);
+        ctx.lineTo(toScreenX(b) + dxPx, toScreenY(b) + dyPx);
+      }
+      // Both forearms meet at the two-handed weapon grip anchor
+      ctx.moveTo(toScreenX(SR_SHOULDER_L) + dxPx, toScreenY(SR_SHOULDER_L) + dyPx);
+      ctx.lineTo(toGripX + dxPx, toGripY + dyPx);
+      ctx.moveTo(toScreenX(SR_SHOULDER_R) + dxPx, toScreenY(SR_SHOULDER_R) + dyPx);
+      ctx.lineTo(toGripX + dxPx, toGripY + dyPx);
+    } else {
+      for (let s = 0; s < SEGMENTS.length; s++) {
+        const [a, b] = SEGMENTS[s];
+        ctx.moveTo(toScreenX(a) + dxPx, toScreenY(a) + dyPx);
+        ctx.lineTo(toScreenX(b) + dxPx, toScreenY(b) + dyPx);
+      }
+    }
+    ctx.stroke();
+
+    // Head: filled square centred on the head point.
+    ctx.fillRect(
+      toScreenX(SR_HEAD) + dxPx - headSizePx * 0.5,
+      toScreenY(SR_HEAD) + dyPx - headSizePx * 0.5,
+      headSizePx,
+      headSizePx,
+    );
+  };
 
   ctx.save();
-  ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(1, scalePx);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  ctx.beginPath();
-  if (isTwoHandGrip) {
-    const handX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
-    const handY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
-    const toGripX = handX * scalePx + offsetXPx;
-    const toGripY = handY * scalePx + offsetYPx;
-
-    // Body segments without forearm defaults
-    const nonArmSegments: ReadonlyArray<readonly [number, number]> = [
-      [SR_CHEST, SR_HIP],
-      [SR_CHEST, SR_SHOULDER_L],
-      [SR_CHEST, SR_SHOULDER_R],
-      [SR_HIP, SR_KNEE_L],
-      [SR_HIP, SR_KNEE_R],
-      [SR_KNEE_L, SR_FOOT_L],
-      [SR_KNEE_R, SR_FOOT_R],
-    ];
-    for (let s = 0; s < nonArmSegments.length; s++) {
-      const [a, b] = nonArmSegments[s];
-      ctx.moveTo(toScreenX(a), toScreenY(a));
-      ctx.lineTo(toScreenX(b), toScreenY(b));
-    }
-    // Both forearms meet at the two-handed weapon grip anchor
-    ctx.moveTo(toScreenX(SR_SHOULDER_L), toScreenY(SR_SHOULDER_L));
-    ctx.lineTo(toGripX, toGripY);
-    ctx.moveTo(toScreenX(SR_SHOULDER_R), toScreenY(SR_SHOULDER_R));
-    ctx.lineTo(toGripX, toGripY);
-  } else {
-    for (let s = 0; s < SEGMENTS.length; s++) {
-      const [a, b] = SEGMENTS[s];
-      ctx.moveTo(toScreenX(a), toScreenY(a));
-      ctx.lineTo(toScreenX(b), toScreenY(b));
-    }
+  // 1. Draw 1-pixel solid black outline in 4 cardinal directions (clipped corners).
+  for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
+    const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
+    drawFigurePass(OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
   }
-  ctx.stroke();
 
-  // Head: filled square centred on the head point.
-  const headSizePx = HEAD_SIZE_WORLD * scalePx;
-  ctx.fillStyle = color;
-  ctx.fillRect(
-    toScreenX(SR_HEAD) - headSizePx * 0.5,
-    toScreenY(SR_HEAD) - headSizePx * 0.5,
-    headSizePx,
-    headSizePx,
-  );
+  // 2. Draw foreground figure in primary color (white or enemy crimson) on top.
+  drawFigurePass(color, 0, 0);
 
   ctx.restore();
 }

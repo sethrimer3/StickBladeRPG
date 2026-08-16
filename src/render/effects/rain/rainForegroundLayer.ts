@@ -79,7 +79,6 @@ export class RainForegroundLayer {
     return this.rngState / 0x7fffffff;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for API symmetry with other per-tick effect layers.
   update(_world: WorldState, dtMs: number): void {
     if (!this.active || this.openColumnXs.length === 0) {
       this.updateSplashesOnly(dtMs);
