@@ -89,7 +89,7 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       if (w.rampOrientation !== undefined) wall.rampOrientation = w.rampOrientation;
       if (w.stairsOrientation !== undefined) wall.stairsOrientation = w.stairsOrientation;
       if (w.smoothRampOrientation !== undefined) wall.smoothRampOrientation = w.smoothRampOrientation;
-      if (w.isPillarHalfWidthFlag === 1) wall.isPillarHalfWidth = true;
+      if (w.halfBlockOrientation === 1) wall.halfBlock = true;
       const rimIndex = rimIndexForWall(w);
       if (rimIndex !== undefined) wall.r = rimIndex;
       return wall;
@@ -406,7 +406,7 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       if (b.rampOrientation !== undefined) entry.rampOrientation = b.rampOrientation;
       if (b.stairsOrientation !== undefined) entry.stairsOrientation = b.stairsOrientation;
       if (b.smoothRampOrientation !== undefined) entry.smoothRampOrientation = b.smoothRampOrientation;
-      if (b.isPillarHalfWidthFlag === 1) entry.isPillarHalfWidthFlag = 1;
+      if (b.halfBlockOrientation === 1) entry.halfBlockOrientation = 1;
       if (b.variant !== 'normal') entry.variant = b.variant;
       if (b.isSecretFlag === 1) entry.isSecretFlag = 1;
       if (b.blockTheme !== undefined) {
@@ -615,7 +615,7 @@ export function editorRoomDataToJson(data: EditorRoomData): RoomJsonDef {
       soundHardnessIndex:    Array.from(tpl.soundHardnessIndex),
       isInvisibleFlag:       Array.from(tpl.isInvisibleFlag),
       rampOrientationIndex:  Array.from(tpl.rampOrientationIndex),
-      isPillarHalfWidthFlag: Array.from(tpl.isPillarHalfWidthFlag),
+      halfBlockOrientation: Array.from(tpl.halfBlockOrientation),
       isIceFlag:             Array.from(tpl.isIceFlag),
       isUltraIceFlag:        Array.from(tpl.isUltraIceFlag),
       rimStyleIndex:         Array.from(tpl.rimStyleIndex),

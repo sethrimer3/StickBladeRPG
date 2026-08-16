@@ -105,8 +105,11 @@ export interface EditorWall {
    * is identical to stairs; only rendering differs (smooth diagonal).
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
-  /** 1 if this pillar wall should be rendered and collide at half-block width. */
-  isPillarHalfWidthFlag: 0 | 1;
+  /**
+   * Which half of this wall's extent is solid, or `HALF_BLOCK_NONE` for a
+   * normal full-extent wall. See levels/halfBlockGeometry.ts.
+   */
+  halfBlockOrientation: number;
   /**
    * Per-block Surface Rim override (see render/walls/surfaceRimStyle.ts).
    * Undefined = 'default' style — preserves the original hard-coded
@@ -310,10 +313,10 @@ export interface EditorCrumbleBlock {
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
   /**
-   * 1 if this crumble block is a half-width pillar. Mirrors
-   * `EditorWall.isPillarHalfWidthFlag`.
+   * Which half of this crumble block's extent is solid, or `HALF_BLOCK_NONE`.
+   * Mirrors `EditorWall.halfBlockOrientation`.
    */
-  isPillarHalfWidthFlag?: 0 | 1;
+  halfBlockOrientation?: number;
   /** Which elemental type this crumble block is weak to. */
   variant: CrumbleVariant;
   /** 1 for a Secret Block, whose damage resets on save/death respawn. */

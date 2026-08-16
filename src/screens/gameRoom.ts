@@ -82,12 +82,16 @@ function isSpawnBlockInSolidWall(room: RoomDef, xBlock: number, yBlock: number):
     if (wall.isPlatformFlag === 1)  continue; // platforms don't block vertical spawn
     if (wall.isInvisibleFlag === 1) continue; // invisible boundary walls are passable
 
-    // Half-width pillars use half the declared block-width; full walls scale 1:1.
-    const wallWidthScale = wall.isPillarHalfWidthFlag === 1 ? 0.5 : 1;
-    const wLeft   = wall.xBlock * BLOCK_SIZE_MEDIUM;
-    const wTop    = wall.yBlock * BLOCK_SIZE_MEDIUM;
-    const wRight  = wLeft + wall.wBlock * BLOCK_SIZE_MEDIUM * wallWidthScale;
-    const wBottom = wTop  + wall.hBlock * BLOCK_SIZE_MEDIUM;
+    // Half-blocks only fill half their declared extent — use the shared
+    // narrowing so spawn-overlap agrees with collision exactly.
+    const r = halfBlockWorldRect(
+      wall.xBlock, wall.yBlock, wall.wBlock, wall.hBlock,
+      wall.halfBlockOrientation ?? HALF_BLOCK_NONE, BLOCK_SIZE_MEDIUM,
+    );
+    const wLeft   = r.x;
+    const wTop    = r.y;
+    const wRight  = r.x + r.w;
+    const wBottom = r.y + r.h;
 
     if (pLeft < wRight && pRight > wLeft && pTop < wBottom && pBottom > wTop) {
       return true;

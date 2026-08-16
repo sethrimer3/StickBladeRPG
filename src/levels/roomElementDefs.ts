@@ -287,8 +287,8 @@ export interface RoomCrumbleBlockDef {
    * diagonal instead of jagged steps.
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
-  /** 1 if this crumble block is a half-width pillar (4px wide). */
-  isPillarHalfWidthFlag?: 0 | 1;
+  /** Which half of this crumble block is solid, or `HALF_BLOCK_NONE`/omitted. */
+  halfBlockOrientation?: number;
   /** Which elemental type this crumble block is weak to. Defaults to `'normal'`. */
   variant?: CrumbleVariant;
   /** 1 for a Secret Block, whose damage resets on save/death respawn. */

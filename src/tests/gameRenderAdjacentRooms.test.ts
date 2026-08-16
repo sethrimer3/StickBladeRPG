@@ -46,7 +46,7 @@ const wallSnap: WallSnapshot = {
   wWorld: new Float32Array(0), hWorld: new Float32Array(0),
   isPlatformFlag: new Uint8Array(0), platformEdge: new Uint8Array(0),
   themeIndex: new Uint8Array(0), isInvisibleFlag: new Uint8Array(0),
-  rampOrientationIndex: new Uint8Array(0), isPillarHalfWidthFlag: new Uint8Array(0),
+  rampOrientationIndex: new Uint8Array(0), halfBlockOrientation: new Uint8Array(0),
 } as unknown as WallSnapshot;
 
 function baseParams(state: ConnectedRoomRenderState, overrides: Partial<AdjacentRoomDrawParams> = {}): AdjacentRoomDrawParams {

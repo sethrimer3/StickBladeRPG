@@ -278,7 +278,7 @@ export function createSnapshot(world: WorldState): WorldSnapshot {
       themeIndex: world.wallThemeIndex,
       isInvisibleFlag: world.wallIsInvisibleFlag,
       rampOrientationIndex: world.wallRampOrientationIndex,
-      isPillarHalfWidthFlag: world.wallIsPillarHalfWidthFlag,
+      halfBlockOrientation: world.wallHalfBlockOrientation,
       surfaceRimStyleIndex: world.wallSurfaceRimStyleIndex,
       surfaceRimStyleTable: world.wallSurfaceRimStyleTable,
     },

@@ -13,7 +13,7 @@ import { editorPerfCounters, resetEditorPerfCounters } from '../editor/editorPer
 function makeWall(uid: number, overrides: Partial<EditorWall> = {}): EditorWall {
   return {
     uid, xBlock: uid * 3, yBlock: 0, wBlock: 1, hBlock: 1,
-    isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0,
+    isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0,
     ...overrides,
   } as EditorWall;
 }
@@ -147,7 +147,7 @@ test('editor preview without O(n²) merge produces identical surface exposure an
       themeIndex: runtimeTemplate.themeIndex,
       isInvisibleFlag: runtimeTemplate.isInvisibleFlag,
       rampOrientationIndex: runtimeTemplate.rampOrientationIndex,
-      isPillarHalfWidthFlag: runtimeTemplate.isPillarHalfWidthFlag,
+      halfBlockOrientation: runtimeTemplate.halfBlockOrientation,
       surfaceRimStyleIndex: runtimeTemplate.rimStyleIndex,
       surfaceRimStyleTable: runtimeTemplate.rimStyleTable,
     };

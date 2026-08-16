@@ -51,7 +51,7 @@ test('half-width pillar: sand rejected in the occupied 4px half, allowed in the 
   const room = makeRoom({
     interiorWalls: [{
       uid: 1, xBlock: 3, yBlock: 3, wBlock: 1, hBlock: 1,
-      isPlatformFlag: 0, isPillarHalfWidthFlag: 1,
+      isPlatformFlag: 0, halfBlockOrientation: 1,
     }],
   } as unknown as Partial<EditorRoomData>);
   // Occupied half: native px [24,28) x [24,32).

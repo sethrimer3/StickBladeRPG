@@ -129,7 +129,7 @@ test('true 2x2 walls, platforms, ramps, stairs, half-pillars, and Surface Rim ov
       { xBlock: 5, yBlock: 5, wBlock: 4, hBlock: 1, isPlatform: true }, // platform
       { xBlock: 10, yBlock: 10, wBlock: 3, hBlock: 1, rampOrientation: 1 }, // ramp
       { xBlock: 15, yBlock: 15, wBlock: 3, hBlock: 1, stairsOrientation: 2 }, // stairs
-      { xBlock: 20, yBlock: 20, wBlock: 1, hBlock: 1, isPillarHalfWidth: true }, // half pillar
+      { xBlock: 20, yBlock: 20, wBlock: 1, hBlock: 1, halfBlock: true }, // half pillar
       { xBlock: 25, yBlock: 25, wBlock: 3, hBlock: 1, r: 0 }, // Surface Rim override run
     ],
     enemies: [],
@@ -149,7 +149,7 @@ test('true 2x2 walls, platforms, ramps, stairs, half-pillars, and Surface Rim ov
   assert.equal(ramp?.wBlock, 3);
   const stairs = reopened.interiorWalls.find(w => w.stairsOrientation !== undefined);
   assert.equal(stairs?.wBlock, 3);
-  const halfPillar = reopened.interiorWalls.find(w => w.isPillarHalfWidthFlag === 1);
+  const halfPillar = reopened.interiorWalls.find(w => w.halfBlockOrientation === 1);
   assert.ok(halfPillar);
   const rimWall = reopened.interiorWalls.find(w => w.surfaceRim !== undefined);
   assert.equal(rimWall?.wBlock, 3);

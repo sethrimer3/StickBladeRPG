@@ -57,7 +57,7 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
     rampOrientation: w.rampOrientation,
     stairsOrientation: w.stairsOrientation,
     smoothRampOrientation: w.smoothRampOrientation,
-    isPillarHalfWidthFlag: w.isPillarHalfWidthFlag,
+    halfBlockOrientation: w.halfBlockOrientation,
     surfaceRim: w.surfaceRim,
   }));
 
@@ -498,7 +498,7 @@ export function editorRoomDataToRoomDef(data: EditorRoomData): RoomDef {
       rampOrientation: b.rampOrientation,
       stairsOrientation: b.stairsOrientation,
       smoothRampOrientation: b.smoothRampOrientation,
-      isPillarHalfWidthFlag: b.isPillarHalfWidthFlag,
+      halfBlockOrientation: b.halfBlockOrientation,
       variant: b.variant !== 'normal' ? b.variant : undefined,
       isSecretFlag: b.isSecretFlag,
       blockTheme: b.blockTheme,

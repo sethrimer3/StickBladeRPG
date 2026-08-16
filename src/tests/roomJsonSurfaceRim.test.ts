@@ -49,7 +49,7 @@ function makeWall(uid: number, overrides: Partial<EditorWall> = {}): EditorWall 
     uid,
     xBlock: uid, yBlock: 0, wBlock: 1, hBlock: 1,
     isPlatformFlag: 0, platformEdge: 0,
-    isPillarHalfWidthFlag: 0,
+    halfBlockOrientation: 0,
     ...overrides,
   } as EditorWall;
 }

@@ -450,7 +450,7 @@ export function wouldPlacementSucceedAt(
       item.category === 'blocks' &&
       item.isPlatformItem !== 1 &&
       item.isStairsItem !== 1 && item.isSmoothRampItem !== 1 &&
-      item.isPillarHalfWidthItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1 &&
+      item.isHalfBlockItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1 &&
       (state.pendingBlockPlacementModifier === 'tough' || state.pendingBlockPlacementModifier === 'sensitive' || state.pendingBlockPlacementModifier === 'crumbling')
     )) {
       const fallingW = getPlacementWidth(item, state.placementRotationSteps);
@@ -762,7 +762,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       ? platformEdgeMap[state.placementRotationSteps % 4]
       : 0;
 
-    const isPillarHalfWidthFlag: 0 | 1 = item.isPillarHalfWidthItem === 1 ? 1 : 0;
+    const halfBlockOrientation: 0 | 1 = item.isHalfBlockItem === 1 ? 1 : 0;
 
     if (item.isBouncePadItem === 1) {
       const bounceW = getPlacementWidth(item, state.placementRotationSteps);
@@ -871,7 +871,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
         crumbleSmoothRamp = (state.placementFlipH ? (base ^ 1) : base) as 0 | 1 | 2 | 3;
       }
 
-      const crumblePillar: 0 | 1 | undefined = item.isPillarHalfWidthItem === 1 ? 1 : undefined;
+      const crumblePillar: 0 | 1 | undefined = item.isHalfBlockItem === 1 ? 1 : undefined;
 
       // Direction follows the same 90°-CW rotation steps used for ramps/
       // platforms/plain spikes: 0=up, 1=right, 2=down, 3=left (see
@@ -913,7 +913,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
         rampOrientation: crumbleRamp,
         stairsOrientation: crumbleStairs,
         smoothRampOrientation: crumbleSmoothRamp,
-        isPillarHalfWidthFlag: crumblePillar,
+        halfBlockOrientation: crumblePillar,
         variant: state.pendingCrumbleVariant,
         isSecretFlag: state.pendingBlockPlacementModifier === 'secret' ? 1 : undefined,
         blockTheme: placementBlockTheme,
@@ -987,7 +987,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       item.category === 'blocks' &&
       item.isPlatformItem !== 1 &&
       item.isStairsItem !== 1 && item.isSmoothRampItem !== 1 &&
-      item.isPillarHalfWidthItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1 &&
+      item.isHalfBlockItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1 &&
       (state.pendingBlockPlacementModifier === 'tough' || state.pendingBlockPlacementModifier === 'sensitive' || state.pendingBlockPlacementModifier === 'crumbling')
     )) {
       const variant = item.fallingBlockVariant ?? (
@@ -1091,7 +1091,7 @@ function placeAt(state: EditorState, bx: number, by: number): void {
       rampOrientation,
       stairsOrientation,
       smoothRampOrientation,
-      isPillarHalfWidthFlag,
+      halfBlockOrientation,
     });
   } else if (placeEnemyAtCursor(state, room, item, bx, by)) {
     // Enemy or grasshopper area was placed — handled by editorEnemyPlacer

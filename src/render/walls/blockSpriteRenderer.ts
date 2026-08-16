@@ -77,7 +77,7 @@ import {
   render1x1Pass,
   renderPlatformPass,
   renderShapedWallPass,
-  renderHalfPillarPass,
+  renderHalfBlockPass,
   renderSurfaceEdgeOverlayPass,
   clearWallCellDiag,
 } from './wallTilePassRenderers';
@@ -1192,7 +1192,7 @@ function _doRenderWallTilesDirect(
   hadFallbacks = render1x1Pass(ctx, pctx)      || hadFallbacks;
   hadFallbacks = renderPlatformPass(ctx, pctx) || hadFallbacks;
   hadFallbacks = renderShapedWallPass(ctx, pctx) || hadFallbacks;
-  hadFallbacks = renderHalfPillarPass(ctx, pctx) || hadFallbacks;
+  hadFallbacks = renderHalfBlockPass(ctx, pctx) || hadFallbacks;
 
   // Guaranteed surface-edge overlay: drawn from the authoritative
   // surfaceExposureMap after all base wall sprites (and their per-tile

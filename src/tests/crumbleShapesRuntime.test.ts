@@ -9,7 +9,7 @@
  *    smooth-ramp walls, preserving their shape fields.
  *  - Editor rotation cycling `smoothRampOrientation` on a crumble block.
  *  - Full-JSON and compact-V2 serialization round-trips carrying
- *    stairsOrientation/smoothRampOrientation/isPillarHalfWidthFlag (closing
+ *    stairsOrientation/smoothRampOrientation/halfBlockOrientation (closing
  *    the previously-silent compact-format gap for crumble stairs too).
  *  - Runtime hydration: loadRoomHazards() packs the correct shape-orientation
  *    index and half-width footprint into the crumble block's wall slot for
@@ -98,7 +98,7 @@ test('handleCrumbleModifierToggle(true) converts a half-width pillar wall into a
   const room = makeRoom({
     interiorWalls: [{
       uid: 100, xBlock: 3, yBlock: 3, wBlock: 1, hBlock: 2,
-      isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 1, blockTheme: 'blackRock',
+      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 1, blockTheme: 'blackRock',
     } as never],
   });
   const state = createEditorState();
@@ -110,7 +110,7 @@ test('handleCrumbleModifierToggle(true) converts a half-width pillar wall into a
   assert.equal(changed, true, 'half-pillars must now be eligible for cracking (only platforms are excluded)');
   assert.equal(room.interiorWalls.length, 0);
   const block = room.crumbleBlocks![0];
-  assert.equal(block.isPillarHalfWidthFlag, 1);
+  assert.equal(block.halfBlockOrientation, 1);
   assert.equal(block.xBlock, 3);
   assert.equal(block.hBlock, 2);
 
@@ -118,7 +118,7 @@ test('handleCrumbleModifierToggle(true) converts a half-width pillar wall into a
   const changedBack = handleCrumbleModifierToggle(state, history2, false);
   assert.equal(changedBack, true);
   const wall = room.interiorWalls[0] as EditorWall;
-  assert.equal(wall.isPillarHalfWidthFlag, 1, 'pillar flag must survive un-cracking');
+  assert.equal(wall.halfBlockOrientation, 1, 'pillar flag must survive un-cracking');
   assert.equal(wall.hBlock, 2);
 });
 
@@ -128,7 +128,7 @@ test('handleCrumbleModifierToggle(true) converts a smooth-ramp wall into a crumb
   const room = makeRoom({
     interiorWalls: [{
       uid: 101, xBlock: 4, yBlock: 4, wBlock: 2, hBlock: 2,
-      isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0, smoothRampOrientation: 2,
+      isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0, smoothRampOrientation: 2,
     } as never],
   });
   const state = createEditorState();
@@ -164,11 +164,11 @@ test('rotateSelectedElement cycles a crumble smooth-ramp block orientation', () 
 
 // ── Serialization round-trip ─────────────────────────────────────────────────
 
-test('full-JSON round trip preserves crumble smoothRampOrientation and isPillarHalfWidthFlag', () => {
+test('full-JSON round trip preserves crumble smoothRampOrientation and halfBlockOrientation', () => {
   const room = makeRoom({
     crumbleBlocks: [
       { uid: 110, xBlock: 1, yBlock: 1, wBlock: 1, hBlock: 1, smoothRampOrientation: 3, variant: 'ice' } as never,
-      { uid: 111, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 2, isPillarHalfWidthFlag: 1, variant: 'normal' } as never,
+      { uid: 111, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 2, halfBlockOrientation: 1, variant: 'normal' } as never,
     ],
   });
   const json = editorRoomDataToJson(room);
@@ -176,15 +176,15 @@ test('full-JSON round trip preserves crumble smoothRampOrientation and isPillarH
   const ramp = rehydrated.crumbleBlocks!.find(b => b.xBlock === 1)!;
   assert.equal(ramp.smoothRampOrientation, 3);
   const pillar = rehydrated.crumbleBlocks!.find(b => b.xBlock === 2)!;
-  assert.equal(pillar.isPillarHalfWidthFlag, 1);
+  assert.equal(pillar.halfBlockOrientation, 1);
 });
 
-test('compact V2 round trip preserves crumble stairsOrientation (previously silently dropped), smoothRampOrientation, and isPillarHalfWidthFlag', () => {
+test('compact V2 round trip preserves crumble stairsOrientation (previously silently dropped), smoothRampOrientation, and halfBlockOrientation', () => {
   const room = makeRoom({
     crumbleBlocks: [
       { uid: 120, xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, stairsOrientation: 2, variant: 'normal' } as never,
       { uid: 121, xBlock: 1, yBlock: 0, wBlock: 1, hBlock: 1, smoothRampOrientation: 1, variant: 'fire' } as never,
-      { uid: 122, xBlock: 2, yBlock: 0, wBlock: 1, hBlock: 2, isPillarHalfWidthFlag: 1, variant: 'void' } as never,
+      { uid: 122, xBlock: 2, yBlock: 0, wBlock: 1, hBlock: 2, halfBlockOrientation: 1, variant: 'void' } as never,
     ],
   });
   const json = editorRoomDataToJson(room);
@@ -206,7 +206,7 @@ test('compact V2 round trip preserves crumble stairsOrientation (previously sile
   const rampBack = rehydratedJson.crumbleBlocks!.find(c => c.xBlock === 1)!;
   assert.equal(rampBack.smoothRampOrientation, 1);
   const pillarBack = rehydratedJson.crumbleBlocks!.find(c => c.xBlock === 2)!;
-  assert.equal(pillarBack.isPillarHalfWidthFlag, 1);
+  assert.equal(pillarBack.halfBlockOrientation, 1);
 });
 
 // ── Runtime hydration ────────────────────────────────────────────────────────
@@ -246,11 +246,11 @@ test('loadRoomHazards packs a crumble smooth ramp with the smooth-ramp orientati
 test('loadRoomHazards narrows a crumble half-pillar wall slot to half BLOCK_SIZE_MEDIUM width, mirroring normal pillar walls', () => {
   const world = makeWorldWithPlayer(0, 0);
   const room = {
-    crumbleBlocks: [{ xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 2, isPillarHalfWidthFlag: 1, variant: 'normal' }],
+    crumbleBlocks: [{ xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 2, halfBlockOrientation: 1, variant: 'normal' }],
   } as unknown as RoomDef;
   loadRoomHazards(world, room);
   const wi = world.crumbleBlockWallIndex[0];
-  assert.equal(world.wallIsPillarHalfWidthFlag[wi], 1);
+  assert.equal(world.wallHalfBlockOrientation[wi], 1);
   assert.equal(world.wallWWorld[wi], BLOCK_SIZE_MEDIUM / 2, 'width must be halved exactly like gameRoomWalls.ts does for normal pillars');
   assert.equal(world.wallHWorld[wi], 2 * BLOCK_SIZE_MEDIUM, 'height is unaffected by the pillar narrowing');
 });
@@ -289,7 +289,7 @@ test('an active crumble stairs block collides using its real stepped geometry, a
 test('an active crumble half-pillar collides only across its narrow half-width footprint', () => {
   const world = makeWorldWithPlayer(0, 0);
   const room = {
-    crumbleBlocks: [{ xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, isPillarHalfWidthFlag: 1, variant: 'normal' }],
+    crumbleBlocks: [{ xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, halfBlockOrientation: 1, variant: 'normal' }],
   } as unknown as RoomDef;
   loadRoomHazards(world, room);
   const wi = world.crumbleBlockWallIndex[0];
@@ -335,7 +335,7 @@ test('an active crumble smooth ramp uses identical stepped collision to crumble 
 for (const [label, shapeField] of [
   ['stairs', { stairsOrientation: 0 }],
   ['smooth ramp', { smoothRampOrientation: 0 }],
-  ['half-pillar', { isPillarHalfWidthFlag: 1 }],
+  ['half-pillar', { halfBlockOrientation: 1 }],
 ] as const) {
   test(`a broken crumble ${label} block is fully restored (active, solid geometry) when loadRoomHazards reloads the room`, () => {
     const world = makeWorldWithPlayer(0, 0);

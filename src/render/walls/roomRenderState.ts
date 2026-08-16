@@ -183,7 +183,7 @@ export function wallTemplateToSnapshot(t: RoomWallTemplate): WallSnapshot {
     themeIndex:            t.themeIndex,
     isInvisibleFlag:       t.isInvisibleFlag,
     rampOrientationIndex:  t.rampOrientationIndex,
-    isPillarHalfWidthFlag: t.isPillarHalfWidthFlag,
+    halfBlockOrientation: t.halfBlockOrientation,
     surfaceRimStyleIndex:  t.rimStyleIndex,
     surfaceRimStyleTable:  t.rimStyleTable,
   };

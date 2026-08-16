@@ -47,7 +47,7 @@ function zeroArrays(n: number): Pick<
   | 'xWorld' | 'yWorld' | 'wWorld' | 'hWorld'
   | 'isPlatformFlag' | 'platformEdge'
   | 'soundHardnessIndex' | 'isInvisibleFlag'
-  | 'rampOrientationIndex' | 'isPillarHalfWidthFlag'
+  | 'rampOrientationIndex' | 'halfBlockOrientation'
   | 'isIceFlag' | 'isUltraIceFlag' | 'rimStyleIndex'
 > {
   const z = new Array<number>(n).fill(0);
@@ -61,7 +61,7 @@ function zeroArrays(n: number): Pick<
     soundHardnessIndex: [...z],
     isInvisibleFlag: [...z],
     rampOrientationIndex: [...z],
-    isPillarHalfWidthFlag: [...z],
+    halfBlockOrientation: [...z],
     isIceFlag: [...z],
     isUltraIceFlag: [...z],
     rimStyleIndex: new Array<number>(n).fill(0xFFFF),

@@ -45,7 +45,7 @@ function baseState(item: PaletteItem | null, room: EditorRoomData) {
 
 test('3x3 brush: occupied center cell with valid surrounding cells is allowed (partial success)', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = '3x3';
@@ -61,7 +61,7 @@ test('5x5 brush: all cells occupied blocks the entire operation', () => {
   const walls = [];
   for (let dy = -2; dy <= 2; dy++) {
     for (let dx = -2; dx <= 2; dx++) {
-      walls.push({ uid: walls.length + 1, xBlock: 10 + dx, yBlock: 10 + dy, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
+      walls.push({ uid: walls.length + 1, xBlock: 10 + dx, yBlock: 10 + dy, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
     }
   }
   const room = makeRoom({ interiorWalls: walls } as Partial<EditorRoomData>);
@@ -77,7 +77,7 @@ test('5x5 brush: all cells occupied blocks the entire operation', () => {
 
 test('rect brush: partial occupancy inside the dragged rect is allowed', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = 'rect';
@@ -94,7 +94,7 @@ test('rect brush: partial occupancy inside the dragged rect is allowed', () => {
 
 test('rect brush: first click (anchor pending) is always allowed', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 6, yBlock: 6, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 6, yBlock: 6, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = 'rect';
@@ -111,15 +111,15 @@ test('fill brush: partial occupancy within the flood-filled region is allowed', 
   // succeed for the remaining empty cells.
   const walls = [];
   for (let x = 0; x < 30; x++) {
-    walls.push({ uid: walls.length + 1, xBlock: x, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
-    walls.push({ uid: walls.length + 1, xBlock: x, yBlock: 4, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
+    walls.push({ uid: walls.length + 1, xBlock: x, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
+    walls.push({ uid: walls.length + 1, xBlock: x, yBlock: 4, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
   }
   for (let y = 0; y < 5; y++) {
-    walls.push({ uid: walls.length + 1, xBlock: 0, yBlock: y, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
-    walls.push({ uid: walls.length + 1, xBlock: 4, yBlock: y, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
+    walls.push({ uid: walls.length + 1, xBlock: 0, yBlock: y, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
+    walls.push({ uid: walls.length + 1, xBlock: 4, yBlock: y, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
   }
   // Interior empty pocket is x:1..3, y:1..3 (9 cells) — occupy one of them.
-  walls.push({ uid: walls.length + 1, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 });
+  walls.push({ uid: walls.length + 1, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 });
   const room = makeRoom({ interiorWalls: walls } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = 'fill';
@@ -162,7 +162,7 @@ test('hidden layer blocks the entire brush operation', () => {
 
 test('preflight validCount>0 matches placeAtCursor actually placing something', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = '3x3';
@@ -180,7 +180,7 @@ test('preflight validCount>0 matches placeAtCursor actually placing something', 
 
 test('preflight never mutates room data or allocates a uid', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 10, yBlock: 10, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = baseState(BLOCK_ITEM, room);
   state.brushMode = '3x3';

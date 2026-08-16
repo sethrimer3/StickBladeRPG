@@ -69,7 +69,7 @@ function makeWallSnapshot(rects: Array<{ x: number; y: number; w: number; h: num
     themeIndex: new Uint8Array(count).fill(255), // 255 = room default
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: new Uint8Array(count).fill(255), // 255 = not a ramp
-    isPillarHalfWidthFlag: new Uint8Array(count),
+    halfBlockOrientation: new Uint8Array(count),
     surfaceRimStyleIndex: new Uint16Array(count).fill(0xFFFF),
     surfaceRimStyleTable: [],
   };

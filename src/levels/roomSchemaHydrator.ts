@@ -403,7 +403,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
     if (sw.ramp !== undefined) wall.rampOrientation = sw.ramp;
     if (sw.stairs !== undefined) wall.stairsOrientation = sw.stairs;
     if (sw.smoothRamp !== undefined) wall.smoothRampOrientation = sw.smoothRamp;
-    if (sw.half === 1) wall.isPillarHalfWidth = true;
+    if (sw.half === 1) wall.halfBlock = true;
     if (sw.rim !== undefined) wall.r = sw.rim;
     return wall;
   });
@@ -634,7 +634,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
       if (c.ramp !== undefined) entry.rampOrientation = c.ramp;
       if (c.stairs !== undefined) entry.stairsOrientation = c.stairs;
       if (c.smoothRamp !== undefined) entry.smoothRampOrientation = c.smoothRamp;
-      if (c.pillar === 1) entry.isPillarHalfWidthFlag = 1;
+      if (c.pillar === 1) entry.halfBlockOrientation = 1;
       if (c.theme) entry.blockThemeId = c.theme;
       if (c.sd !== undefined) {
         entry.spikeDirection = c.sd;
@@ -731,7 +731,7 @@ export function hydrateV2Room(saved: SavedRoomV2, opts?: { forEditor?: boolean }
       soundHardnessIndex:    b.soundHardnessIndex.slice(),
       isInvisibleFlag:       b.isInvisibleFlag.slice(),
       rampOrientationIndex:  b.rampOrientationIndex.slice(),
-      isPillarHalfWidthFlag: b.isPillarHalfWidthFlag.slice(),
+      halfBlockOrientation: b.halfBlockOrientation.slice(),
       isIceFlag:             b.isIceFlag.slice(),
       isUltraIceFlag:        b.isUltraIceFlag.slice(),
       // Absent on saves predating the Surface Rim system (schemaVersion < 2) —

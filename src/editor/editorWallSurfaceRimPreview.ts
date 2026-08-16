@@ -29,7 +29,7 @@ function _signatureFor(walls: readonly EditorWall[], widthBlocks: number, height
   let s = `${widthBlocks}x${heightBlocks}|${roomTheme ?? ''}|${walls.length}`;
   for (const w of walls) {
     s += `|${w.xBlock},${w.yBlock},${w.wBlock},${w.hBlock},${w.isPlatformFlag},${w.platformEdge},` +
-      `${w.rampOrientation ?? ''},${w.stairsOrientation ?? ''},${w.smoothRampOrientation ?? ''},${w.isPillarHalfWidthFlag},` +
+      `${w.rampOrientation ?? ''},${w.stairsOrientation ?? ''},${w.smoothRampOrientation ?? ''},${w.halfBlockOrientation},` +
       `${w.blockTheme ?? ''},` +
       `${w.surfaceRim ? hashSurfaceRimStyle(normalizeSurfaceRimStyle(w.surfaceRim)) : ''}`;
   }
@@ -70,14 +70,14 @@ export function buildEditorWallSnapshot(room: EditorRoomData): WallSnapshot {
   const themeIndex = new Uint8Array(count);
   const isInvisibleFlag = new Uint8Array(count);
   const rampOrientationIndex = new Uint8Array(count);
-  const isPillarHalfWidthFlag = new Uint8Array(count);
+  const halfBlockOrientation = new Uint8Array(count);
   const surfaceRimStyleIndex = new Uint16Array(count);
   const surfaceRimStyleTable: SurfaceRimStyle[] = [];
 
   for (let i = 0; i < count; i++) {
     const def = i < boundaryWalls.length ? boundaryWalls[i] : interiorWalls[i - boundaryWalls.length];
-    const isHalfWidthPillar = def.isPillarHalfWidthFlag === 1;
-    const rawWWorld = isHalfWidthPillar
+    const isHalfBlock = def.halfBlockOrientation === 1;
+    const rawWWorld = isHalfBlock
       ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
       : Math.max(BLOCK_SIZE_MEDIUM, def.wBlock * BLOCK_SIZE_MEDIUM);
 
@@ -90,7 +90,7 @@ export function buildEditorWallSnapshot(room: EditorRoomData): WallSnapshot {
     themeIndex[i] = def.blockTheme !== undefined ? blockThemeToIndex(def.blockTheme) : WALL_THEME_DEFAULT_INDEX;
     isInvisibleFlag[i] = 'isInvisibleFlag' in def && def.isInvisibleFlag === 1 ? 1 : 0;
     rampOrientationIndex[i] = wallShapeOrientationIndex(def);
-    isPillarHalfWidthFlag[i] = isHalfWidthPillar ? 1 : 0;
+    halfBlockOrientation[i] = isHalfBlock ? 1 : 0;
     surfaceRimStyleIndex[i] = internSurfaceRimStyle(surfaceRimStyleTable, def.surfaceRim);
   }
 
@@ -105,7 +105,7 @@ export function buildEditorWallSnapshot(room: EditorRoomData): WallSnapshot {
     themeIndex,
     isInvisibleFlag,
     rampOrientationIndex,
-    isPillarHalfWidthFlag,
+    halfBlockOrientation,
     surfaceRimStyleIndex,
     surfaceRimStyleTable,
   };

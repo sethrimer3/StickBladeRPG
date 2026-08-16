@@ -129,7 +129,7 @@ test('refreshSnapshotWorldArrayRefs re-points all wall array buffers including i
   assert.equal(snapshot.walls.isInvisibleFlag, world2.wallIsInvisibleFlag);
   assert.equal(snapshot.walls.rampOrientationIndex, world2.wallRampOrientationIndex);
   assert.equal(snapshot.walls.themeIndex, world2.wallThemeIndex);
-  assert.equal(snapshot.walls.isPillarHalfWidthFlag, world2.wallIsPillarHalfWidthFlag);
+  assert.equal(snapshot.walls.halfBlockOrientation, world2.wallHalfBlockOrientation);
   assert.equal(snapshot.walls.surfaceRimStyleIndex, world2.wallSurfaceRimStyleIndex);
   assert.equal(snapshot.walls.surfaceRimStyleTable, world2.wallSurfaceRimStyleTable);
 });

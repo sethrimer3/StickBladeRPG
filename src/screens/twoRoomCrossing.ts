@@ -303,14 +303,15 @@ export function appendRoomWallsAtOffset(
 
     const def = room.walls[wi];
     const idx = world.wallCount++;
-    const isHalfWidth = def.isPillarHalfWidthFlag === 1;
+    const halfBlockOrientation = def.halfBlockOrientation ?? HALF_BLOCK_NONE;
+    const r = halfBlockWorldRect(
+      def.xBlock, def.yBlock, def.wBlock, def.hBlock, halfBlockOrientation, BLOCK_SIZE_MEDIUM,
+    );
 
-    world.wallXWorld[idx] = def.xBlock * BLOCK_SIZE_MEDIUM + offsetXWorld;
-    world.wallYWorld[idx] = def.yBlock * BLOCK_SIZE_MEDIUM + offsetYWorld;
-    world.wallWWorld[idx] = isHalfWidth
-      ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
-      : Math.max(BLOCK_SIZE_MEDIUM,     def.wBlock * BLOCK_SIZE_MEDIUM);
-    world.wallHWorld[idx] = Math.max(BLOCK_SIZE_MEDIUM, def.hBlock * BLOCK_SIZE_MEDIUM);
+    world.wallXWorld[idx] = r.x + offsetXWorld;
+    world.wallYWorld[idx] = r.y + offsetYWorld;
+    world.wallWWorld[idx] = r.w;
+    world.wallHWorld[idx] = r.h;
 
     world.wallIsPlatformFlag[idx]        = def.isPlatformFlag === 1 ? 1 : 0;
     world.wallPlatformEdge[idx]          = def.platformEdge ?? 0;
@@ -323,7 +324,7 @@ export function appendRoomWallsAtOffset(
     );
     world.wallIsInvisibleFlag[idx]       = def.isInvisibleFlag === 1 ? 1 : 0;
     world.wallRampOrientationIndex[idx]  = wallShapeOrientationIndex(def);
-    world.wallIsPillarHalfWidthFlag[idx] = isHalfWidth ? 1 : 0;
+    world.wallHalfBlockOrientation[idx] = halfBlockOrientation;
     world.wallIsBouncePadFlag[idx]       = 0;
     world.wallBouncePadSpeedFactorIndex[idx] = 0;
   }

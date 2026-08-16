@@ -50,7 +50,7 @@ export interface SerializedWallTemplate {
   soundHardnessIndex: ArrayBuffer;
   isInvisibleFlag: ArrayBuffer;
   rampOrientationIndex: ArrayBuffer;
-  isPillarHalfWidthFlag: ArrayBuffer;
+  halfBlockOrientation: ArrayBuffer;
   isIceFlag: ArrayBuffer;
   isUltraIceFlag: ArrayBuffer;
   isRocketBlockFlag: ArrayBuffer;

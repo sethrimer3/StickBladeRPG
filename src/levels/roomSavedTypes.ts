@@ -102,7 +102,7 @@ export interface SavedSolids {
 /**
  * A "special" wall entry that cannot participate in the uniform tile-grid
  * cover used by `SavedSolids` — i.e. one-way platforms, stairs, legacy ramps,
- * and half-width pillars.  These travel in `specialWalls` and bypass the
+ * and half-blocks.  These travel in `specialWalls` and bypass the
  * tile-grid compressor entirely.
  */
 export interface SavedSpecialWall {
@@ -120,8 +120,8 @@ export interface SavedSpecialWall {
   stairs?: 0 | 1 | 2 | 3;
   /** Smooth-ramp orientation 0-3 — stairs collision, smooth diagonal render (omit if not a smooth ramp). */
   smoothRamp?: 0 | 1 | 2 | 3;
-  /** 1 if half-width pillar. */
-  half?: 1;
+  /** Which half of the rect is solid: 0=left, 1=right, 2=top, 3=bottom (omit if full extent). */
+  half?: 0 | 1 | 2 | 3;
   /** Index into the room-level `rimStyles` table. */
   rim?: number;
 }
@@ -246,8 +246,8 @@ export interface SavedCrumble {
   stairs?: 0 | 1 | 2 | 3;
   /** Smooth-ramp orientation 0-3 (omit if not a smooth ramp). */
   smoothRamp?: 0 | 1 | 2 | 3;
-  /** 1 if this crumble block is a half-width pillar (omit if not). */
-  pillar?: 1;
+  /** Which half of this crumble block is solid: 0=left, 1=right, 2=top, 3=bottom (omit if full extent). */
+  half?: 0 | 1 | 2 | 3;
   /** Block theme ID override (omit if using room default). */
   theme?: string;
   /** Spike direction (omit unless this crumble entry is a crumble spike). */

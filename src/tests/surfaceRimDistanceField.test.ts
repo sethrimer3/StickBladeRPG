@@ -30,7 +30,7 @@ function snapshot(specs: WallSpec[], styleTable?: SurfaceRimStyle[]): WallSnapsh
     themeIndex: new Uint8Array(count).fill(255),
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: Uint8Array.from(specs.map(s => s.shape ?? 255)),
-    isPillarHalfWidthFlag: Uint8Array.from(specs.map(s => s.pillar ? 1 : 0)),
+    halfBlockOrientation: Uint8Array.from(specs.map(s => s.pillar ? 1 : 0)),
     surfaceRimStyleIndex: Uint16Array.from(specs.map(s => s.style ? table.indexOf(s.style) : 0xFFFF)),
     surfaceRimStyleTable: table,
   };

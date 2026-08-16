@@ -310,9 +310,9 @@ export function drawEditorCrumbleBlocks(
       ctx.strokeStyle = sel ? 'rgba(220,160,50,0.90)' : 'rgba(200,150,60,0.55)';
       ctx.lineWidth = sel ? 2 : 1;
       ctx.stroke();
-    } else if (b.isPillarHalfWidthFlag === 1) {
+    } else if (b.halfBlockOrientation === 1) {
       // Half-width pillar — narrow rect (half the block's AABB width), plus
-      // a faint outline of the full block extent, mirroring drawHalfPillarRect.
+      // a faint outline of the full block extent, mirroring drawHalfBlockRect.
       const halfW = wPx / 2;
       ctx.fillRect(xPx, yPx, halfW, hPx);
       ctx.strokeStyle = sel ? 'rgba(220,160,50,0.90)' : 'rgba(200,150,60,0.55)';

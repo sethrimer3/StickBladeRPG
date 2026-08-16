@@ -69,7 +69,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
       rampOrientation: w.rampOrientation,
       stairsOrientation: w.stairsOrientation,
       smoothRampOrientation: w.smoothRampOrientation,
-      isPillarHalfWidthFlag: w.isPillarHalfWidth ? (1 as const) : (0 as const),
+      halfBlockOrientation: w.halfBlock ? (1 as const) : (0 as const),
     };
     if (w.r !== undefined && rimStylesTable !== undefined && rimStylesTable[w.r] !== undefined) {
       wall.surfaceRim = decodeSurfaceRimStyle(rimStylesTable[w.r]);
@@ -476,7 +476,7 @@ export function roomJsonDefToRoomDef(json: RoomJsonDef): RoomDef {
       rampOrientation: b.rampOrientation,
       stairsOrientation: b.stairsOrientation,
       smoothRampOrientation: b.smoothRampOrientation,
-      isPillarHalfWidthFlag: b.isPillarHalfWidthFlag,
+      halfBlockOrientation: b.halfBlockOrientation,
       variant: b.variant !== 'normal' ? b.variant : undefined,
       isSecretFlag: b.isSecretFlag,
       blockTheme: blockThemeRefToTheme(b.blockThemeId) ?? b.blockTheme,

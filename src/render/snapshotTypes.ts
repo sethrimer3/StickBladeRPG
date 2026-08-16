@@ -68,7 +68,7 @@ export interface WallSnapshot {
   /** Ramp orientation: 255=not a ramp, 0=rises right(/), 1=rises left(\), 2=ceiling⌐, 3=ceiling¬. */
   readonly rampOrientationIndex: Uint8Array;
   /** 1 if the wall is a half-width pillar (4 px wide). */
-  readonly isPillarHalfWidthFlag: Uint8Array;
+  readonly halfBlockOrientation: Uint8Array;
   /**
    * Per-wall Surface Rim style index — index into `surfaceRimStyleTable`, or
    * `SURFACE_RIM_STYLE_INDEX_DEFAULT` (0xFFFF) to use the default (original

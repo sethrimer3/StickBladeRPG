@@ -137,6 +137,28 @@ export interface TileSolidityGrid {
   readonly heightBlocks: number;
   readonly blockSizePx: number;
   isSolidAt(col: number, row: number): boolean;
+  /**
+   * Optional sub-tile geometry probe, in world pixels.
+   *
+   * Stairs, ramps and half-width pillars occupy a tile only *partially*, so
+   * they are deliberately NOT reported by `isSolidAt` — a full-tile square
+   * rim around a diagonal stair would be wrong. But their solid pixels still
+   * have to suppress a neighbouring full block's rim wherever the two are
+   * flush (e.g. the tall riser column of a stair butted against a wall, or a
+   * stair's fully-solid bottom row sitting on the floor below it).
+   *
+   * When supplied, a candidate open-air cell is treated as NOT open air for a
+   * given shared edge if this reports every world pixel along that edge as
+   * sub-tile solid (and, for the diagonal concave-corner test, the single
+   * corner pixel touching the origin tile). Partially-covered edges stay
+   * exposed, which is exactly what makes a stair's staircase profile read as
+   * an outline rather than a square.
+   *
+   * The sub-tile shapes themselves get their own pixel-accurate rim from
+   * `subTileRimPixels` (see blockWallLayoutCache.ts) — this hook only governs
+   * how *full* tiles see them.
+   */
+  isSubTileSolidAtPx?(xPx: number, yPx: number): boolean;
 }
 
 export interface BuildSurfaceExposureOptions {
@@ -219,6 +241,9 @@ function computeConnectedOpenAir(
  *   3. The neighbour cell is non-solid.
  *   4. (optional) The neighbour cell is part of the connected-open-air
  *      region, when `options.connectedOpenAirOnly` is set.
+ *   5. (optional) The neighbour cell's sub-tile geometry does not fully cover
+ *      the shared edge, when `grid.isSubTileSolidAtPx` is supplied — see that
+ *      hook's doc comment for why stairs/ramps/half pillars need it.
  *
  * Out-of-bounds neighbours never count as open air, and internal sides
  * between two solid tiles are never exposed.
@@ -232,12 +257,53 @@ export function buildSurfaceExposureMap(
     ? computeConnectedOpenAir(grid, options?.openAirSeeds ?? [])
     : null;
 
-  const isOpenAir = (col: number, row: number): boolean => {
+  const isOpenAirCell = (col: number, row: number): boolean => {
     if (!inBounds(grid, col, row)) return false;
     if (grid.isSolidAt(col, row)) return false;
     if (openAir !== null && !openAir.has(tileKey(col, row))) return false;
     return true;
   };
+
+  // ── Sub-tile geometry (stairs / ramps / half pillars) ───────────────────────
+  const probeSubTile = grid.isSubTileSolidAtPx;
+  const bs = grid.blockSizePx;
+
+  /**
+   * True when the cell at (col, row) has sub-tile geometry covering the WHOLE
+   * of the edge named by `facing` (that cell's own side, i.e. the side facing
+   * back at the tile that is asking). A fully covered edge means the asking
+   * tile is flush against solid geometry there and must not draw a rim.
+   */
+  const subTileCoversEdge = (col: number, row: number, facing: SurfaceSide): boolean => {
+    if (probeSubTile === undefined) return false;
+    const x0 = col * bs;
+    const y0 = row * bs;
+    for (let i = 0; i < bs; i++) {
+      const x = facing === 'left' ? x0 : facing === 'right' ? x0 + bs - 1 : x0 + i;
+      const y = facing === 'top' ? y0 : facing === 'bottom' ? y0 + bs - 1 : y0 + i;
+      if (!probeSubTile(x, y)) return false;
+    }
+    return true;
+  };
+
+  /**
+   * Diagonal analogue of `subTileCoversEdge`: the concave-corner test only
+   * cares about the single pixel of the diagonal cell that touches the asking
+   * tile's corner, since that is all that is visible in the notch.
+   */
+  const subTileCoversCornerPixel = (col: number, row: number, corner: CornerSide): boolean => {
+    if (probeSubTile === undefined) return false;
+    // `corner` names the corner OF THE DIAGONAL CELL that touches the asker.
+    const x = corner === 'nw' || corner === 'sw' ? col * bs : col * bs + bs - 1;
+    const y = corner === 'nw' || corner === 'ne' ? row * bs : row * bs + bs - 1;
+    return probeSubTile(x, y);
+  };
+
+  const isOpenAir = (col: number, row: number, facing: SurfaceSide): boolean =>
+    isOpenAirCell(col, row) && !subTileCoversEdge(col, row, facing);
+
+  const isOpenAirDiagonal = (col: number, row: number, corner: CornerSide): boolean =>
+    isOpenAirCell(col, row) && !subTileCoversCornerPixel(col, row, corner);
 
   const masks = new Map<string, SurfaceMask>();
   const segments: SurfaceSegment[] = [];
@@ -249,10 +315,12 @@ export function buildSurfaceExposureMap(
     for (let col = 0; col < grid.widthBlocks; col++) {
       if (!grid.isSolidAt(col, row)) continue;
 
-      const top    = isOpenAir(col, row - 1);
-      const right  = isOpenAir(col + 1, row);
-      const bottom = isOpenAir(col, row + 1);
-      const left   = isOpenAir(col - 1, row);
+      // The `facing` argument is the neighbour's OWN side that touches this
+      // tile — the mirror of the side being tested.
+      const top    = isOpenAir(col, row - 1, 'bottom');
+      const right  = isOpenAir(col + 1, row, 'left');
+      const bottom = isOpenAir(col, row + 1, 'top');
+      const left   = isOpenAir(col - 1, row, 'right');
       const mask: SurfaceMask = { top, right, bottom, left };
 
       // Concave (inner) corner: both cardinal neighbours adjacent to the
@@ -262,10 +330,10 @@ export function buildSurfaceExposureMap(
       // "inner corner" / staircase-notch pattern, and is intentionally
       // independent of `mask` above: a tile can have a concave corner with
       // zero exposed cardinal sides at all.
-      const nw = !top && !left   && isOpenAir(col - 1, row - 1);
-      const ne = !top && !right  && isOpenAir(col + 1, row - 1);
-      const sw = !bottom && !left  && isOpenAir(col - 1, row + 1);
-      const se = !bottom && !right && isOpenAir(col + 1, row + 1);
+      const nw = !top && !left   && isOpenAirDiagonal(col - 1, row - 1, 'se');
+      const ne = !top && !right  && isOpenAirDiagonal(col + 1, row - 1, 'sw');
+      const sw = !bottom && !left  && isOpenAirDiagonal(col - 1, row + 1, 'ne');
+      const se = !bottom && !right && isOpenAirDiagonal(col + 1, row + 1, 'nw');
       const cornerMask: CornerMask = { nw, ne, sw, se };
 
       if (cornerMaskHasAnyCorner(cornerMask)) {

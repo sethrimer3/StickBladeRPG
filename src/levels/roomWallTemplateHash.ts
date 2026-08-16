@@ -97,7 +97,7 @@ export function computeWallTemplateSourceHash(json: RoomJsonDef): string {
     // Must stay in lockstep with scripts/bake-room-wall-templates.mjs — a
     // mismatch would let a stale baked template survive a stairs edit.
     hashStr(String(w.stairsOrientation ?? ''));
-    hashBool(w.isPillarHalfWidth);
+    hashBool(w.halfBlock);
     hashStr(String(w.r ?? ''));
   }
   // Surface Rim style table content — two rooms with different `rimStyles`
@@ -165,7 +165,7 @@ export function hydrateAndValidateBakedWallTemplate(
     ['soundHardnessIndex', baked.soundHardnessIndex],
     ['isInvisibleFlag', baked.isInvisibleFlag],
     ['rampOrientationIndex', baked.rampOrientationIndex],
-    ['isPillarHalfWidthFlag', baked.isPillarHalfWidthFlag],
+    ['halfBlockOrientation', baked.halfBlockOrientation],
     ['isIceFlag', baked.isIceFlag],
     ['isUltraIceFlag', baked.isUltraIceFlag],
     ['rimStyleIndex', baked.rimStyleIndex],
@@ -225,7 +225,7 @@ export function hydrateAndValidateBakedWallTemplate(
     soundHardnessIndex:    Uint8Array.from(baked.soundHardnessIndex),
     isInvisibleFlag:       Uint8Array.from(baked.isInvisibleFlag),
     rampOrientationIndex:  Uint8Array.from(baked.rampOrientationIndex),
-    isPillarHalfWidthFlag: Uint8Array.from(baked.isPillarHalfWidthFlag),
+    halfBlockOrientation: Uint8Array.from(baked.halfBlockOrientation),
     isIceFlag:             Uint8Array.from(baked.isIceFlag),
     isUltraIceFlag:        Uint8Array.from(baked.isUltraIceFlag),
     isRocketBlockFlag,

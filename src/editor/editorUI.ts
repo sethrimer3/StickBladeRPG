@@ -849,7 +849,7 @@ export function createEditorUI(
   // guard in editorPlaceTool.ts's falling-modifier branch.
   function supportsFallingModifier(item: PaletteItem): boolean {
     return item.isStairsItem !== 1 && item.isSmoothRampItem !== 1 &&
-      item.isPillarHalfWidthItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1;
+      item.isHalfBlockItem !== 1 && item.isSpikeItem !== 1 && item.isLaserItem !== 1;
   }
   let lastFallingModifierSupported: boolean | null = null;
 

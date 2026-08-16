@@ -134,10 +134,14 @@ export function resetSecretCrumbleBlocksInWorld(world: WorldState, room: RoomDef
       const def = defs[i];
       const wBlocks = def.wBlock ?? 1;
       const hBlocks = def.hBlock ?? 1;
-      world.wallWWorld[wi] = def.isPillarHalfWidthFlag === 1
-        ? Math.max(BLOCK_SIZE_MEDIUM / 2, wBlocks * (BLOCK_SIZE_MEDIUM / 2))
-        : wBlocks * BLOCK_SIZE_MEDIUM;
-      world.wallHWorld[wi] = hBlocks * BLOCK_SIZE_MEDIUM;
+      const r = halfBlockWorldRect(
+        def.xBlock, def.yBlock, wBlocks, hBlocks,
+        def.halfBlockOrientation ?? HALF_BLOCK_NONE, BLOCK_SIZE_MEDIUM,
+      );
+      world.wallXWorld[wi] = r.x;
+      world.wallYWorld[wi] = r.y;
+      world.wallWWorld[wi] = r.w;
+      world.wallHWorld[wi] = r.h;
     }
     if (wasDamaged) resetCount++;
   }

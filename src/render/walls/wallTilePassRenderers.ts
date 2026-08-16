@@ -10,7 +10,7 @@
  *   2. render1x1Pass        — 1×1 auto-tiling tiles
  *   3. renderPlatformPass   — one-way platform tiles
  *   4. renderShapedWallPass — stairs and legacy ramps (template-mask shapes)
- *   5. renderHalfPillarPass — narrow half-width pillar walls
+ *   5. renderHalfBlockPass — narrow half-width pillar walls
  */
 
 import type { WallSnapshot } from '../snapshot';
@@ -49,7 +49,7 @@ import { getLegacyShadedSprite, getLegacyUnshadedSprite } from './legacyBlockSha
 import * as FP from '../../debug/perfFreezeProfiler';
 import type { CachedWallLayout } from './blockWallLayoutCache';
 import { isWallOccupied } from './blockWallLayoutCache';
-import type { CachedTileCoord, ShapedWallInfo, HalfPillarWallInfo } from './blockWallLayoutCache';
+import type { CachedTileCoord, ShapedWallInfo, HalfBlockWallInfo } from './blockWallLayoutCache';
 import { getSurfaceMaskAtTile, type SurfaceMask } from '../../sim/world/surfaceExposure';
 import {
   decodeSmoothRampOrientationIndex,
@@ -207,7 +207,7 @@ function surfaceMaskToOpenAirBits(mask: SurfaceMask): number {
 // Pre-allocated empty arrays used as fallbacks when a chunk has no items of a type.
 const _EMPTY_TILES: CachedTileCoord[]     = [];
 const _EMPTY_SHAPED: ShapedWallInfo[]        = [];
-const _EMPTY_PILLARS: HalfPillarWallInfo[] = [];
+const _EMPTY_HALF_BLOCKS: HalfBlockWallInfo[] = [];
 const _EMPTY_2X2: ReadonlyArray<readonly [string, number]> = [];
 
 // ── Shared context ────────────────────────────────────────────────────────────
@@ -793,7 +793,7 @@ export function renderShapedWallPass(
  * Returns `true` if any placeholder tile was drawn (always false — pillars use
  * immediate solid-color drawing with no sprite loading).
  */
-export function renderHalfPillarPass(
+export function renderHalfBlockPass(
   ctx: CanvasRenderingContext2D,
   pctx: WallTilePassContext,
 ): boolean {
@@ -803,9 +803,9 @@ export function renderHalfPillarPass(
           chunkKey } = pctx;
 
   // Pre-bucketed path: only iterate pillars that overlap this chunk.
-  const pillarList: HalfPillarWallInfo[] = chunkKey !== null
-    ? (wallLayout.halfPillarByChunkKey.get(chunkKey) ?? _EMPTY_PILLARS)
-    : wallLayout.halfPillarWalls;
+  const pillarList: HalfBlockWallInfo[] = chunkKey !== null
+    ? (wallLayout.halfBlockByChunkKey.get(chunkKey) ?? _EMPTY_HALF_BLOCKS)
+    : wallLayout.halfBlockWalls;
 
   for (let pi = 0; pi < pillarList.length; pi++) {
     const wi = pillarList[pi].wallIndex;

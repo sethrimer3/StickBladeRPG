@@ -144,8 +144,8 @@ export interface RoomJsonWall {
    * smooth diagonal triangle. Same 0-3 convention as `rampOrientation`.
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
-  /** true if this pillar wall is half-block wide (4 px). */
-  isPillarHalfWidth?: boolean;
+  /** Which half of this wall is solid. Omitted for a normal full-extent wall. */
+  halfBlock?: HalfBlockOrientationName;
   /**
    * Index into the room-level `rimStyles` dedup table (see RoomJsonDef).
    * Omitted when this block uses the 'default' Surface Rim style.
@@ -267,8 +267,8 @@ export interface RoomJsonCrumbleBlock {
    * wall-shape `smoothRampOrientation` field.
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
-  /** 1 if this crumble block is a half-width pillar. Absent/0 = not a pillar. */
-  isPillarHalfWidthFlag?: 0 | 1;
+  /** Which half of this crumble block is solid. Absent = full extent. */
+  halfBlock?: HalfBlockOrientationName;
   /** Elemental weakness variant. Defaults to `'normal'` when absent. */
   variant?: CrumbleVariant;
   /** 1 for a Secret Block, whose damage resets on save/death respawn. */
@@ -678,7 +678,7 @@ export interface RoomJsonBakedWallTemplate {
   soundHardnessIndex: number[];
   isInvisibleFlag: number[];
   rampOrientationIndex: number[];
-  isPillarHalfWidthFlag: number[];
+  halfBlockOrientation: number[];
   isIceFlag: number[];
   isUltraIceFlag: number[];
   /**

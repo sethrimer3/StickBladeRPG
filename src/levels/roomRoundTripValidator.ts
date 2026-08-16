@@ -85,7 +85,7 @@ function buildBgBlockMap(blocks: RoomJsonBackgroundBlock[] | undefined): Map<str
 function buildCoverageMap(walls: RoomJsonWall[]): Map<string, string | undefined> {
   const map = new Map<string, string | undefined>();
   for (const w of walls) {
-    if (w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.isPillarHalfWidth) continue;
+    if (w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.halfBlock) continue;
     const themeVal = w.blockTheme ?? undefined;
     for (const key of wallCells(w)) map.set(key, themeVal);
   }
@@ -100,7 +100,7 @@ function buildV1GrainSet(walls: RoomJsonWall[]): Set<string> {
   const v1 = new Set<string>();
   const v2plus = new Set<string>();
   for (const w of walls) {
-    if (w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.isPillarHalfWidth) continue;
+    if (w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.halfBlock) continue;
     const cells = wallCells(w);
     if (w.hBlock === 1) {
       for (const k of cells) if (!v2plus.has(k)) v1.add(k);
@@ -187,10 +187,10 @@ export function validateRoundTrip(json: RoomJsonDef): RoundTripValidationResult 
 
   // ── 3. Special walls ──────────────────────────────────────────────────────
   const specialBefore = json.interiorWalls.filter(w =>
-    w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.isPillarHalfWidth,
+    w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.halfBlock,
   );
   const specialAfter = roundTripped.interiorWalls.filter(w =>
-    w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.isPillarHalfWidth,
+    w.isPlatform || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.halfBlock,
   );
   if (specialBefore.length !== specialAfter.length) {
     errors.push(`Special wall count changed: ${specialBefore.length} → ${specialAfter.length}`);
@@ -272,7 +272,7 @@ export function validateRoundTrip(json: RoomJsonDef): RoundTripValidationResult 
       const arrayFields: (keyof typeof btBefore)[] = [
         'xWorld', 'yWorld', 'wWorld', 'hWorld',
         'isPlatformFlag', 'platformEdge', 'themeIndex', 'soundHardnessIndex',
-        'isInvisibleFlag', 'rampOrientationIndex', 'isPillarHalfWidthFlag',
+        'isInvisibleFlag', 'rampOrientationIndex', 'halfBlockOrientation',
         'isIceFlag', 'isUltraIceFlag',
       ];
       for (const field of arrayFields) {

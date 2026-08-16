@@ -177,7 +177,7 @@ function makeEmptyTemplate(): RoomWallTemplate {
     soundHardnessIndex: new Uint8Array(0),
     isInvisibleFlag: new Uint8Array(0),
     rampOrientationIndex: new Uint8Array(0),
-    isPillarHalfWidthFlag: new Uint8Array(0),
+    halfBlockOrientation: new Uint8Array(0),
     isIceFlag: new Uint8Array(0),
     isUltraIceFlag: new Uint8Array(0),
     rimStyleIndex: new Uint16Array(0),
@@ -198,7 +198,7 @@ test('wallTemplateToSnapshot is a zero-copy view (shared typed arrays)', () => {
     themeIndex: new Uint8Array([255, 1]),
     isInvisibleFlag: new Uint8Array([0, 0]),
     rampOrientationIndex: new Uint8Array([255, 4]),
-    isPillarHalfWidthFlag: new Uint8Array([0, 1]),
+    halfBlockOrientation: new Uint8Array([0, 1]),
     rimStyleIndex: new Uint16Array([0xFFFF, 0xFFFF]),
     rimStyleTable: [],
   } as RoomWallTemplate;
@@ -214,5 +214,5 @@ test('wallTemplateToSnapshot is a zero-copy view (shared typed arrays)', () => {
   assert.equal(s.themeIndex, t.themeIndex);
   assert.equal(s.isInvisibleFlag, t.isInvisibleFlag);
   assert.equal(s.rampOrientationIndex, t.rampOrientationIndex);
-  assert.equal(s.isPillarHalfWidthFlag, t.isPillarHalfWidthFlag);
+  assert.equal(s.halfBlockOrientation, t.halfBlockOrientation);
 });

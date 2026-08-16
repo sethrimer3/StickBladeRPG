@@ -76,7 +76,7 @@ export interface PaletteItem {
    */
   isSmoothRampItem?: 1;
   /** 1 if this palette item places a half-width pillar (4 px wide). */
-  isPillarHalfWidthItem?: 1;
+  isHalfBlockItem?: 1;
   /** 1 if this palette item paints ambient-light blocker tiles. */
   isAmbientLightBlockerItem?: 1;
   /** 1 if this palette item paints dark ambient-light blocker tiles (also draws a black background overlay). */
@@ -170,7 +170,7 @@ export const PALETTE_ITEMS: readonly PaletteItem[] = [
   { id: 'ramp_1x1', label: '1×1 Ramp', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isSmoothRampItem: 1 },
   { id: 'ramp_1x2', label: '1×2 Ramp', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 1, isSmoothRampItem: 1 },
   { id: 'ramp_2x2', label: '2×2 Ramp', category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isSmoothRampItem: 1 },
-  { id: 'pillar_half_width', label: 'Half-width Pillar', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isPillarHalfWidthItem: 1 },
+  { id: 'pillar_half_width', label: 'Half-width Pillar', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isHalfBlockItem: 1 },
   { id: 'spike_1x1', label: '1×1 Spike',  category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isSpikeItem: 1, spikeSize: '1x1' },
   { id: 'spike_2x2', label: '2×2 Spike',  category: 'blocks', defaultWidthBlocks: 2, defaultHeightBlocks: 2, isSpikeItem: 1, spikeSize: '2x2' },
   { id: 'laser_emitter', label: 'Laser Emitter', category: 'blocks', defaultWidthBlocks: 1, defaultHeightBlocks: 1, isLaserItem: 1 },

@@ -481,10 +481,11 @@ export interface RoomWallDef {
    */
   smoothRampOrientation?: 0 | 1 | 2 | 3;
   /**
-   * 1 if this pillar wall is rendered and collides at half-block width (4 px).
-   * Only meaningful for walls that are 1×2 blocks and serve as pillars.
+   * Which half of this wall's block extent is solid (0=left, 1=right, 2=top,
+   * 3=bottom), or `HALF_BLOCK_NONE`/omitted for a normal full-extent wall.
+   * See levels/halfBlockGeometry.ts — the AABB narrowing happens there.
    */
-  isPillarHalfWidthFlag?: 0 | 1;
+  halfBlockOrientation?: number;
   /**
    * Per-wall Surface Rim style override (see render/walls/surfaceRimStyle.ts).
    * Undefined = 'default' style — preserves the original hard-coded
@@ -994,7 +995,7 @@ export interface RoomWallTemplate {
    * against a bare literal.
    */
   readonly rampOrientationIndex: Uint8Array;
-  readonly isPillarHalfWidthFlag: Uint8Array;
+  readonly halfBlockOrientation: Uint8Array;
   /** 1 for walls whose theme is 'ice' — used for ice-surface physics and grapple rejection. */
   readonly isIceFlag: Uint8Array;
   /** 1 for walls whose theme is 'ultraIceBlock' — velocity lock and grapple recharge suppression. */

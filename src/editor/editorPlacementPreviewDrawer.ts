@@ -31,7 +31,7 @@ import {
   SKILL_TOMB_FOOTPRINT_W_BLOCKS, SKILL_TOMB_FOOTPRINT_H_BLOCKS,
   getDirectionVector, buildElementTooltipId, buildElementTypeName,
   drawHoverTooltip, drawBlockRect, drawRampTriangle, drawStairsShape,
-  drawPlatformLine, drawHalfPillarRect, drawMarker, drawObjectFootprint,
+  drawPlatformLine, drawHalfBlockRect, drawMarker, drawObjectFootprint,
   drawTransitionZone,
 } from './editorRendererHelpers';
 import { loadImg, isSpriteReady } from '../render/imageCache';
@@ -373,7 +373,7 @@ export function drawPlacementPreview(
         isPlatformFlag: 0,
         platformEdge: 0,
         rampOrientation: rampOri,
-        isPillarHalfWidthFlag: 0,
+        halfBlockOrientation: 0,
       };
       drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, 'rgba(210,180,100,0.30)', 2);
     } else {
@@ -449,7 +449,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       stairsOrientation: stairsOri,
-      isPillarHalfWidthFlag: 0,
+      halfBlockOrientation: 0,
     };
     drawStairsShape(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_STAIRS_COLOR, 2);
     return;
@@ -468,7 +468,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       rampOrientation: rampOri,
-      isPillarHalfWidthFlag: 0,
+      halfBlockOrientation: 0,
     };
     drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_RAMP_COLOR, 2);
     return;
@@ -487,7 +487,7 @@ export function drawPlacementPreview(
       isPlatformFlag: 0,
       platformEdge: 0,
       smoothRampOrientation: smoothRampOri,
-      isPillarHalfWidthFlag: 0,
+      halfBlockOrientation: 0,
     };
     drawRampTriangle(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_RAMP_COLOR, 2);
     return;
@@ -504,13 +504,13 @@ export function drawPlacementPreview(
       hBlock: preview.hBlock,
       isPlatformFlag: 1,
       platformEdge,
-      isPillarHalfWidthFlag: 0,
+      halfBlockOrientation: 0,
     };
     drawPlatformLine(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PLATFORM_COLOR);
     return;
   }
 
-  if (item.isPillarHalfWidthItem === 1) {
+  if (item.isHalfBlockItem === 1) {
     const previewWall: EditorWall = {
       uid: -1,
       xBlock: state.cursorBlockX,
@@ -519,9 +519,9 @@ export function drawPlacementPreview(
       hBlock: preview.hBlock,
       isPlatformFlag: 0,
       platformEdge: 0,
-      isPillarHalfWidthFlag: 1,
+      halfBlockOrientation: 1,
     };
-    drawHalfPillarRect(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PILLAR_HALF_COLOR);
+    drawHalfBlockRect(ctx, previewWall, offsetXPx, offsetYPx, zoom, PREVIEW_PILLAR_HALF_COLOR);
     return;
   }
 

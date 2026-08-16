@@ -167,7 +167,7 @@ export function loadRoomFallingBlocks(world: WorldState, room: RoomDef): void {
         // invisible or the group's footprint will be drawn again as terrain.
         world.wallIsInvisibleFlag[wallIndex]     = 1;
         world.wallRampOrientationIndex[wallIndex]    = 255;
-        world.wallIsPillarHalfWidthFlag[wallIndex]   = 0;
+        world.wallHalfBlockOrientation[wallIndex]   = HALF_BLOCK_NONE;
         world.wallIsBouncePadFlag[wallIndex]         = 0;
         world.wallBouncePadSpeedFactorIndex[wallIndex] = 0;
         world.wallIsKineticBlockFlag[wallIndex] = 0;

@@ -190,7 +190,7 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    * 1 if the corresponding wall is a half-width pillar (4 px wide).
    * Only meaningful for 1×2 pillar walls.
    */
-  wallIsPillarHalfWidthFlag: Uint8Array;
+  wallHalfBlockOrientation: Uint8Array;
   /**
    * 1 if the corresponding wall is a bounce pad.
    * The collision resolver reflects cluster velocity instead of zeroing it.
@@ -702,7 +702,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     wallSoundHardnessIndex: new Uint8Array(MAX_WALLS),
     wallIsInvisibleFlag: new Uint8Array(MAX_WALLS),
     wallRampOrientationIndex: new Uint8Array(MAX_WALLS).fill(255),
-    wallIsPillarHalfWidthFlag: new Uint8Array(MAX_WALLS),
+    wallHalfBlockOrientation: new Uint8Array(MAX_WALLS).fill(HALF_BLOCK_NONE),
     wallIsBouncePadFlag: new Uint8Array(MAX_WALLS),
     wallBouncePadSpeedFactorIndex: new Uint8Array(MAX_WALLS),
     wallIsIceFlag: new Uint8Array(MAX_WALLS),

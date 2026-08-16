@@ -707,7 +707,7 @@ export function handleCrumbleModifierToggle(
         rampOrientation: wall.rampOrientation,
         stairsOrientation: wall.stairsOrientation,
         smoothRampOrientation: wall.smoothRampOrientation,
-        isPillarHalfWidthFlag: wall.isPillarHalfWidthFlag,
+        halfBlockOrientation: wall.halfBlockOrientation,
         variant: 'normal',
         blockTheme: wall.blockTheme,
       };
@@ -745,7 +745,7 @@ export function handleCrumbleModifierToggle(
         rampOrientation: block.rampOrientation,
         stairsOrientation: block.stairsOrientation,
         smoothRampOrientation: block.smoothRampOrientation,
-        isPillarHalfWidthFlag: block.isPillarHalfWidthFlag ?? 0,
+        halfBlockOrientation: block.halfBlockOrientation ?? 0,
       };
       roomData.interiorWalls.push(wall);
       el.type = 'wall';

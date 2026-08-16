@@ -228,12 +228,12 @@ test('Breakable Block 2x2 placement produces four grouped cells sharing one grou
 
 // ── 11/12. Half-width Pillar ─────────────────────────────────────────────────
 
-test('Half-width Pillar placement sets isPillarHalfWidthFlag: 1', () => {
+test('Half-width Pillar placement sets halfBlockOrientation: 1', () => {
   const room = makeRoom();
   const state = makeStateWithItem('pillar_half_width', room, 2, 2);
   placeAtCursor(state);
   assert.equal(room.interiorWalls.length, 1);
-  assert.equal(room.interiorWalls[0].isPillarHalfWidthFlag, 1);
+  assert.equal(room.interiorWalls[0].halfBlockOrientation, 1);
 });
 
 test('the half-width pillar flag survives serialization, import, and RoomDef conversion', () => {
@@ -243,13 +243,13 @@ test('the half-width pillar flag survives serialization, import, and RoomDef con
 
   const json = editorRoomDataToJson(room);
   const roundTripped = jsonToEditorRoomData(json, 1000).data;
-  assert.equal(roundTripped.interiorWalls.some(w => w.isPillarHalfWidthFlag === 1), true);
+  assert.equal(roundTripped.interiorWalls.some(w => w.halfBlockOrientation === 1), true);
 
   const roomDef = editorRoomDataToRoomDef(room);
-  assert.equal(roomDef.walls.some(w => w.isPillarHalfWidthFlag === 1), true);
+  assert.equal(roomDef.walls.some(w => w.halfBlockOrientation === 1), true);
 
   const reimported = roomDefToEditorRoomData(roomDef, 1000).data;
-  assert.equal(reimported.interiorWalls.some(w => w.isPillarHalfWidthFlag === 1), true);
+  assert.equal(reimported.interiorWalls.some(w => w.halfBlockOrientation === 1), true);
 });
 
 test('placing multiple half-width pillars does not merge them into a full-width wall', () => {
@@ -259,7 +259,7 @@ test('placing multiple half-width pillars does not merge them into a full-width 
   const s2 = makeStateWithItem('pillar_half_width', room, 3, 2);
   placeAtCursor(s2);
   assert.equal(room.interiorWalls.length, 2, 'adjacent half-width pillars must remain separate walls');
-  for (const w of room.interiorWalls) assert.equal(w.isPillarHalfWidthFlag, 1);
+  for (const w of room.interiorWalls) assert.equal(w.halfBlockOrientation, 1);
 });
 
 // ── 13. Selection and deletion for the new element types ───────────────────

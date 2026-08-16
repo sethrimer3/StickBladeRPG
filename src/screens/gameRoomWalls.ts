@@ -95,7 +95,7 @@ export function* buildRoomWallTemplateIncremental(
   const sh: number[] = []; // soundHardnessIndex
   const iv: number[] = []; // isInvisibleFlag (0 or 1)
   const ro: number[] = []; // shape orientation: 0-3 legacy ramp, 4-7 stairs, 255 plain rect
-  const ph: number[] = []; // isPillarHalfWidthFlag (0 or 1)
+  const ph: number[] = []; // halfBlockOrientation (0-3, or HALF_BLOCK_NONE)
   const ic: number[] = []; // isIceFlag (0 or 1)
   const uic: number[] = []; // isUltraIceFlag (0 or 1)
   const rkt: number[] = []; // isRocketBlockFlag (0 or 1)
@@ -109,15 +109,17 @@ export function* buildRoomWallTemplateIncremental(
   // Convert block units to world units
   for (let wi = 0; wi < rawCount; wi++) {
     const def = room.walls[wi];
-    const isHalfWidthPillar = def.isPillarHalfWidthFlag === 1;
-    // Half-width pillars use half BLOCK_SIZE_MEDIUM for width; minimum is still enforced per-axis.
-    const rawWWorld = isHalfWidthPillar
-      ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
-      : Math.max(BLOCK_SIZE_MEDIUM, def.wBlock * BLOCK_SIZE_MEDIUM);
-    xs.push(def.xBlock * BLOCK_SIZE_MEDIUM);
-    ys.push(def.yBlock * BLOCK_SIZE_MEDIUM);
-    ws.push(rawWWorld);
-    hs.push(Math.max(BLOCK_SIZE_MEDIUM, def.hBlock * BLOCK_SIZE_MEDIUM));
+    // A half-block fills only half its authored extent; `halfBlockWorldRect`
+    // applies the per-axis minimum clamp and the narrowing together so every
+    // wall-loading path produces identical geometry.
+    const halfBlockOrientation = def.halfBlockOrientation ?? HALF_BLOCK_NONE;
+    const rect = halfBlockWorldRect(
+      def.xBlock, def.yBlock, def.wBlock, def.hBlock, halfBlockOrientation, BLOCK_SIZE_MEDIUM,
+    );
+    xs.push(rect.x);
+    ys.push(rect.y);
+    ws.push(rect.w);
+    hs.push(rect.h);
     fs.push(def.isPlatformFlag === 1 ? 1 : 0);
     pe.push(def.platformEdge ?? 0);
     const themeIdx = def.blockTheme !== undefined ? blockThemeToIndex(def.blockTheme) : WALL_THEME_DEFAULT_INDEX;
@@ -125,7 +127,7 @@ export function* buildRoomWallTemplateIncremental(
     sh.push(resolveWallSoundHardnessIndex(room, def.blockTheme));
     iv.push(def.isInvisibleFlag === 1 ? 1 : 0);
     ro.push(wallShapeOrientationIndex(def));
-    ph.push(isHalfWidthPillar ? 1 : 0);
+    ph.push(halfBlockOrientation);
     // Derive ice flag from theme: wall is ice if its resolved theme is 'ice'.
     const resolvedTheme = themeIdx === WALL_THEME_DEFAULT_INDEX
       ? room.blockTheme ?? ''
@@ -243,7 +245,7 @@ export function* buildRoomWallTemplateIncremental(
     soundHardnessIndex: new Uint8Array(finalCount),
     isInvisibleFlag: new Uint8Array(finalCount),
     rampOrientationIndex: new Uint8Array(finalCount),
-    isPillarHalfWidthFlag: new Uint8Array(finalCount),
+    halfBlockOrientation: new Uint8Array(finalCount).fill(HALF_BLOCK_NONE),
     isIceFlag: new Uint8Array(finalCount),
     isUltraIceFlag: new Uint8Array(finalCount),
     isRocketBlockFlag: new Uint8Array(finalCount),
@@ -261,7 +263,7 @@ export function* buildRoomWallTemplateIncremental(
     template.soundHardnessIndex[wi] = sh[wi];
     template.isInvisibleFlag[wi] = iv[wi];
     template.rampOrientationIndex[wi] = ro[wi];
-    template.isPillarHalfWidthFlag[wi] = ph[wi];
+    template.halfBlockOrientation[wi] = ph[wi];
     template.isIceFlag[wi] = ic[wi];
     template.isUltraIceFlag[wi] = uic[wi];
     template.isRocketBlockFlag[wi] = rkt[wi];
@@ -337,7 +339,7 @@ export function applyRoomWallTemplate(world: WorldState, template: RoomWallTempl
     world.wallSoundHardnessIndex[wi] = template.soundHardnessIndex[wi];
     world.wallIsInvisibleFlag[wi] = template.isInvisibleFlag[wi];
     world.wallRampOrientationIndex[wi] = template.rampOrientationIndex[wi];
-    world.wallIsPillarHalfWidthFlag[wi] = template.isPillarHalfWidthFlag[wi];
+    world.wallHalfBlockOrientation[wi] = template.halfBlockOrientation[wi];
     world.wallIsBouncePadFlag[wi] = 0;
     world.wallBouncePadSpeedFactorIndex[wi] = 0;
     world.wallIsIceFlag[wi] = template.isIceFlag[wi];

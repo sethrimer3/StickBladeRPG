@@ -39,7 +39,7 @@ import {
   DUST_SWARM_COLOR, DUST_SWARM_SELECTED,
   CAMPAIGN_SPAWN_COLOR, CAMPAIGN_SPAWN_SELECTED,
   drawMergedWallOutline, drawWallTileGrid, drawRampTriangle, drawStairsShape,
-  drawPlatformLine, drawHalfPillarRect, drawMarker, drawObjectFootprint,
+  drawPlatformLine, drawHalfBlockRect, drawMarker, drawObjectFootprint,
   getEnemyFootprintBlocks, drawTransitionZone,
   isElementInViewport, getEditorWallTopology, type EditorViewport,
 } from './editorRendererHelpers';
@@ -102,7 +102,7 @@ export function drawEditorWalls(
     const isPlatform = w.isPlatformFlag === 1;
     const isStairs = w.stairsOrientation !== undefined;
     const isRamp = w.rampOrientation !== undefined || w.smoothRampOrientation !== undefined;
-    const isHalfPillar = w.isPillarHalfWidthFlag === 1;
+    const isHalfPillar = w.halfBlockOrientation === 1;
 
     if (isStairs) {
       const color = sel ? STAIRS_SELECTED : STAIRS_HIGHLIGHT;
@@ -115,7 +115,7 @@ export function drawEditorWalls(
       drawPlatformLine(ctx, w, offsetXPx, offsetYPx, zoom, color);
     } else if (isHalfPillar) {
       const color = sel ? PILLAR_HALF_SELECTED : PILLAR_HALF_HIGHLIGHT;
-      drawHalfPillarRect(ctx, w, offsetXPx, offsetYPx, zoom, color);
+      drawHalfBlockRect(ctx, w, offsetXPx, offsetYPx, zoom, color);
     } else {
       const color = sel ? WALL_SELECTED : WALL_HIGHLIGHT;
       drawMergedWallOutline(ctx, occupied, w.xBlock, w.yBlock, w.wBlock, w.hBlock, offsetXPx, offsetYPx, zoom, color, sel ? 2 : 1);

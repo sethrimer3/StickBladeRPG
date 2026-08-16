@@ -64,7 +64,7 @@ function _computeLayoutSignature(walls: WallSnapshot, blockSizePx: number): stri
       // Full orientation index, not just an "is shaped" bit: a stair and a ramp
       // occupying the same rect must produce different layout signatures.
       (walls.rampOrientationIndex[wi]  << 11) |
-      (walls.isPillarHalfWidthFlag[wi] << 20)
+      (walls.halfBlockOrientation[wi] << 20)
     );
     // Rim style edits must invalidate the layout cache too — fold the index
     // in separately (it doesn't fit the bitpacked word above: values can
@@ -101,7 +101,7 @@ export interface ShapedWallInfo {
   readonly wallIndex: number;
 }
 
-export interface HalfPillarWallInfo {
+export interface HalfBlockWallInfo {
   readonly wallIndex: number;
 }
 
@@ -131,8 +131,8 @@ export interface CachedWallLayout {
   platformTiles: CachedTileCoord[];
   /** Shaped walls (stairs, legacy ramps): rendered from their template mask. */
   shapedWalls: ShapedWallInfo[];
-  /** Half-pillar walls (isPillarHalfWidthFlag === 1): rendered narrow. */
-  halfPillarWalls: HalfPillarWallInfo[];
+  /** Half-pillar walls (halfBlockOrientation === 1): rendered narrow. */
+  halfBlockWalls: HalfBlockWallInfo[];
   /** Per-tile theme: maps tile key → BlockTheme (null = use room default). */
   tileTheme: Map<string, BlockTheme | null>;
   /**
@@ -184,7 +184,7 @@ export interface CachedWallLayout {
   /** Shaped walls grouped by every chunk they overlap. */
   shapedByChunkKey: Map<string, ShapedWallInfo[]>;
   /** Half-pillar walls grouped by every chunk they overlap. */
-  halfPillarByChunkKey: Map<string, HalfPillarWallInfo[]>;
+  halfBlockByChunkKey: Map<string, HalfBlockWallInfo[]>;
   /**
    * 2×2 solid-wall top-left entries grouped by every chunk the 2×2 block
    * overlaps (up to 4 chunks at a chunk-boundary corner).
@@ -250,7 +250,7 @@ function _buildSolid2x2Map(walls: WallSnapshot, blockSizePx: number): Map<string
     // the shaped-wall path, never as solid 2×2 blocks.
     if (!isPlainRectOrientationIndex(walls.rampOrientationIndex[wi])) continue;
     // Half-pillar walls are rendered by the half-pillar path, never as solid 2×2 blocks.
-    if (walls.isPillarHalfWidthFlag[wi] === 1) continue;
+    if (walls.halfBlockOrientation[wi] === 1) continue;
 
     const colStart = Math.floor(walls.xWorld[wi] / blockSizePx);
     const rowStart = Math.floor(walls.yWorld[wi] / blockSizePx);
@@ -361,7 +361,7 @@ function _buildRenderData(style: SurfaceRimStyle): CachedSurfaceRimRenderData {
 }
 
 function _renderPassPriority(walls: WallSnapshot, wi: number): number {
-  if (walls.isPillarHalfWidthFlag[wi] === 1) return 3;
+  if (walls.halfBlockOrientation[wi] === 1) return 3;
   if (!isPlainRectOrientationIndex(walls.rampOrientationIndex[wi])) return 2;
   if (walls.isPlatformFlag[wi] === 1) return 1;
   return 0;
@@ -530,7 +530,7 @@ export function buildWallLayout(
   const tileTheme = new Map<string, BlockTheme | null>();
   const tileSurfaceRim = new Map<string, SurfaceRimStyle>();
   const shapedWalls: ShapedWallInfo[] = [];
-  const halfPillarWalls: HalfPillarWallInfo[] = [];
+  const halfBlockWalls: HalfBlockWallInfo[] = [];
 
   for (let wi = 0; wi < walls.count; wi++) {
     // Skip invisible boundary walls
@@ -561,9 +561,9 @@ export function buildWallLayout(
 
     // Half-pillar walls: add to normal occupied for lighting/neighbor purposes but
     // record for separate narrow rendering.
-    const isHalfPillar = walls.isPillarHalfWidthFlag[wi] === 1;
+    const isHalfPillar = walls.halfBlockOrientation[wi] === 1;
     if (isHalfPillar) {
-      halfPillarWalls.push({ wallIndex: wi });
+      halfBlockWalls.push({ wallIndex: wi });
       // Add to occupied so neighbor detection works; these tiles still block movement.
       for (let r = 0; r < rowCount; r++) {
         for (let c = 0; c < colCount; c++) {
@@ -670,7 +670,7 @@ export function buildWallLayout(
     occupiedTiles,
     platformTiles,
     shapedWalls,
-    halfPillarWalls,
+    halfBlockWalls,
     tileTheme,
     tileSurfaceRim,
     interiorRimDistanceField,
@@ -682,7 +682,7 @@ export function buildWallLayout(
     occupiedByChunkKey:   new Map(),
     platformByChunkKey:   new Map(),
     shapedByChunkKey:       new Map(),
-    halfPillarByChunkKey: new Map(),
+    halfBlockByChunkKey: new Map(),
     solid2x2ByChunkKey:   new Map(),
     customSurfaceRimByChunkKey: new Map(),
   };
@@ -758,7 +758,7 @@ function _buildChunkBuckets(layout: CachedWallLayout, walls: WallSnapshot): void
   }
 
   // ── Half-pillar walls: same multi-chunk logic as shaped walls ──────────────
-  for (const hpInfo of layout.halfPillarWalls) {
+  for (const hpInfo of layout.halfBlockWalls) {
     const wi = hpInfo.wallIndex;
     const colFirst = Math.floor(walls.xWorld[wi] / BSZ);
     const rowFirst = Math.floor(walls.yWorld[wi] / BSZ);
@@ -771,8 +771,8 @@ function _buildChunkBuckets(layout: CachedWallLayout, walls: WallSnapshot): void
     for (let cy = cyMin; cy <= cyMax; cy++) {
       for (let cx = cxMin; cx <= cxMax; cx++) {
         const ck = `${cx},${cy}`;
-        let arr = layout.halfPillarByChunkKey.get(ck);
-        if (arr === undefined) { arr = []; layout.halfPillarByChunkKey.set(ck, arr); }
+        let arr = layout.halfBlockByChunkKey.get(ck);
+        if (arr === undefined) { arr = []; layout.halfBlockByChunkKey.set(ck, arr); }
         arr.push(hpInfo);
       }
     }

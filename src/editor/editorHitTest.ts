@@ -240,7 +240,7 @@ function cellOverlapsEditorPoints(
  * materials need native-PIXEL precision, not block-cell precision, because
  * some runtime wall geometry is narrower than a full 8x8 block:
  *
- *   - Half-width pillars (`EditorWall.isPillarHalfWidthFlag === 1`): the
+ *   - Half-width pillars (`EditorWall.halfBlockOrientation === 1`): the
  *     runtime wall rect is only 4px wide (see `gameRoomWalls.ts`:
  *     `rawWWorld = Math.max(BLOCK_SIZE_MEDIUM / 2, wBlock * (BLOCK_SIZE_MEDIUM / 2))`
  *     when the flag is set), always anchored at the wall's left edge
@@ -279,7 +279,7 @@ export function isPixelMaterialSolidAtPixel(room: EditorRoomData, xPixel: number
     if (w.isPlatformFlag === 1) continue;
     const x0 = w.xBlock * BLOCK_SIZE_SMALL;
     const y0 = w.yBlock * BLOCK_SIZE_SMALL;
-    const wPx = w.isPillarHalfWidthFlag === 1
+    const wPx = w.halfBlockOrientation === 1
       ? Math.max(BLOCK_SIZE_SMALL / 2, w.wBlock * (BLOCK_SIZE_SMALL / 2))
       : Math.max(BLOCK_SIZE_SMALL, w.wBlock * BLOCK_SIZE_SMALL);
     const hPx = Math.max(BLOCK_SIZE_SMALL, w.hBlock * BLOCK_SIZE_SMALL);

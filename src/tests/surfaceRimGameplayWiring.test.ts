@@ -36,7 +36,7 @@ function makeWallSnapshot(
     themeIndex: new Uint8Array(count).fill(255),
     isInvisibleFlag: new Uint8Array(count),
     rampOrientationIndex: new Uint8Array(count).fill(255),
-    isPillarHalfWidthFlag: new Uint8Array(count),
+    halfBlockOrientation: new Uint8Array(count),
     surfaceRimStyleIndex,
     surfaceRimStyleTable: rimStyleTable,
   };

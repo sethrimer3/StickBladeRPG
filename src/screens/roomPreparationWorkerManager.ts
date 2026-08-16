@@ -91,7 +91,7 @@ function _reconstructRoomRuntimeEntry(msg: WorkerSuccessMessage): RoomRuntimeEnt
     soundHardnessIndex:   new Uint8Array(sw.soundHardnessIndex),
     isInvisibleFlag:      new Uint8Array(sw.isInvisibleFlag),
     rampOrientationIndex: new Uint8Array(sw.rampOrientationIndex),
-    isPillarHalfWidthFlag: new Uint8Array(sw.isPillarHalfWidthFlag),
+    halfBlockOrientation: new Uint8Array(sw.halfBlockOrientation),
     isIceFlag:            new Uint8Array(sw.isIceFlag),
     isUltraIceFlag:       new Uint8Array(sw.isUltraIceFlag),
     isRocketBlockFlag:    new Uint8Array(sw.isRocketBlockFlag),

@@ -158,7 +158,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
     world.wallIsPlatformFlag[wi] = 0;
     world.wallPlatformEdge[wi] = 0;
     world.wallRampOrientationIndex[wi] = 255;
-    world.wallIsPillarHalfWidthFlag[wi] = 0;
+    world.wallHalfBlockOrientation[wi] = HALF_BLOCK_NONE;
     world.wallIsBouncePadFlag[wi] = 0;
     world.wallBouncePadSpeedFactorIndex[wi] = 0;
     world.wallIsKineticBlockFlag[wi] = 0;
@@ -248,7 +248,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
       world.wallIsPlatformFlag[wallIdx] = 0;
       world.wallPlatformEdge[wallIdx] = 0;
       world.wallRampOrientationIndex[wallIdx] = 255;
-      world.wallIsPillarHalfWidthFlag[wallIdx] = 0;
+      world.wallHalfBlockOrientation[wallIdx] = HALF_BLOCK_NONE;
       world.wallIsBouncePadFlag[wallIdx] = 0;
       world.wallBouncePadSpeedFactorIndex[wallIdx] = 0;
       world.wallIsKineticBlockFlag[wallIdx] = 0;
@@ -383,7 +383,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
       world.wallIsPlatformFlag[wallIdx] = 0;
       world.wallPlatformEdge[wallIdx] = 0;
       world.wallRampOrientationIndex[wallIdx] = 255;
-      world.wallIsPillarHalfWidthFlag[wallIdx] = 0;
+      world.wallHalfBlockOrientation[wallIdx] = HALF_BLOCK_NONE;
       world.wallIsBouncePadFlag[wallIdx] = 0;
       world.wallBouncePadSpeedFactorIndex[wallIdx] = 0;
       world.wallIsIceFlag[wallIdx] = b.blockTheme === 'ice' ? 1 : 0;
@@ -490,15 +490,16 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
     let wallIdx = -1;
     if (world.wallCount < MAX_WALLS) {
       wallIdx = world.wallCount++;
-      const isHalfWidthPillar = b.isPillarHalfWidthFlag === 1;
-      // Mirrors gameRoomWalls.ts's half-width-pillar narrowing so a crumble
-      // pillar has the exact same collision footprint as a normal pillar wall.
-      world.wallXWorld[wallIdx] = b.xBlock * BLOCK_SIZE_MEDIUM;
-      world.wallYWorld[wallIdx] = b.yBlock * BLOCK_SIZE_MEDIUM;
-      world.wallWWorld[wallIdx] = isHalfWidthPillar
-        ? Math.max(BLOCK_SIZE_MEDIUM / 2, wBlocks * (BLOCK_SIZE_MEDIUM / 2))
-        : wBlocks * BLOCK_SIZE_MEDIUM;
-      world.wallHWorld[wallIdx] = hBlocks * BLOCK_SIZE_MEDIUM;
+      // Shares gameRoomWalls.ts's narrowing so a crumble half-block has the
+      // exact same collision footprint as a normal half-block wall.
+      const halfBlockOrientation = b.halfBlockOrientation ?? HALF_BLOCK_NONE;
+      const rect = halfBlockWorldRect(
+        b.xBlock, b.yBlock, wBlocks, hBlocks, halfBlockOrientation, BLOCK_SIZE_MEDIUM,
+      );
+      world.wallXWorld[wallIdx] = rect.x;
+      world.wallYWorld[wallIdx] = rect.y;
+      world.wallWWorld[wallIdx] = rect.w;
+      world.wallHWorld[wallIdx] = rect.h;
       world.wallThemeIndex[wallIdx] = b.blockTheme !== undefined
         ? blockThemeToIndex(b.blockTheme)
         : WALL_THEME_DEFAULT_INDEX;
@@ -511,7 +512,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
       // existing plain/ramp/stairs collision resolvers pick up crumble
       // stairs/smooth-ramp/ramp shapes automatically — no new collision code.
       world.wallRampOrientationIndex[wallIdx] = wallShapeOrientationIndex(b);
-      world.wallIsPillarHalfWidthFlag[wallIdx] = isHalfWidthPillar ? 1 : 0;
+      world.wallHalfBlockOrientation[wallIdx] = halfBlockOrientation;
     }
 
     const ci = world.crumbleBlockCount++;
@@ -552,7 +553,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
       world.wallIsPlatformFlag[wallIdx] = 0;
       world.wallPlatformEdge[wallIdx] = 0;
       world.wallRampOrientationIndex[wallIdx] = rampOri;
-      world.wallIsPillarHalfWidthFlag[wallIdx] = 0;
+      world.wallHalfBlockOrientation[wallIdx] = HALF_BLOCK_NONE;
       world.wallIsBouncePadFlag[wallIdx] = 1;
       world.wallBouncePadSpeedFactorIndex[wallIdx] = sfIndex;
       world.wallIsKineticBlockFlag[wallIdx] = 0;
@@ -590,7 +591,7 @@ export function loadRoomHazards(world: WorldState, room: RoomDef): void {
       world.wallIsPlatformFlag[wallIdx] = 0;
       world.wallPlatformEdge[wallIdx] = 0;
       world.wallRampOrientationIndex[wallIdx] = 255;
-      world.wallIsPillarHalfWidthFlag[wallIdx] = 0;
+      world.wallHalfBlockOrientation[wallIdx] = HALF_BLOCK_NONE;
       world.wallIsBouncePadFlag[wallIdx] = 0;
       world.wallBouncePadSpeedFactorIndex[wallIdx] = 0;
       world.wallIsIceFlag[wallIdx] = 0;

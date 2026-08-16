@@ -164,7 +164,7 @@ function hydrateSpecialWalls(specialWalls) {
     }
     if (sw.ramp !== undefined) wall.rampOrientation = sw.ramp;
     if (sw.stairs !== undefined) wall.stairsOrientation = sw.stairs;
-    if (sw.half === 1) wall.isPillarHalfWidth = true;
+    if (sw.half === 1) wall.halfBlock = true;
     return wall;
   });
 }
@@ -198,7 +198,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
   const sh  = []; // soundHardnessIndex
   const iv  = []; // isInvisibleFlag
   const ro  = []; // shape orientation: 0-3 legacy ramp, 4-7 stairs, 255 plain rect
-  const ph  = []; // isPillarHalfWidthFlag
+  const ph  = []; // halfBlockOrientation
   const ic  = []; // isIceFlag
   const uic = []; // isUltraIceFlag
   const rs  = []; // rimStyleIndex (SURFACE_RIM_STYLE_INDEX_DEFAULT = default)
@@ -206,9 +206,9 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
   const rawCount = Math.min(allWalls.length, MAX_WALLS);
   for (let wi = 0; wi < rawCount; wi++) {
     const def = allWalls[wi];
-    const isHalfWidthPillar = def.isPillarHalfWidth === true || def.isPillarHalfWidthFlag === 1;
+    const isHalfBlock = def.halfBlock === true || def.halfBlockOrientation === 1;
     // Half-width pillars use half BLOCK_SIZE_MEDIUM for width; minimum is still enforced per-axis.
-    const rawWWorld = isHalfWidthPillar
+    const rawWWorld = isHalfBlock
       ? Math.max(BLOCK_SIZE_MEDIUM / 2, def.wBlock * (BLOCK_SIZE_MEDIUM / 2))
       : Math.max(BLOCK_SIZE_MEDIUM,     def.wBlock * BLOCK_SIZE_MEDIUM);
     xs.push(def.xBlock * BLOCK_SIZE_MEDIUM);
@@ -229,7 +229,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
       : def.rampOrientation !== undefined ? def.rampOrientation
       : 255,
     );
-    ph.push(isHalfWidthPillar ? 1 : 0);
+    ph.push(isHalfBlock ? 1 : 0);
     // Ice flag derived from resolved theme name (mirrors gameRoomWalls.ts)
     const resolvedTheme = themeIdx === WALL_THEME_DEFAULT_INDEX
       ? (roomBlockTheme ?? '')
@@ -309,7 +309,7 @@ function buildWallTemplate(allWalls, roomBlockTheme, roomSoundHardness, themeToI
     soundHardnessIndex:   sh.slice(0, finalCount),
     isInvisibleFlag:      iv.slice(0, finalCount),
     rampOrientationIndex: ro.slice(0, finalCount),
-    isPillarHalfWidthFlag: ph.slice(0, finalCount),
+    halfBlockOrientation: ph.slice(0, finalCount),
     isIceFlag:            ic.slice(0, finalCount),
     isUltraIceFlag:       uic.slice(0, finalCount),
     rimStyleIndex:        rs.slice(0, finalCount),
@@ -353,7 +353,7 @@ function computeWallTemplateSourceHash(
     hashStr(w.blockThemeId ?? '');
     hashStr(String(w.rampOrientation ?? ''));
     hashStr(String(w.stairsOrientation ?? ''));
-    hashBool(w.isPillarHalfWidth);
+    hashBool(w.halfBlock);
     hashStr(String(w.r ?? ''));
   }
   hashStr(JSON.stringify(rimStyles ?? []));
@@ -453,7 +453,7 @@ function bakeRoom(filePath) {
     soundHardnessIndex:    tpl.soundHardnessIndex,
     isInvisibleFlag:       tpl.isInvisibleFlag,
     rampOrientationIndex:  tpl.rampOrientationIndex,
-    isPillarHalfWidthFlag: tpl.isPillarHalfWidthFlag,
+    halfBlockOrientation: tpl.halfBlockOrientation,
     isIceFlag:             tpl.isIceFlag,
     isUltraIceFlag:        tpl.isUltraIceFlag,
     rimStyleIndex:         tpl.rimStyleIndex,

@@ -468,7 +468,7 @@ export function drawPlatformLine(
 /**
  * Draws a half-width pillar wall as a narrow rectangle.
  */
-export function drawHalfPillarRect(
+export function drawHalfBlockRect(
   ctx: CanvasRenderingContext2D,
   w: EditorWall,
   ox: number, oy: number, zoom: number,
@@ -893,7 +893,7 @@ export function getEditorWallTopology(room: EditorRoomData, wallGeometryRevision
   const cells: EditorWallCell[] = [];
 
   for (const w of room.interiorWalls) {
-    if (w.isPlatformFlag === 1 || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.smoothRampOrientation !== undefined || w.isPillarHalfWidthFlag === 1) continue;
+    if (w.isPlatformFlag === 1 || w.rampOrientation !== undefined || w.stairsOrientation !== undefined || w.smoothRampOrientation !== undefined || w.halfBlockOrientation === 1) continue;
     for (let dy = 0; dy < w.hBlock; dy++) {
       for (let dx = 0; dx < w.wBlock; dx++) {
         const gx = w.xBlock + dx;

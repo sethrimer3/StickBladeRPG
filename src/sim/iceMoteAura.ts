@@ -244,7 +244,7 @@ function _freezeZone(world: WorldState, zi: number): void {
   world.wallIsKineticBlockFlag[wi]      = 0;
   world.wallKineticBlockIndex[wi]       = -1;
   world.wallIsInvisibleFlag[wi]         = 0;
-  world.wallIsPillarHalfWidthFlag[wi]   = 0;
+  world.wallHalfBlockOrientation[wi]   = HALF_BLOCK_NONE;
   world.wallThemeIndex[wi]              = 255; // use room default
   world.wallSurfaceRimStyleIndex[wi]    = SURFACE_RIM_STYLE_INDEX_DEFAULT;
   world.wallSoundHardnessIndex[wi]      = 1;   // normal hardness
@@ -291,7 +291,7 @@ function _thawZone(world: WorldState, zi: number): void {
     world.wallIsKineticBlockFlag[thisWi]       = world.wallIsKineticBlockFlag[lastWi];
     world.wallKineticBlockIndex[thisWi]        = world.wallKineticBlockIndex[lastWi];
     world.wallIsInvisibleFlag[thisWi]          = world.wallIsInvisibleFlag[lastWi];
-    world.wallIsPillarHalfWidthFlag[thisWi]    = world.wallIsPillarHalfWidthFlag[lastWi];
+    world.wallHalfBlockOrientation[thisWi]    = world.wallHalfBlockOrientation[lastWi];
     world.wallThemeIndex[thisWi]               = world.wallThemeIndex[lastWi];
     world.wallSurfaceRimStyleIndex[thisWi]     = world.wallSurfaceRimStyleIndex[lastWi];
     world.wallSoundHardnessIndex[thisWi]       = world.wallSoundHardnessIndex[lastWi];

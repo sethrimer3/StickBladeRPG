@@ -119,8 +119,8 @@ test('rotateSelectedElement also cycles a crumble ramp block orientation', () =>
 test('handleCrumbleModifierToggle(true) converts a multi-selection of normal walls (plain + stairs) into crumble blocks', () => {
   const room = makeRoom({
     interiorWalls: [
-      { uid: 10, xBlock: 1, yBlock: 1, wBlock: 2, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0, blockTheme: 'blackRock' } as never,
-      { uid: 11, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0, stairsOrientation: 2 } as never,
+      { uid: 10, xBlock: 1, yBlock: 1, wBlock: 2, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0, blockTheme: 'blackRock' } as never,
+      { uid: 11, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0, stairsOrientation: 2 } as never,
     ],
     crumbleBlocks: [],
   });
@@ -178,8 +178,8 @@ test('handleCrumbleModifierToggle(false) restores crumble blocks to walls, prese
 test('handleCrumbleModifierToggle leaves a platform wall untouched (no crumble equivalent) but still converts an eligible sibling', () => {
   const room = makeRoom({
     interiorWalls: [
-      { uid: 30, xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 1, platformEdge: 0, isPillarHalfWidthFlag: 0 } as never,
-      { uid: 31, xBlock: 1, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 } as never,
+      { uid: 30, xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 1, platformEdge: 0, halfBlockOrientation: 0 } as never,
+      { uid: 31, xBlock: 1, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 } as never,
     ],
   });
   const history = createEditorHistory();
@@ -201,8 +201,8 @@ test('toggling Cracked on one selected block does not affect an unselected sibli
   // unselected "group member") must be left completely untouched.
   const room = makeRoom({
     interiorWalls: [
-      { uid: 40, xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 } as never,
-      { uid: 41, xBlock: 1, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 } as never,
+      { uid: 40, xBlock: 0, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 } as never,
+      { uid: 41, xBlock: 1, yBlock: 0, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 } as never,
     ],
   });
   const history = createEditorHistory();

@@ -227,7 +227,7 @@ export function createReusableSnapshot(world: WorldState): ReusableWorldSnapshot
       themeIndex:           world.wallThemeIndex,
       isInvisibleFlag:      world.wallIsInvisibleFlag,
       rampOrientationIndex: world.wallRampOrientationIndex,
-      isPillarHalfWidthFlag: world.wallIsPillarHalfWidthFlag,
+      halfBlockOrientation: world.wallHalfBlockOrientation,
       surfaceRimStyleIndex: world.wallSurfaceRimStyleIndex,
       surfaceRimStyleTable: world.wallSurfaceRimStyleTable,
     },
@@ -650,7 +650,7 @@ export function refreshSnapshotWorldArrayRefs(
   w.themeIndex            = world.wallThemeIndex;
   w.isInvisibleFlag       = world.wallIsInvisibleFlag;
   w.rampOrientationIndex  = world.wallRampOrientationIndex;
-  w.isPillarHalfWidthFlag = world.wallIsPillarHalfWidthFlag;
+  w.halfBlockOrientation = world.wallHalfBlockOrientation;
   w.surfaceRimStyleIndex  = world.wallSurfaceRimStyleIndex;
   w.surfaceRimStyleTable  = world.wallSurfaceRimStyleTable;
   raw.squareStampedeTrailCount       = world.squareStampedeTrailCount;

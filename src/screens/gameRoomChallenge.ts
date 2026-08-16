@@ -36,7 +36,7 @@ function installGateWall(world: WorldState, gateIndex: number): void {
   world.wallSoundHardnessIndex[wallIndex] = 1;
   world.wallIsInvisibleFlag[wallIndex] = gateHasCollision(gate) ? 0 : 1;
   world.wallRampOrientationIndex[wallIndex] = 255;
-  world.wallIsPillarHalfWidthFlag[wallIndex] = 0;
+  world.wallHalfBlockOrientation[wallIndex] = HALF_BLOCK_NONE;
   world.wallIsBouncePadFlag[wallIndex] = 0;
   world.wallBouncePadSpeedFactorIndex[wallIndex] = 0;
   world.wallIsIceFlag[wallIndex] = 0;

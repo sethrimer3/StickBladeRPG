@@ -84,7 +84,7 @@ test('click priority: enemy beats save tomb at the same cell', () => {
 
 test('click priority: wall is lower priority than dialogue trigger at the same cell', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
     dialogueTriggers: [{ uid: 2, xBlock: 5, yBlock: 5, wBlock: 4, hBlock: 4, conversationId: 'c', conversationTitle: '', entries: [] }],
   } as Partial<EditorRoomData>);
   const state = createEditorState();
@@ -96,7 +96,7 @@ test('click priority: wall is lower priority than dialogue trigger at the same c
 
 test('click priority: ambient-light blocker is lowest priority (below wall)', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 5, yBlock: 5, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
     ambientLightBlockers: [{ uid: 2, xBlock: 5, yBlock: 5, isDarkFlag: 0 }],
   } as Partial<EditorRoomData>);
   const state = createEditorState();
@@ -203,7 +203,7 @@ test('marquee excludes non-select-only layers when select-only is active elsewhe
 
 test('a rectangle element partially inside the marquee is included', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 4, yBlock: 4, wBlock: 4, hBlock: 4, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 4, yBlock: 4, wBlock: 4, hBlock: 4, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = createEditorState();
   state.roomData = room;
@@ -214,7 +214,7 @@ test('a rectangle element partially inside the marquee is included', () => {
 
 test('a rectangle element fully outside the marquee is excluded', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 4, yBlock: 4, wBlock: 2, hBlock: 2, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 4, yBlock: 4, wBlock: 2, hBlock: 2, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
   } as Partial<EditorRoomData>);
   const state = createEditorState();
   state.roomData = room;
@@ -226,7 +226,7 @@ test('a rectangle element fully outside the marquee is excluded', () => {
 
 test('a single marquee selects elements from multiple layers at once', () => {
   const room = makeRoom({
-    interiorWalls: [{ uid: 1, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, isPillarHalfWidthFlag: 0 }],
+    interiorWalls: [{ uid: 1, xBlock: 2, yBlock: 2, wBlock: 1, hBlock: 1, isPlatformFlag: 0, platformEdge: 0, halfBlockOrientation: 0 }],
     enemies: [{ uid: 2, xBlock: 4, yBlock: 4, kinds: [], particleCount: 0 } as never],
     spikes: [{ uid: 3, xBlock: 6, yBlock: 6, direction: 'up', size: '1x1' }],
   } as Partial<EditorRoomData>);
