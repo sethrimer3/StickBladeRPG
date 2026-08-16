@@ -70,6 +70,7 @@ export interface InventoryPanelInputs {
 /** Display metadata for each trackable player ability, in display order. */
 const ABILITY_DISPLAY: Record<PlayerAbilityId, { label: string; glyph: string; description: string }> = {
   doubleJump: { label: 'Double Jump', glyph: '⤊', description: 'Jump again in mid-air.' },
+  grapple:    { label: 'Grapple',     glyph: '⚓', description: 'Latch onto ceilings, walls, and ropes with your hook.' },
   swim:       { label: 'Swim',        glyph: '≈', description: 'Move freely through deep water.' },
 };
 

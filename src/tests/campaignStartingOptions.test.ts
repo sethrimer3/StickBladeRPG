@@ -279,7 +279,75 @@ describe('applyCampaignStartingOptions — combined', () => {
       startingDustContainerCount: 2,
       startingDustTypes: ['Golden'],
       startingWeaves: ['storm'],
+      startingStats: Object.freeze({ level: 5, maxHealthBase: 120, attackBase: 10, defenseBase: 5, xp: 20, xpToNextLevel: 100, skillPoints: 3 }),
+      startingAbilities: Object.freeze(['doubleJump', 'grapple']) as unknown as string[],
+      startingWeapon: 'woodenSword',
     });
     assert.doesNotThrow(() => applyCampaignStartingOptions(p, spawn, 'fresh'));
+  });
+
+  it('startingStats correctly overrides characterStats and party leader stats', () => {
+    const p = createDefaultProgress();
+    applyCampaignStartingOptions(p, {
+      roomId: 'r',
+      xBlock: 0,
+      yBlock: 0,
+      startingStats: {
+        level: 7,
+        maxHealthBase: 150,
+        attackBase: 25,
+        defenseBase: 12,
+        xp: 30,
+        xpToNextLevel: 300,
+        skillPoints: 5,
+      },
+    }, 'fresh');
+
+    assert.strictEqual(p.characterStats.level, 7);
+    assert.strictEqual(p.characterStats.maxHealthBase, 150);
+    assert.strictEqual(p.characterStats.attackBase, 25);
+    assert.strictEqual(p.characterStats.defenseBase, 12);
+    assert.strictEqual(p.characterStats.xp, 30);
+    assert.strictEqual(p.characterStats.xpToNextLevel, 300);
+    assert.strictEqual(p.characterStats.skillPoints, 5);
+    assert.strictEqual(p.party.members[0].stats.level, 7);
+    assert.strictEqual(p.party.members[0].stats.maxHealthBase, 150);
+  });
+
+  it('startingAbilities in fresh mode sets exact subset', () => {
+    const p = createDefaultProgress();
+    applyCampaignStartingOptions(p, {
+      roomId: 'r',
+      xBlock: 0,
+      yBlock: 0,
+      startingAbilities: ['grapple'],
+    }, 'fresh');
+
+    assert.deepStrictEqual(p.unlockedAbilities, ['grapple']);
+  });
+
+  it('startingWeapon equips the specified weapon on party leader', () => {
+    const p = createDefaultProgress();
+    applyCampaignStartingOptions(p, {
+      roomId: 'r',
+      xBlock: 0,
+      yBlock: 0,
+      startingWeapon: 'woodenSword',
+    }, 'fresh');
+
+    assert.strictEqual(p.party.members[0].equipment.mainHand, 'woodenSword');
+  });
+
+  it('startingWeapon empty string unequips the weapon', () => {
+    const p = createDefaultProgress();
+    p.party.members[0].equipment.mainHand = 'woodenSword';
+    applyCampaignStartingOptions(p, {
+      roomId: 'r',
+      xBlock: 0,
+      yBlock: 0,
+      startingWeapon: '',
+    }, 'fresh');
+
+    assert.strictEqual(p.party.members[0].equipment.mainHand, null);
   });
 });

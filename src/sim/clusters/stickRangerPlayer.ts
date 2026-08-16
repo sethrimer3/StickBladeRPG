@@ -171,6 +171,7 @@ export function tickStickRangerPlayer(cluster: ClusterState, world: WorldState):
 
   if (world.playerAutoMoveTargetBlock === null) {
     body.hasDoubleJumpUnlock = world.hasDoubleJumpAbilityFlag === 1;
+    body.hasGrappleUnlock = world.hasGrappleAbilityFlag === 1;
     body.hasSwimUnlock = world.hasSwimAbilityFlag === 1;
     const isInWater = world.isPlayerInWaterFlag === 1;
 

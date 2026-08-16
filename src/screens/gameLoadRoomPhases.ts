@@ -471,6 +471,7 @@ function applyPlayerWeaveWorldFields(
   // default (see world.isMoteSourceOrbitFlag doc comment).
   world.isMoteSourceOrbitFlag          = 0;
   world.hasDoubleJumpAbilityFlag       = (ctx.progress?.unlockedAbilities ? ctx.progress.unlockedAbilities.includes('doubleJump') : true) ? 1 : 0;
+  world.hasGrappleAbilityFlag          = (ctx.progress?.unlockedAbilities ? ctx.progress.unlockedAbilities.includes('grapple') : true) ? 1 : 0;
   world.hasSwimAbilityFlag             = (ctx.progress?.unlockedAbilities ? ctx.progress.unlockedAbilities.includes('swim') : true) ? 1 : 0;
   // The Stick Ranger stickman is the player character. Forced rather than read
   // from progress so existing saves (which persisted 'outcast') switch over

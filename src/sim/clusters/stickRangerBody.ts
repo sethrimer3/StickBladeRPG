@@ -629,6 +629,8 @@ export interface StickRangerBody {
   grappleEnergyDirtyFlag: 0 | 1;
   /** Whether the double jump ability is unlocked. */
   hasDoubleJumpUnlock: boolean;
+  /** Whether the grapple ability is unlocked. */
+  hasGrappleUnlock: boolean;
   /** Whether the swim ability is unlocked. */
   hasSwimUnlock: boolean;
   /** Jumps remaining before touching the ground is required again. */
@@ -645,6 +647,7 @@ export function createStickRangerBody(
   hipY: number,
   hasDoubleJump = false,
   hasSwim = false,
+  hasGrapple = true,
 ): StickRangerBody {
   const body: StickRangerBody = {
     x: new Float32Array(SR_POINT_COUNT),
@@ -677,6 +680,7 @@ export function createStickRangerBody(
     grappleEnergy: 0,
     grappleEnergyDirtyFlag: 0,
     hasDoubleJumpUnlock: hasDoubleJump,
+    hasGrappleUnlock: hasGrapple,
     hasSwimUnlock: hasSwim,
     jumpsRemaining: hasDoubleJump ? 2 : 1,
     isSwimmingFlag: 0,

@@ -74,6 +74,9 @@ export function syncCampaignSpawnBlockFromSession(ctx: CampaignSpawnContext): vo
   if (spawn !== null && state.roomData !== null && spawn.roomId === state.roomData.id) {
     state.campaignSpawnBlock = [spawn.xBlock, spawn.yBlock];
     state.campaignSpawnStartingOptions = {
+      startingStats: spawn.startingStats ? { ...spawn.startingStats } : undefined,
+      startingAbilities: spawn.startingAbilities ? [...spawn.startingAbilities] : undefined,
+      startingWeapon: spawn.startingWeapon,
       startingHealth: spawn.startingHealth,
       startingDustContainerCount: spawn.startingDustContainerCount,
       startingDustTypes: spawn.startingDustTypes,
@@ -118,6 +121,9 @@ export function placeCampaignSpawn(ctx: CampaignSpawnContext, newXBlock: number,
   // Preserve existing starting options when moving or replacing the spawn.
   const prevSpawn = campaignSession.campaign.campaign.campaignSpawn;
   const prevOptions = prevSpawn !== undefined ? {
+    startingStats: prevSpawn.startingStats ? { ...prevSpawn.startingStats } : undefined,
+    startingAbilities: prevSpawn.startingAbilities ? [...prevSpawn.startingAbilities] : undefined,
+    startingWeapon: prevSpawn.startingWeapon,
     startingHealth: prevSpawn.startingHealth,
     startingDustContainerCount: prevSpawn.startingDustContainerCount,
     startingDustTypes: prevSpawn.startingDustTypes,
@@ -126,11 +132,7 @@ export function placeCampaignSpawn(ctx: CampaignSpawnContext, newXBlock: number,
   } : {};
   state.campaignSpawnBlock = [newXBlock, newYBlock];
   state.campaignSpawnStartingOptions = {
-    startingHealth: prevOptions.startingHealth,
-    startingDustContainerCount: prevOptions.startingDustContainerCount,
-    startingDustTypes: prevOptions.startingDustTypes,
-    startingWeaves: prevOptions.startingWeaves,
-    startingPassives: prevOptions.startingPassives,
+    ...prevOptions,
   };
   campaignSession.campaign.campaign.campaignSpawn = {
     roomId,

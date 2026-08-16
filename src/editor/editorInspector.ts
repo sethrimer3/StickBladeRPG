@@ -31,7 +31,9 @@ import {
 import { makeBtn } from './editorUIHelpers';
 import { ACCENT_GOLD, PANEL_BORDER, TEXT_COLOR } from './editorStyles';
 import { WEAVE_LIST, WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
-import { ALL_PASSIVE_TECHNIQUE_IDS, PASSIVE_TECHNIQUE_DEFINITIONS } from '../progression/passiveTechniques';
+import { ALL_PLAYER_ABILITY_IDS, PlayerAbilityId } from '../progression/playerProgress';
+import { WEAPON_IDS, WEAPONS, isPlayerEquippableWeapon } from '../sim/weapons/weaponDefs';
+import { DEFAULT_STARTER_WEAPON_ID } from '../sim/weapons/playerWeaponState';
 import { buildDialogueTriggerInspector } from './editorDialogueTriggerInspector';
 import type { EditorWall } from './editorElementTypes';
 import { getStickRpgEnemyTrait } from '../sim/clusters/stickRpgEnemyTraits';
@@ -343,135 +345,95 @@ export function updateInspector(
       addField(div, 'yBlock', String(spawnBlock[1]),
         v => callbacks?.onPropertyChange('campaignSpawn.yBlock', parseInt(v)));
 
-      // ── Starting options section ────────────────────────────────────────
-      const sectionLabel = document.createElement('div');
-      sectionLabel.textContent = 'Starting Options';
-      sectionLabel.style.cssText = `font-size: 11px; color: ${ACCENT_GOLD}; margin-top: 8px; margin-bottom: 4px; font-weight: bold;`;
-      div.appendChild(sectionLabel);
+      // ── Player Stats section ────────────────────────────────────────────
+      const statsLabel = document.createElement('div');
+      statsLabel.textContent = 'Player Stats';
+      statsLabel.style.cssText = `font-size: 11px; color: ${ACCENT_GOLD}; margin-top: 8px; margin-bottom: 4px; font-weight: bold;`;
+      div.appendChild(statsLabel);
 
-      addNumberField(div, 'Starting Dust Motes', opts?.startingHealth ?? 20, 0, 999999,
-        v => callbacks?.onPropertyChange('campaignSpawn.startingHealth', v));
-      addNumberField(div, 'Containers', opts?.startingDustContainerCount ?? 0, 0, 20,
-        v => callbacks?.onPropertyChange('campaignSpawn.startingDustContainerCount', v));
+      const stats = opts?.startingStats;
+      addNumberField(div, 'Level', stats?.level ?? 1, 1, 99,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.level', v));
+      addNumberField(div, 'Max Health', stats?.maxHealthBase ?? 50, 1, 999999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.maxHealthBase', v));
+      addNumberField(div, 'Attack', stats?.attackBase ?? 1, 0, 999999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.attackBase', v));
+      addNumberField(div, 'Defense', stats?.defenseBase ?? 1, 0, 999999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.defenseBase', v));
+      addNumberField(div, 'XP', stats?.xp ?? 0, 0, 999999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.xp', v));
+      addNumberField(div, 'XP to Next Level', stats?.xpToNextLevel ?? 40, 1, 999999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.xpToNextLevel', v));
+      addNumberField(div, 'Skill Points', stats?.skillPoints ?? 0, 0, 999,
+        v => callbacks?.onPropertyChange('campaignSpawn.stat.skillPoints', v));
 
-      // Starting Dust Types — checkbox list
-      const dustLabel = document.createElement('div');
-      dustLabel.textContent = 'Starting Dust Types';
-      dustLabel.style.cssText = `font-size: 11px; color: rgba(241,231,203,0.7); margin-top: 6px; margin-bottom: 3px;`;
-      div.appendChild(dustLabel);
+      // ── Player Abilities section ────────────────────────────────────────
+      const abilitiesLabel = document.createElement('div');
+      abilitiesLabel.textContent = 'Player Abilities';
+      abilitiesLabel.style.cssText = `font-size: 11px; color: ${ACCENT_GOLD}; margin-top: 8px; margin-bottom: 4px; font-weight: bold;`;
+      div.appendChild(abilitiesLabel);
 
-      const currentDustTypes = new Set<string>(opts?.startingDustTypes ?? []);
-      const dustGrid = document.createElement('div');
-      dustGrid.style.cssText = `display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 4px;`;
-      for (const kindName of DUST_KIND_OPTIONS) {
-        const isKindChecked = currentDustTypes.has(kindName);
+      const currentAbilities = new Set<string>(opts?.startingAbilities ?? ALL_PLAYER_ABILITY_IDS);
+      const abilitiesGrid = document.createElement('div');
+      abilitiesGrid.style.cssText = `display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;`;
+
+      const ABILITY_LABELS: Record<PlayerAbilityId, string> = {
+        doubleJump: 'Double-Jump',
+        grapple: 'Grapple',
+        swim: 'Swim',
+      };
+
+      for (const abilityId of ALL_PLAYER_ABILITY_IDS) {
+        const isChecked = currentAbilities.has(abilityId);
         const chip = document.createElement('label');
         chip.style.cssText = `
           display: flex; align-items: center; gap: 3px;
-          background: rgba(0,0,0,0.3); border: 1px solid ${isKindChecked ? ACCENT_GOLD : PANEL_BORDER};
-          border-radius: 3px; padding: 2px 5px; cursor: pointer;
-          font-size: 10px; color: ${isKindChecked ? ACCENT_GOLD : TEXT_COLOR};
+          background: rgba(0,0,0,0.3); border: 1px solid ${isChecked ? ACCENT_GOLD : PANEL_BORDER};
+          border-radius: 3px; padding: 2px 6px; cursor: pointer;
+          font-size: 10px; color: ${isChecked ? ACCENT_GOLD : TEXT_COLOR};
         `;
         const cb = document.createElement('input');
         cb.type = 'checkbox';
-        cb.checked = isKindChecked;
-        cb.style.cssText = `accent-color: ${ACCENT_GOLD}; width: 10px; height: 10px;`;
-        cb.addEventListener('click', e => e.stopPropagation());
-        cb.addEventListener('change', () => {
-          if (cb.checked) { currentDustTypes.add(kindName); } else { currentDustTypes.delete(kindName); }
-          chip.style.borderColor = cb.checked ? ACCENT_GOLD : PANEL_BORDER;
-          chip.style.color = cb.checked ? ACCENT_GOLD : TEXT_COLOR;
-          callbacks?.onPropertyChange('campaignSpawn.startingDustTypes', JSON.stringify([...currentDustTypes]));
-        });
-        chip.appendChild(cb);
-        chip.appendChild(document.createTextNode(kindName));
-        dustGrid.appendChild(chip);
-      }
-      div.appendChild(dustGrid);
-
-      // Starting Weaves — checkbox list
-      const weavesLabel = document.createElement('div');
-      weavesLabel.textContent = 'Starting Weaves';
-      weavesLabel.style.cssText = `font-size: 11px; color: rgba(241,231,203,0.7); margin-top: 6px; margin-bottom: 3px;`;
-      div.appendChild(weavesLabel);
-
-      const currentWeaves = new Set<string>(opts?.startingWeaves ?? []);
-      const weavesGrid = document.createElement('div');
-      weavesGrid.style.cssText = `display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 4px;`;
-      for (const weaveId of WEAVE_LIST) {
-        const weaveDef = WEAVE_REGISTRY.get(weaveId);
-        const weaveName = weaveDef?.displayName ?? weaveId;
-        const isWeaveChecked = currentWeaves.has(weaveId);
-
-        const chip = document.createElement('label');
-        chip.style.cssText = `
-          display: flex; align-items: center; gap: 3px;
-          background: rgba(0,0,0,0.3); border: 1px solid ${isWeaveChecked ? ACCENT_GOLD : PANEL_BORDER};
-          border-radius: 3px; padding: 2px 5px; cursor: pointer;
-          font-size: 10px; color: ${isWeaveChecked ? ACCENT_GOLD : TEXT_COLOR};
-        `;
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = isWeaveChecked;
-        cb.style.cssText = `accent-color: ${ACCENT_GOLD}; width: 10px; height: 10px;`;
+        cb.checked = isChecked;
+        cb.style.cssText = `accent-color: ${ACCENT_GOLD}; width: 11px; height: 11px;`;
         cb.addEventListener('click', e => e.stopPropagation());
         cb.addEventListener('change', () => {
           if (cb.checked) {
-            currentWeaves.add(weaveId);
+            currentAbilities.add(abilityId);
           } else {
-            currentWeaves.delete(weaveId);
+            currentAbilities.delete(abilityId);
           }
           chip.style.borderColor = cb.checked ? ACCENT_GOLD : PANEL_BORDER;
           chip.style.color = cb.checked ? ACCENT_GOLD : TEXT_COLOR;
-          callbacks?.onPropertyChange('campaignSpawn.startingWeaves', JSON.stringify([...currentWeaves]));
+          callbacks?.onPropertyChange('campaignSpawn.startingAbilities', JSON.stringify([...currentAbilities]));
         });
         chip.appendChild(cb);
-        chip.appendChild(document.createTextNode(weaveName));
-        weavesGrid.appendChild(chip);
+        chip.appendChild(document.createTextNode(ABILITY_LABELS[abilityId] ?? abilityId));
+        abilitiesGrid.appendChild(chip);
       }
-      div.appendChild(weavesGrid);
+      div.appendChild(abilitiesGrid);
 
-      // Starting Passive Techniques — checkbox list
-      const passivesLabel = document.createElement('div');
-      passivesLabel.textContent = 'Starting Passives';
-      passivesLabel.style.cssText = `font-size: 11px; color: rgba(241,231,203,0.7); margin-top: 6px; margin-bottom: 3px;`;
-      div.appendChild(passivesLabel);
+      // ── Starting Weapon section ─────────────────────────────────────────
+      const weaponLabel = document.createElement('div');
+      weaponLabel.textContent = 'Starting Weapon';
+      weaponLabel.style.cssText = `font-size: 11px; color: ${ACCENT_GOLD}; margin-top: 8px; margin-bottom: 4px; font-weight: bold;`;
+      div.appendChild(weaponLabel);
 
-      const currentPassives = new Set<string>(opts?.startingPassives ?? []);
-      const passivesGrid = document.createElement('div');
-      passivesGrid.style.cssText = `display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 4px;`;
-      for (const passiveId of ALL_PASSIVE_TECHNIQUE_IDS) {
-        const passiveDef = PASSIVE_TECHNIQUE_DEFINITIONS.get(passiveId);
-        const passiveName = passiveDef?.displayName ?? passiveId;
-        const isPassiveChecked = currentPassives.has(passiveId);
+      const weaponOptions: { label: string; value: string }[] = [
+        { label: '(None / Unarmed)', value: '' },
+        ...WEAPON_IDS
+          .map(id => ({ id, def: WEAPONS[id] }))
+          .filter(({ def }) => isPlayerEquippableWeapon(def))
+          .sort((a, b) => a.def.name.localeCompare(b.def.name))
+          .map(({ id, def }) => ({
+            label: `${def.name} (${def.kind})`,
+            value: id,
+          })),
+      ];
 
-        const chip = document.createElement('label');
-        chip.style.cssText = `
-          display: flex; align-items: center; gap: 3px;
-          background: rgba(0,0,0,0.3); border: 1px solid ${isPassiveChecked ? ACCENT_GOLD : PANEL_BORDER};
-          border-radius: 3px; padding: 2px 5px; cursor: pointer;
-          font-size: 10px; color: ${isPassiveChecked ? ACCENT_GOLD : TEXT_COLOR};
-        `;
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = isPassiveChecked;
-        cb.style.cssText = `accent-color: ${ACCENT_GOLD}; width: 10px; height: 10px;`;
-        cb.addEventListener('click', e => e.stopPropagation());
-        cb.addEventListener('change', () => {
-          if (cb.checked) {
-            currentPassives.add(passiveId);
-          } else {
-            currentPassives.delete(passiveId);
-          }
-          chip.style.borderColor = cb.checked ? ACCENT_GOLD : PANEL_BORDER;
-          chip.style.color = cb.checked ? ACCENT_GOLD : TEXT_COLOR;
-          callbacks?.onPropertyChange('campaignSpawn.startingPassives', JSON.stringify([...currentPassives]));
-        });
-        chip.appendChild(cb);
-        chip.appendChild(document.createTextNode(passiveName));
-        passivesGrid.appendChild(chip);
-      }
-      div.appendChild(passivesGrid);
+      const currentWeapon = opts?.startingWeapon ?? DEFAULT_STARTER_WEAPON_ID;
+      addSelect(div, 'Weapon', weaponOptions, currentWeapon,
+        v => callbacks?.onPropertyChange('campaignSpawn.startingWeapon', v));
     }
   } else if (el.type === 'playerSpawn') {
     addField(div, 'xBlock', String(room.playerSpawnBlock[0]),

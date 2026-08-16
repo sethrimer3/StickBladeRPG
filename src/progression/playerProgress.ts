@@ -59,12 +59,12 @@ export function getDustSlots(level: number): number {
 
 // ---- State type ----------------------------------------------------------
 
-export type PlayerAbilityId = 'doubleJump' | 'swim';
+export type PlayerAbilityId = 'doubleJump' | 'grapple' | 'swim';
 
-export const ALL_PLAYER_ABILITY_IDS: readonly PlayerAbilityId[] = ['doubleJump', 'swim'];
+export const ALL_PLAYER_ABILITY_IDS: readonly PlayerAbilityId[] = ['doubleJump', 'grapple', 'swim'];
 
 export function isPlayerAbilityId(value: unknown): value is PlayerAbilityId {
-  return typeof value === 'string' && (value === 'doubleJump' || value === 'swim');
+  return typeof value === 'string' && (value === 'doubleJump' || value === 'grapple' || value === 'swim');
 }
 
 export interface PlayerProgress {
@@ -260,7 +260,7 @@ function createProgressWithCharacter(characterId: string): PlayerProgress {
     // Legacy compatibility field; new progression never adds entries.
     unlockedPassiveTechniques: [],
     unlockedActiveWeaves: [],
-    unlockedAbilities: ['doubleJump', 'swim'],
+    unlockedAbilities: ['doubleJump', 'grapple', 'swim'],
     dustContainerCount: 0,
     dustContainerPieces: 0,
     disabledPassiveWeaves: [],
@@ -399,19 +399,13 @@ export function migrateStarterFireDustUnlock(progress: PlayerProgress): void {
  */
 export function sanitizePlayerAbilities(progress: PlayerProgress): void {
   if (!Array.isArray(progress.unlockedAbilities)) {
-    progress.unlockedAbilities = ['doubleJump', 'swim'];
+    progress.unlockedAbilities = ['doubleJump', 'grapple', 'swim'];
     return;
   }
   const sanitized: PlayerAbilityId[] = [];
   for (const item of progress.unlockedAbilities) {
     if (isPlayerAbilityId(item) && !sanitized.includes(item)) {
       sanitized.push(item);
-    }
-  }
-  // During development, ensure default unlocked abilities are present if absent
-  for (const defaultAbility of ALL_PLAYER_ABILITY_IDS) {
-    if (!sanitized.includes(defaultAbility)) {
-      sanitized.push(defaultAbility);
     }
   }
   progress.unlockedAbilities = sanitized;

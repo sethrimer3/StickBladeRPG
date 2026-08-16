@@ -1,4 +1,4 @@
-﻿import { test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateSavedCampaign,
@@ -111,4 +111,58 @@ test('validateSavedCampaignTopLevel passes a valid campaignSpawn.roomId', () => 
   const campaign = makeCampaign({ roomId: 'room1', xBlock: 0, yBlock: 0 });
   const errors = validateSavedCampaignTopLevel(campaign);
   assert.ok(!errors.some(e => e.includes('campaignSpawn')));
+});
+
+test('campaignSpawn with startingStats, startingAbilities, and startingWeapon passes validation', () => {
+  const campaign = makeCampaign({
+    roomId: 'room1',
+    xBlock: 1,
+    yBlock: 1,
+    startingStats: {
+      level: 5,
+      maxHealthBase: 120,
+      attackBase: 15,
+      defenseBase: 10,
+      xp: 50,
+      xpToNextLevel: 200,
+      skillPoints: 4,
+    },
+    startingAbilities: ['doubleJump', 'grapple'],
+    startingWeapon: 'woodenSword',
+  });
+  const errors = validateSavedCampaign(campaign);
+  assert.ok(!errors.some(e => e.includes('campaignSpawn')), `unexpected campaignSpawn errors: ${errors.join('; ')}`);
+});
+
+test('campaignSpawn with invalid startingStats fails', () => {
+  const campaign = makeCampaign({
+    roomId: 'room1',
+    xBlock: 1,
+    yBlock: 1,
+    startingStats: { level: 0 },
+  });
+  const errors = validateSavedCampaign(campaign);
+  assert.ok(errors.some(e => e.includes('campaignSpawn.startingStats.level')));
+});
+
+test('campaignSpawn with invalid startingAbilities fails', () => {
+  const campaign = makeCampaign({
+    roomId: 'room1',
+    xBlock: 1,
+    yBlock: 1,
+    startingAbilities: ['fly'],
+  });
+  const errors = validateSavedCampaign(campaign);
+  assert.ok(errors.some(e => e.includes('campaignSpawn.startingAbilities') && e.includes('unknown id')));
+});
+
+test('campaignSpawn with unknown startingWeapon fails', () => {
+  const campaign = makeCampaign({
+    roomId: 'room1',
+    xBlock: 1,
+    yBlock: 1,
+    startingWeapon: 'laserGun3000',
+  });
+  const errors = validateSavedCampaign(campaign);
+  assert.ok(errors.some(e => e.includes('campaignSpawn.startingWeapon') && e.includes('unknown weapon id')));
 });

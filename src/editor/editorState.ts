@@ -108,6 +108,17 @@ export interface EditorState {
    * Managed by the editor controller — not stored in room JSON.
    */
   campaignSpawnStartingOptions: {
+    startingStats?: {
+      level?: number;
+      maxHealthBase?: number;
+      attackBase?: number;
+      defenseBase?: number;
+      xp?: number;
+      xpToNextLevel?: number;
+      skillPoints?: number;
+    };
+    startingAbilities?: string[];
+    startingWeapon?: string;
     startingHealth?: number;
     startingDustContainerCount?: number;
     startingDustTypes?: string[];

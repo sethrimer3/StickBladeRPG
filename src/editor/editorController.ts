@@ -1047,6 +1047,32 @@ export function createEditorController(
               } else if (prop === 'campaignSpawn.yBlock' && !isNaN(numVal)) {
                 state.campaignSpawnBlock = [state.campaignSpawnBlock[0], numVal];
                 if (spawn) spawn.yBlock = numVal;
+              } else if (prop.startsWith('campaignSpawn.stat.') && spawn) {
+                const statKey = prop.slice('campaignSpawn.stat.'.length);
+                if (!spawn.startingStats) spawn.startingStats = {};
+                if (!state.campaignSpawnStartingOptions) state.campaignSpawnStartingOptions = {};
+                if (!state.campaignSpawnStartingOptions.startingStats) state.campaignSpawnStartingOptions.startingStats = {};
+                if (!isNaN(numVal)) {
+                  (spawn.startingStats as Record<string, number>)[statKey] = numVal;
+                  (state.campaignSpawnStartingOptions.startingStats as Record<string, number>)[statKey] = numVal;
+                }
+              } else if (prop === 'campaignSpawn.startingAbilities' && spawn) {
+                const strVal = String(value);
+                try {
+                  const parsed = JSON.parse(strVal);
+                  spawn.startingAbilities = Array.isArray(parsed) ? parsed : undefined;
+                } catch {
+                  spawn.startingAbilities = undefined;
+                }
+                if (state.campaignSpawnStartingOptions) {
+                  state.campaignSpawnStartingOptions.startingAbilities = spawn.startingAbilities;
+                }
+              } else if (prop === 'campaignSpawn.startingWeapon' && spawn) {
+                const strVal = String(value).trim();
+                spawn.startingWeapon = strVal.length > 0 ? strVal : undefined;
+                if (state.campaignSpawnStartingOptions) {
+                  state.campaignSpawnStartingOptions.startingWeapon = spawn.startingWeapon;
+                }
               } else if (prop === 'campaignSpawn.startingHealth' && spawn) {
                 // "startingHealth" is the wire field name (kept for backward-compat
                 // with existing saved campaigns) but represents starting dust motes,

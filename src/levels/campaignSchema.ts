@@ -32,6 +32,8 @@ import type { CustomBlockSourceDef } from './customBlocks';
 import { stringToParticleKind } from '../editor/roomJsonSchema';
 import { WEAVE_REGISTRY } from '../sim/weaves/weaveDefinition';
 import { PASSIVE_TECHNIQUE_DEFINITIONS, PassiveTechniqueId } from '../progression/passiveTechniques';
+import { isPlayerAbilityId } from '../progression/playerProgress';
+import { getWeaponDef } from '../sim/weapons/weaponDefs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA VERSION
@@ -58,41 +60,46 @@ export interface CampaignSpawnData {
   /** Block Y coordinate within that room. */
   yBlock: number;
   /**
-   * Optional starting dust-mote count for the player at campaign start.
-   * Defines both the initial mote count and the campaign's baseline mote capacity,
-   * without upper clamping (0 is a legal value). Undefined defaults to standard capacity (10).
+   * Optional starting character combat stats for the player at campaign start.
+   */
+  startingStats?: {
+    level?: number;
+    maxHealthBase?: number;
+    attackBase?: number;
+    defenseBase?: number;
+    xp?: number;
+    xpToNextLevel?: number;
+    skillPoints?: number;
+  };
+  /**
+   * Optional list of player ability IDs unlocked at campaign start
+   * (e.g. "doubleJump", "grapple", "swim").
+   */
+  startingAbilities?: string[];
+  /**
+   * Optional starting weapon ID equipped in mainHand at campaign start (e.g. "woodenSword", "longBow").
+   */
+  startingWeapon?: string;
+  /**
+   * Optional starting dust-mote count for the player at campaign start (legacy).
    */
   startingHealth?: number;
   /**
-   * Optional starting number of dust containers.
-   * Each container adds 4 capacity for dust particles. Clamped to >= 0.
+   * Optional starting number of dust containers (legacy).
    */
   startingDustContainerCount?: number;
   /**
-   * Optional list of collectible dust type names the player starts with.
-   * Names must match the string keys in the ParticleKind name map
-   * (e.g., "Golden", "Ice", "Void", "FireDust" for the equippable fire mote —
-   * note "Fire" alone refers to the internal lava/ember VFX kind, not the
-   * equippable Fire Dust mote).
-   * Unknown names are silently ignored.
+   * Optional list of collectible dust type names the player starts with (legacy).
    */
   startingDustTypes?: string[];
   /**
-   * Optional list of weave IDs unlocked at campaign start
-   * (e.g., "storm", "shield", "arrow").
-   * Unknown IDs are silently ignored.
+   * Optional list of weave IDs unlocked at campaign start (legacy).
    */
   startingWeaves?: string[];
   /**
-   * Optional list of passive technique IDs unlocked at campaign start
-   * (e.g., "cycle"). Unknown IDs are silently ignored.
+   * Optional list of passive technique IDs unlocked at campaign start (legacy).
    */
   startingPassives?: string[];
-  /**
-   * Optional list of player ability IDs unlocked at campaign start
-   * (e.g. "doubleJump", "swim").
-   */
-  startingAbilities?: string[];
 }
 
 export interface SavedCampaignMetadata {
@@ -401,6 +408,39 @@ export function validateSavedCampaign(data: unknown): string[] {
         });
         validateIdArray('startingWeaves', s['startingWeaves'], id => WEAVE_REGISTRY.has(id));
         validateIdArray('startingPassives', s['startingPassives'], id => PASSIVE_TECHNIQUE_DEFINITIONS.has(id as PassiveTechniqueId));
+        validateIdArray('startingAbilities', s['startingAbilities'], id => isPlayerAbilityId(id));
+
+        if (s['startingStats'] !== undefined) {
+          if (typeof s['startingStats'] !== 'object' || s['startingStats'] === null || Array.isArray(s['startingStats'])) {
+            errors.push('campaignSpawn.startingStats must be an object when present');
+          } else {
+            const statsObj = s['startingStats'] as Record<string, unknown>;
+            const validateNum = (key: string, min: number, max?: number) => {
+              if (statsObj[key] !== undefined) {
+                if (typeof statsObj[key] !== 'number' || isNaN(statsObj[key] as number)) {
+                  errors.push(`campaignSpawn.startingStats.${key} must be a number`);
+                } else if ((statsObj[key] as number) < min || (max !== undefined && (statsObj[key] as number) > max)) {
+                  errors.push(`campaignSpawn.startingStats.${key} out of range [${min}, ${max ?? 'inf'}]`);
+                }
+              }
+            };
+            validateNum('level', 1, 99);
+            validateNum('maxHealthBase', 1);
+            validateNum('attackBase', 0);
+            validateNum('defenseBase', 0);
+            validateNum('xp', 0);
+            validateNum('xpToNextLevel', 1);
+            validateNum('skillPoints', 0);
+          }
+        }
+
+        if (s['startingWeapon'] !== undefined) {
+          if (typeof s['startingWeapon'] !== 'string') {
+            errors.push('campaignSpawn.startingWeapon must be a string when present');
+          } else if (s['startingWeapon'].length > 0 && getWeaponDef(s['startingWeapon']) === null) {
+            errors.push(`campaignSpawn.startingWeapon contains unknown weapon id "${s['startingWeapon']}"`);
+          }
+        }
       }
     }
   }

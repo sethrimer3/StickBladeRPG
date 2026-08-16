@@ -249,6 +249,9 @@ export function fireGrapple(world: WorldState, anchorXWorld: number, anchorYWorl
   // attach.
   world.isGrappleQuietReleaseRequestedFlag = 0;
 
+  // If the player has not unlocked the grapple ability, ignore grapple fire input.
+  if (world.hasGrappleAbilityFlag === 0) return;
+
   // Verdant Dust mobility tradeoff: grapple input does nothing while Verdant
   // is equipped (traded for doubled ground speed/accel and boosted jump
   // launches). Intentionally silent — no empty-charge FX — since this isn't

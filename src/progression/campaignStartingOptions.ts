@@ -19,6 +19,9 @@ import { expandLegacyWeaveId } from './weaveMigration';
 import { normalizeMoteCount } from '../sim/playerMoteLife';
 import { isEquippableParticleKind } from '../sim/particles/kinds';
 import { getUnlockedDustKindsInCanonicalOrder } from '../sim/weaves/dustWheelOptions';
+import { createDefaultCharacterStats } from '../sim/stats/characterStats';
+import { getWeaponDef } from '../sim/weapons/weaponDefs';
+import { applyMainHandConstraints } from '../sim/party/partyState';
 
 export type CampaignStartingOptionsMode = 'merge' | 'fresh';
 
@@ -75,10 +78,47 @@ export function applyCampaignStartingOptions(
     }
   }
 
+  if (spawn.startingStats) {
+    if (!progress.characterStats) {
+      progress.characterStats = createDefaultCharacterStats();
+    }
+    const s = spawn.startingStats;
+    if (s.level !== undefined && !isNaN(s.level)) progress.characterStats.level = Math.max(1, Math.min(99, Math.floor(s.level)));
+    if (s.maxHealthBase !== undefined && !isNaN(s.maxHealthBase)) progress.characterStats.maxHealthBase = Math.max(1, s.maxHealthBase);
+    if (s.attackBase !== undefined && !isNaN(s.attackBase)) progress.characterStats.attackBase = Math.max(0, s.attackBase);
+    if (s.defenseBase !== undefined && !isNaN(s.defenseBase)) progress.characterStats.defenseBase = Math.max(0, s.defenseBase);
+    if (s.xp !== undefined && !isNaN(s.xp)) progress.characterStats.xp = Math.max(0, s.xp);
+    if (s.xpToNextLevel !== undefined && !isNaN(s.xpToNextLevel)) progress.characterStats.xpToNextLevel = Math.max(1, s.xpToNextLevel);
+    if (s.skillPoints !== undefined && !isNaN(s.skillPoints)) progress.characterStats.skillPoints = Math.max(0, Math.floor(s.skillPoints));
+
+    if (progress.party?.members?.[0]) {
+      progress.party.members[0].stats = { ...progress.characterStats };
+    }
+  }
+
   if (Array.isArray(spawn.startingAbilities)) {
-    for (const ability of spawn.startingAbilities) {
-      if (isPlayerAbilityId(ability)) {
-        unlockAbility(progress, ability);
+    if (mode === 'fresh') {
+      const valid = spawn.startingAbilities.filter(isPlayerAbilityId);
+      progress.unlockedAbilities = Array.from(new Set(valid));
+    } else {
+      for (const ability of spawn.startingAbilities) {
+        if (isPlayerAbilityId(ability)) {
+          unlockAbility(progress, ability);
+        }
+      }
+    }
+  }
+
+  if (typeof spawn.startingWeapon === 'string') {
+    if (spawn.startingWeapon.length === 0) {
+      if (progress.party?.members?.[0]) {
+        progress.party.members[0].equipment.mainHand = null;
+      }
+    } else {
+      const def = getWeaponDef(spawn.startingWeapon);
+      if (def && progress.party?.members?.[0]) {
+        progress.party.members[0].equipment.mainHand = spawn.startingWeapon;
+        applyMainHandConstraints(progress.party.members[0].equipment);
       }
     }
   }
