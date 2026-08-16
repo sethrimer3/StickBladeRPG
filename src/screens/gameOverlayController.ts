@@ -224,6 +224,7 @@ export function createGameOverlayController(
         party,
         healthPoints: player?.healthPoints,
         maxHealthPoints: player?.maxHealthPoints,
+        unlockedAbilities: progress.unlockedAbilities,
       },
       {
         // Equipment edits are applied to the live records immediately, so the

@@ -255,6 +255,7 @@ export function applyPlayerGravityAndJump(
         cluster.varJumpTimerTicks  = VAR_JUMP_TIME_TICKS;
         cluster.varJumpSpeedWorld  = -baseJumpSpeed;
         cluster.jumpsRemaining    -= 1;
+        world.lastDoubleJumpTick   = world.tick;
         if (isSkidJump) {
           clearPlayerSkidState(cluster);
         }

@@ -48,6 +48,7 @@ import {
 } from '../sim/items/itemCatalog';
 import { CharacterPreviewController } from './characterPreviewRenderer';
 import { getItemIconSvg, getSlotWatermarkSvg } from './inventoryIcons';
+import { ALL_PLAYER_ABILITY_IDS, type PlayerAbilityId } from '../progression/playerProgress';
 
 export interface InventoryPanelCallbacks {
   /** Called once when the screen closes, after all edits have been applied. */
@@ -62,7 +63,15 @@ export interface InventoryPanelInputs {
   /** Current player health, when known, for the status bar's health readout. */
   healthPoints?: number;
   maxHealthPoints?: number;
+  /** Ability ids the player has unlocked (see progression/playerProgress.ts). */
+  unlockedAbilities?: readonly PlayerAbilityId[];
 }
+
+/** Display metadata for each trackable player ability, in display order. */
+const ABILITY_DISPLAY: Record<PlayerAbilityId, { label: string; glyph: string; description: string }> = {
+  doubleJump: { label: 'Double Jump', glyph: '⤊', description: 'Jump again in mid-air.' },
+  swim:       { label: 'Swim',        glyph: '≈', description: 'Move freely through deep water.' },
+};
 
 const GOLD = '#ffd700';
 const GOLD_DIM = '#d4a84b';
@@ -81,7 +90,7 @@ export function showInventoryPanel(
   inputs: InventoryPanelInputs,
   callbacks: InventoryPanelCallbacks,
 ): () => void {
-  const { inventory, party } = inputs;
+  const { inventory, party, unlockedAbilities = [] } = inputs;
   let selectedMemberIndex = party.activeIndex;
   let activeCategory: CategoryFilter = 'all';
   let itemFilter = '';
@@ -332,6 +341,74 @@ export function showInventoryPanel(
     shoesRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px;';
     shoesRow.appendChild(createShoesSlot(member));
     slotsGrid.appendChild(shoesRow);
+
+    // ── Abilities ──────────────────────────────────────────────────────────
+    // Innate movement/mobility abilities rather than worn equipment, so they
+    // sit below the equipment slots as their own labeled section.
+    const abilitiesSection = document.createElement('div');
+    abilitiesSection.style.cssText = `
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      width: 100%; margin-top: 6px; padding-top: 14px;
+      border-top: 1px solid rgba(212,168,75,0.2);
+    `;
+    const abilitiesTitle = document.createElement('div');
+    abilitiesTitle.style.cssText = `
+      color:${GOLD}; font-size:0.9rem; font-weight:bold; letter-spacing: 0.05em;
+    `;
+    abilitiesTitle.textContent = 'Abilities';
+    abilitiesSection.appendChild(abilitiesTitle);
+
+    const abilitiesGrid = document.createElement('div');
+    abilitiesGrid.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; justify-content:center;';
+    for (const abilityId of ALL_PLAYER_ABILITY_IDS) {
+      abilitiesGrid.appendChild(createAbilityTile(abilityId, unlockedAbilities.includes(abilityId)));
+    }
+    abilitiesSection.appendChild(abilitiesGrid);
+
+    paperdollColumn.appendChild(abilitiesSection);
+  }
+
+  // ── Ability Tile ──────────────────────────────────────────────────────────
+  function createAbilityTile(abilityId: PlayerAbilityId, isUnlocked: boolean): HTMLElement {
+    const info = ABILITY_DISPLAY[abilityId];
+    const tile = document.createElement('div');
+    tile.style.cssText = `
+      width: 60px; height: 60px; box-sizing: border-box;
+      background: ${isUnlocked ? 'rgba(35, 28, 18, 0.9)' : SLOT_BG};
+      border: 1.5px ${isUnlocked ? 'solid' : 'dashed'} ${isUnlocked ? GOLD : SLOT_BORDER};
+      border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; position: relative;
+    `;
+    tile.title = isUnlocked ? `${info.label} — ${info.description}` : `${info.label} (locked) — ${info.description}`;
+
+    const glyph = document.createElement('div');
+    glyph.textContent = info.glyph;
+    glyph.style.cssText = `
+      font-size: 1.4rem; line-height: 1;
+      color: ${isUnlocked ? GOLD : 'rgba(180,180,190,0.35)'};
+      filter: ${isUnlocked ? 'drop-shadow(0 0 3px rgba(255,215,0,0.5))' : 'none'};
+    `;
+    tile.appendChild(glyph);
+
+    const label = document.createElement('div');
+    label.textContent = info.label;
+    label.style.cssText = `
+      font-size: 0.55rem; text-align: center; line-height: 1.1;
+      color: ${isUnlocked ? '#ddd' : 'rgba(150,150,160,0.5)'};
+      padding: 0 2px;
+    `;
+    tile.appendChild(label);
+
+    if (!isUnlocked) {
+      const lockBadge = document.createElement('div');
+      lockBadge.textContent = '🔒';
+      lockBadge.style.cssText = `
+        position: absolute; top: 2px; right: 3px; font-size: 0.55rem; opacity: 0.6;
+      `;
+      tile.appendChild(lockBadge);
+    }
+
+    return tile;
   }
 
   // ── Armor Slot ────────────────────────────────────────────────────────────

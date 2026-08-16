@@ -67,6 +67,7 @@ import { processPlayerCommands } from './gameCommandProcessor';
 import { createPlayerSfxState, updatePlayerSfx } from './gamePlayerSfx';
 import { processRoomPickups } from './gamePickups';
 import { DustContainerPickupEffect } from '../render/dustContainerPickupEffect';
+import { DoubleJumpBurstEffect } from '../render/doubleJumpBurstEffect';
 import { VerdantAfterimageTrail } from '../render/clusters/verdantAfterimageTrail';
 import { VerdantFlowerTrail } from '../render/verdantFlowerTrail';
 import { createDialogueState } from '../dialogue/dialogueState';
@@ -417,6 +418,7 @@ export function startGameScreen(
     let result = gen.next();
     while (!result.done) result = gen.next();
     dustContainerPickupEffect.reset();
+    doubleJumpBurst.reset();
     playerDeathDust.reset();
     enemyDeathPixels.reset();
     knownAliveEnemyEntityIds.clear();
@@ -524,6 +526,7 @@ export function startGameScreen(
   const decorationWaveState = new DecorationWaveState();
   const fallingBlockDust = new FallingBlockDustRenderer();
   const dustContainerPickupEffect = new DustContainerPickupEffect();
+  const doubleJumpBurst = new DoubleJumpBurstEffect();
   const playerDeathDust = new PlayerDeathDustEffect();
   const enemyDeathPixels = new EnemyDeathPixelEffect();
   const knownAliveEnemyEntityIds = new Set<number>();
@@ -591,6 +594,8 @@ export function startGameScreen(
   const combatText = createCombatTextSystem();
   /** Tracks the last seen world.lastPlayerBlockedTick to detect new BLOCKED events. */
   const prevLastPlayerBlockedTick = { value: -1 };
+  /** Tracks the last seen world.lastDoubleJumpTick to detect new double-jump events. */
+  const prevLastDoubleJumpTick = { value: -1 };
 
   // ── Room runtime cache (wall templates) ──────────────────────────────────
   // Precomputed static room data keyed by room ID.  Allows _makeLoadRoomPhases
@@ -1968,6 +1973,16 @@ export function startGameScreen(
         currentRoomOriginXWorld, currentRoomOriginYWorld,
         (kind, xWorld, yWorld) => dustContainerPickupEffect.spawnPickupBurst(kind, xWorld, yWorld));
       dustContainerPickupEffect.update(FIXED_DT_MS / 1000, playerForTomb.positionXWorld, playerForTomb.positionYWorld);
+
+      // ── Double-jump golden pixel burst ──────────────────────────────────
+      if (world.lastDoubleJumpTick !== prevLastDoubleJumpTick.value && world.lastDoubleJumpTick >= 0) {
+        prevLastDoubleJumpTick.value = world.lastDoubleJumpTick;
+        doubleJumpBurst.spawnBurst(
+          playerForTomb.positionXWorld,
+          playerForTomb.positionYWorld + playerForTomb.halfHeightWorld,
+        );
+      }
+      doubleJumpBurst.update(FIXED_DT_MS / 1000, playerForTomb.positionXWorld, playerForTomb.positionYWorld);
     }
 
     // ── Update camera to follow player ──────────────────────────────────────
@@ -2108,7 +2123,7 @@ export function startGameScreen(
 
     const renderFrameArgs = {
       ctx, deviceCtx, virtualCanvas, canvas,
-      webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+      webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels, doubleJumpBurst,
       playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, darkRoomOverlay, decorationWaveState,
       sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
       world, currentRoom, isChallengeModeActive: world.challengeMode.isActive,

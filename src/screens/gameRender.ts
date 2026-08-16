@@ -75,6 +75,7 @@ import { renderIceFrostDecals } from '../render/effects/iceFrostRenderer';
 import { processPendingIceFrostImpacts } from '../sim/iceFrost';
 import { getWallLayoutCache } from '../render/walls/blockWallLayoutCache';
 import type { DustContainerPickupEffect } from '../render/dustContainerPickupEffect';
+import type { DoubleJumpBurstEffect } from '../render/doubleJumpBurstEffect';
 import type { PlayerDeathDustEffect } from '../render/playerDeathDust';
 import type { EnemyDeathPixelEffect } from '../render/enemyDeathPixelEffect';
 import type { ClusterSnapshot } from '../render/clusterSnapshotTypes';
@@ -186,6 +187,8 @@ export interface RenderFrameContext {
   playerDeathDust: PlayerDeathDustEffect;
   /** Enemy death pixel disintegration effect — bouncing physical pixels. */
   enemyDeathPixels: EnemyDeathPixelEffect;
+  /** Golden pixel burst fanning left/right/down from the feet on double jump. */
+  doubleJumpBurst: DoubleJumpBurstEffect;
   bloomSystem: BloomSystem;
   playerCloak: PlayerCloak;
   /** Phantasmal golden cloak extension — visible while the player is grappling. */
@@ -364,7 +367,7 @@ export interface RenderFrameContext {
 export function renderFrame(r: RenderFrameContext): void {
   const {
     ctx, deviceCtx, virtualCanvas, canvas,
-    webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels,
+    webglRenderer, environmentalDust, rainForegroundLayer, rainParallaxBackground, sunnyForegroundLayer, thunderstormLightning, skidDebris, crumbleDebris, crackedBlockShatter, breakEffects, weakWallJumpDebris, skillTombRenderer, weaponRenderer, skillTombEffectRenderer, bloomSystem, dustContainerPickupEffect, playerDeathDust, enemyDeathPixels, doubleJumpBurst,
     playerCloak, phantomCloak, momentumTrail, verdantAfterimageTrail, verdantFlowerTrail, stormweaveLifeMotes, decorationWaveState,
     sunbeamRenderer, sunraysRenderer, atmosphericLightDust, guideDustPathRenderer, fallingBlockDust,
     world, currentRoom, snapshot,
@@ -652,6 +655,7 @@ export function renderFrame(r: RenderFrameContext): void {
   // One-shot golden-mote pickup burst — drawn behind the player sprite so
   // absorbed motes visibly disappear behind it rather than popping in front.
   dustContainerPickupEffect.render(ctx, ox, oy, zoom);
+  doubleJumpBurst.render(ctx, ox, oy, zoom);
 
   // Verdant Dust cosmetics — flowers along the walked path, then the green
   // afterimage trail, both drawn behind the real player sprite.
