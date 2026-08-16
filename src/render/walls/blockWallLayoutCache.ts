@@ -147,6 +147,15 @@ export interface CachedWallLayout {
   customSurfaceRimPixels: CachedSurfaceRimPixel[];
   customSurfaceRimRenderData: CachedSurfaceRimRenderData[];
   /**
+   * Pixel-accurate exposed-edge falloff for sub-tile shapes (stairs, ramps,
+   * half-blocks) using the DEFAULT rim presentation. The tile-granular
+   * `surfaceExposureMap` below cannot describe these — it would outline the
+   * whole tile square — so their outline is precomputed here once per layout
+   * and drawn by `renderSurfaceEdgeOverlayPass` with the same falloff and
+   * per-pixel noise the tile path uses along a full block's edge.
+   */
+  subTileRimPixels: CachedSubTileRimPixel[];
+  /**
    * Authoritative tile-level open-air exposure, built from the same
    * `occupied` set above but room-bounds aware (out-of-bounds neighbours
    * never count as open air — unlike the raw N/E/S/W `isWallOccupied`
@@ -178,6 +187,8 @@ export interface CachedWallLayout {
   // O(all-room-tiles).  Items that straddle a chunk boundary are included in
   // every overlapping chunk's list.
 
+  /** Sub-tile shape rim pixels grouped by chunk key. */
+  subTileRimByChunkKey: Map<string, CachedSubTileRimPixel[]>;
   /** 1×1 occupied tiles grouped by chunk key. */
   occupiedByChunkKey: Map<string, CachedTileCoord[]>;
   /** Platform tiles grouped by chunk key. */
@@ -803,17 +814,35 @@ export function buildWallLayout(
     });
   }
 
-  // Wrap the already-computed `occupied` set as a TileSolidityGrid — this
-  // reuses the exact same solidity data the rest of this cache uses (no
-  // re-decomposition of wall AABBs), just adds room-bounds awareness so
-  // out-of-bounds neighbours are never treated as open air.
+  // Sub-tile shapes (stairs, ramps, half-blocks) rasterized to world pixels.
+  // Empty for the overwhelmingly common room with none, in which case every
+  // path below degrades to exactly the previous tile-only behaviour.
+  const subTileSolidPixels = _buildSubTileSolidPixels(walls);
+
+  // Wrap the already-computed tile sets as a TileSolidityGrid — this reuses the
+  // exact same solidity data the rest of this cache uses (no re-decomposition
+  // of wall AABBs), just adds room-bounds awareness so out-of-bounds
+  // neighbours are never treated as open air.
+  //
+  // `fullSolidTiles`, not `occupied`, is the solidity source: a half-block's
+  // tile is in `occupied` (for lighting and neighbour detection) but only half
+  // of it is filled, so treating it as a solid square here would draw a
+  // full-tile rim around a half-filled cell. The `isSubTileSolidAtPx` hook
+  // then lets neighbouring full blocks still see the shape's real pixels, so
+  // no rim is drawn where the two are flush.
   const solidityGrid: TileSolidityGrid = {
     widthBlocks,
     heightBlocks,
     blockSizePx,
-    isSolidAt: (col: number, row: number): boolean => occupied.has(wallTileKey(col, row)),
+    isSolidAt: (col: number, row: number): boolean => fullSolidTiles.has(wallTileKey(col, row)),
+    isSubTileSolidAtPx: subTileSolidPixels.size === 0
+      ? undefined
+      : (xPx: number, yPx: number): boolean => subTileSolidPixels.has(_pixelKey(xPx, yPx)),
   };
   const surfaceExposureMap = buildSurfaceExposureMap(solidityGrid);
+  const subTileRimPixels = _buildSubTileRimPixels(
+    walls, subTileSolidPixels, fullSolidTiles, blockSizePx, widthBlocks, heightBlocks,
+  );
   // Custom work is placement-bounded and skipped entirely when no custom style
   // exists. The old room-wide tile BFS is intentionally no longer constructed.
   const customRim = _buildCustomSurfaceRimPixels(
@@ -838,6 +867,7 @@ export function buildWallLayout(
     interiorRimDistanceField,
     customSurfaceRimPixels: customRim.pixels,
     customSurfaceRimRenderData: customRim.renderData,
+    subTileRimPixels,
     surfaceExposureMap,
     ambientDepthsByKey: new Map<string, Map<string, number>>(),
     solid2x2Map: _buildSolid2x2Map(walls, blockSizePx),
@@ -847,6 +877,7 @@ export function buildWallLayout(
     halfBlockByChunkKey: new Map(),
     solid2x2ByChunkKey:   new Map(),
     customSurfaceRimByChunkKey: new Map(),
+    subTileRimByChunkKey: new Map(),
   };
 
   // Build per-chunk buckets AFTER all arrays are populated so the bucket maps
@@ -878,6 +909,18 @@ function _buildChunkBuckets(layout: CachedWallLayout, walls: WallSnapshot): void
     if (arr === undefined) {
       arr = [];
       layout.customSurfaceRimByChunkKey.set(ck, arr);
+    }
+    arr.push(pixel);
+  }
+
+  for (const pixel of layout.subTileRimPixels) {
+    const col = Math.floor(pixel.xWorldPx / BSZ);
+    const row = Math.floor(pixel.yWorldPx / BSZ);
+    const ck = `${Math.floor(col / CHUNK_SIZE_BLOCKS)},${Math.floor(row / CHUNK_SIZE_BLOCKS)}`;
+    let arr = layout.subTileRimByChunkKey.get(ck);
+    if (arr === undefined) {
+      arr = [];
+      layout.subTileRimByChunkKey.set(ck, arr);
     }
     arr.push(pixel);
   }

@@ -185,5 +185,6 @@ export function drawEditorSurfaceRimOverlay(
     getStyleForTile: (col, row) => layout.tileSurfaceRim.get(`${col},${row}`) ?? null,
     customRimPixels: layout.customSurfaceRimPixels,
     customRimRenderData: layout.customSurfaceRimRenderData,
+    subTileRimPixels: layout.subTileRimPixels,
   });
 }

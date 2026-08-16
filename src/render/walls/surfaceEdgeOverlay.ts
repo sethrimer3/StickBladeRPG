@@ -189,6 +189,25 @@ function _bandAlpha(col: number, row: number, kind: SurfaceSide | CornerSide, de
   return lo + noise * (hi - lo);
 }
 
+/**
+ * Same treatment as `_bandAlpha`, but keyed on a world PIXEL rather than a
+ * (tile, side) pair — used for sub-tile shapes (stairs, ramps, half-blocks),
+ * whose outline is a pixel path with no single owning side. Uses the identical
+ * `_BAND_ALPHA_RANGES` falloff so a stair's edge reads at exactly the same
+ * strength as the block edge it sits against.
+ *
+ * The extra constant in the hash's "kind" slot just keeps this stream distinct
+ * from the per-tile one, so a shape's pixels don't correlate with the bands of
+ * the tile they happen to lie in.
+ */
+const _SUB_TILE_KIND_ID = 8;
+
+function _subTilePixelAlpha(xPx: number, yPx: number, depth: number): number {
+  const [lo, hi] = _BAND_ALPHA_RANGES[depth];
+  const noise = _hash4(xPx, yPx, _SUB_TILE_KIND_ID, depth);
+  return lo + noise * (hi - lo);
+}
+
 // ── DEV-only diagnostic overlay (colour-coded, from the same segment source) ──
 //
 // Toggle via the browser console: `window.__dwEdgeOverlay = true`. Unlike the
@@ -396,6 +415,7 @@ export const surfaceEdgeOverlayDiag = {
   sideBandRectsDrawnLastFrame: 0,
   convexCornerRectsDrawnLastFrame: 0,
   concaveCornerRectsDrawnLastFrame: 0,
+  subTileRimPixelsDrawnLastFrame: 0,
   tilesSkippedDarknessLastFrame: 0,
 };
 
@@ -440,6 +460,20 @@ export interface SurfaceEdgeOverlayParams {
   }[];
   customRimRenderData?: readonly {
     fillStyleByDistance: readonly string[];
+  }[];
+  /**
+   * Pixel-accurate outline for sub-tile shapes — stairs, ramps and
+   * half-blocks — precomputed by `blockWallLayoutCache.ts`. These shapes fill
+   * only part of their tile, so `surfaceExposureMap` (which is tile-granular)
+   * deliberately excludes them: outlining them from it would trace the tile
+   * square instead of the staircase/diagonal/half silhouette. Each entry is
+   * one world pixel plus its inward depth, drawn with the same
+   * `_BAND_ALPHA_RANGES` falloff as the tile bands above.
+   */
+  subTileRimPixels?: readonly {
+    xWorldPx: number;
+    yWorldPx: number;
+    depth: number;
   }[];
 }
 
@@ -499,6 +533,7 @@ export function renderSurfaceEdgeOverlayPass(
   let sideBandRectsDrawn = 0;
   let convexCornerRectsDrawn = 0;
   let concaveCornerRectsDrawn = 0;
+  let subTileRimPixelsDrawn = 0;
   let skippedDarkness = 0;
 
   ctx.save();
@@ -606,6 +641,36 @@ export function renderSurfaceEdgeOverlayPass(
     }
   }
 
+  // ── Pass D: sub-tile shape outlines (stairs / ramps / half-blocks) ──────────
+  // Drawn from precomputed world pixels rather than tile masks, because these
+  // shapes fill only part of their tile — see `subTileRimPixels`. Each pixel is
+  // painted exactly once (the layout's BFS assigns one depth per pixel), so
+  // this keeps the same no-double-painting guarantee as passes A and B.
+  if (params.subTileRimPixels) {
+    for (const pixel of params.subTileRimPixels) {
+      const col = Math.floor(pixel.xWorldPx / blockSizePx);
+      const row = Math.floor(pixel.yWorldPx / blockSizePx);
+      if (!_inFilterRange(col, row, params)) continue;
+      const darknessMul = _darknessMulAtTile(col, row, params);
+      if (darknessMul === null) { skippedDarkness++; continue; }
+
+      const strength = _subTilePixelAlpha(pixel.xWorldPx, pixel.yWorldPx, pixel.depth) * darknessMul;
+      if (strength <= 0) continue;
+
+      // Round both edges independently so adjacent pixels tile seamlessly at
+      // fractional zoom instead of leaving hairline gaps.
+      const x0 = Math.round(pixel.xWorldPx * scalePx + offsetXPx);
+      const x1 = Math.round((pixel.xWorldPx + 1) * scalePx + offsetXPx);
+      const y0 = Math.round(pixel.yWorldPx * scalePx + offsetYPx);
+      const y1 = Math.round((pixel.yWorldPx + 1) * scalePx + offsetYPx);
+      if (x1 <= x0 || y1 <= y0) continue;
+
+      ctx.fillStyle = `rgba(255,255,255,${strength})`;
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      subTileRimPixelsDrawn++;
+    }
+  }
+
   // ── Pass C: 'inverted'-mode interior darkening for deeper tiles ─────────────
   // Tiles with zero exposed cardinal sides never appear in `masks` (Pass A),
   // so this is the only pass that can darken them. One O(1) map-lookup rect
@@ -648,6 +713,7 @@ export function renderSurfaceEdgeOverlayPass(
     surfaceEdgeOverlayDiag.sideBandRectsDrawnLastFrame = sideBandRectsDrawn;
     surfaceEdgeOverlayDiag.convexCornerRectsDrawnLastFrame = convexCornerRectsDrawn;
     surfaceEdgeOverlayDiag.concaveCornerRectsDrawnLastFrame = concaveCornerRectsDrawn;
+    surfaceEdgeOverlayDiag.subTileRimPixelsDrawnLastFrame = subTileRimPixelsDrawn;
     surfaceEdgeOverlayDiag.tilesSkippedDarknessLastFrame = skippedDarkness;
   }
 }

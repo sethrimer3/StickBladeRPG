@@ -594,6 +594,11 @@ export function renderSurfaceEdgeOverlayPass(
       ? (pctx.wallLayout.customSurfaceRimByChunkKey.get(pctx.chunkKey) ?? [])
       : pctx.wallLayout.customSurfaceRimPixels,
     customRimRenderData: pctx.wallLayout.customSurfaceRimRenderData,
+    // Stairs/ramps/half-blocks outline from precomputed world pixels, bucketed
+    // per chunk exactly like the custom rim pixels above.
+    subTileRimPixels: pctx.chunkKey !== null
+      ? (pctx.wallLayout.subTileRimByChunkKey.get(pctx.chunkKey) ?? [])
+      : pctx.wallLayout.subTileRimPixels,
   });
 }
 
