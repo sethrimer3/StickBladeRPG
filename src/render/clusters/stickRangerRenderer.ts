@@ -26,6 +26,7 @@ import {
   SR_KNEE_R,
   SR_FOOT_L,
   SR_FOOT_R,
+  SR_POINT_COUNT,
   type StickRangerBody,
 } from '../../sim/clusters/stickRangerBody';
 import type { WeaponDef } from '../../sim/weapons/weaponDefs';
@@ -85,14 +86,79 @@ export const LIMB_THICKNESS_WORLD = 1;
 
 const _weaponAnchorScratch = createWeaponGripAnchor();
 
+interface SnappedPose {
+  x: Int32Array;
+  y: Int32Array;
+  gripX: number;
+  gripY: number;
+}
+
+const _snappedPoseCache = new WeakMap<StickRangerBody, SnappedPose>();
+
+function getOrCreateSnappedPose(body: StickRangerBody): SnappedPose {
+  let pose = _snappedPoseCache.get(body);
+  if (!pose) {
+    pose = {
+      x: new Int32Array(SR_POINT_COUNT),
+      y: new Int32Array(SR_POINT_COUNT),
+      gripX: 0,
+      gripY: 0,
+    };
+    _snappedPoseCache.set(body, pose);
+  }
+  return pose;
+}
+
+function snapWithHysteresis(target: number, current: number, deadband = 0.60): number {
+  if (current === 0 && target !== 0) return Math.round(target);
+  const diff = Math.abs(target - current);
+  if (diff < deadband) return current;
+  return Math.round(target);
+}
+
+/**
+ * Draws a 1-pixel crisp line between integer endpoints using Bresenham's algorithm.
+ */
+function drawBresenhamLine(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  dxPx: number,
+  dyPx: number,
+): void {
+  let x = x0;
+  let y = y0;
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+
+  while (true) {
+    ctx.fillRect(x + dxPx, y + dyPx, 1, 1);
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y += sy;
+    }
+  }
+}
+
 /**
  * Renders the stickman softbody onto the canvas.
  *
  * Draws a 1-pixel solid black outline in the 4 cardinal directions (corners clipped)
  * behind the figure, followed by the foreground stickman body.
  *
- * All coordinates snap to integer pixels for a crisp, non-blurry appearance.
- * Limbs are 1 pixel wide and the head is 5x5 pixels.
+ * All coordinates snap to integer pixels with hysteresis for a crisp, jitter-free appearance.
+ * Limbs are drawn with exact 1-pixel discrete fills (no anti-aliased smearing) and the head is 5x5 pixels.
  *
  * @param ctx        Canvas 2D context.
  * @param body       The simulated softbody.
@@ -112,71 +178,68 @@ export function renderStickRangerBody(
   isEnemy = false,
 ): void {
   const alpha = getStickRangerRenderAlpha(body);
-  const toScreenX = (i: number): number => Math.round(getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx);
-  const toScreenY = (i: number): number => Math.round(getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx);
+  const pose = getOrCreateSnappedPose(body);
+
+  for (let i = 0; i < SR_POINT_COUNT; i++) {
+    const rawX = getStickRangerRenderX(body, i, alpha) * scalePx + offsetXPx;
+    const rawY = getStickRangerRenderY(body, i, alpha) * scalePx + offsetYPx;
+    pose.x[i] = snapWithHysteresis(rawX, pose.x[i]);
+    pose.y[i] = snapWithHysteresis(rawY, pose.y[i]);
+  }
 
   const color = isEnemy ? ENEMY_FIGURE_COLOR : FIGURE_COLOR;
   const headSizePx = Math.max(1, Math.round(HEAD_SIZE_WORLD * scalePx));
-  const outlineThicknessPx = scalePx;
+  const outlineThicknessPx = Math.max(1, Math.round(scalePx));
 
-  let toGripX = 0;
-  let toGripY = 0;
   if (isTwoHandGrip) {
-    const handX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
-    const handY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
-    toGripX = Math.round(handX * scalePx + offsetXPx);
-    toGripY = Math.round(handY * scalePx + offsetYPx);
+    const rawHandX = (getStickRangerRenderX(body, SR_HAND_L, alpha) + getStickRangerRenderX(body, SR_HAND_R, alpha)) * 0.5;
+    const rawHandY = (getStickRangerRenderY(body, SR_HAND_L, alpha) + getStickRangerRenderY(body, SR_HAND_R, alpha)) * 0.5;
+    const targetGripX = rawHandX * scalePx + offsetXPx;
+    const targetGripY = rawHandY * scalePx + offsetYPx;
+    pose.gripX = snapWithHysteresis(targetGripX, pose.gripX);
+    pose.gripY = snapWithHysteresis(targetGripY, pose.gripY);
   }
 
   const halfHeadPx = Math.floor(headSizePx * 0.5);
 
-  const drawFigurePass = (passColor: string, dxPx: number, dyPx: number): void => {
-    ctx.strokeStyle = passColor;
+  const drawPass = (passColor: string, dxPx: number, dyPx: number): void => {
     ctx.fillStyle = passColor;
 
-    ctx.beginPath();
+    // 1. Draw limb segments using discrete 1px Bresenham rasterization (crisp pixel art)
     if (isTwoHandGrip) {
       for (let s = 0; s < NON_ARM_SEGMENTS.length; s++) {
         const [a, b] = NON_ARM_SEGMENTS[s];
-        ctx.moveTo(toScreenX(a) + dxPx, toScreenY(a) + dyPx);
-        ctx.lineTo(toScreenX(b) + dxPx, toScreenY(b) + dyPx);
+        drawBresenhamLine(ctx, pose.x[a], pose.y[a], pose.x[b], pose.y[b], dxPx, dyPx);
       }
       // Both forearms meet at the two-handed weapon grip anchor
-      ctx.moveTo(toScreenX(SR_SHOULDER_L) + dxPx, toScreenY(SR_SHOULDER_L) + dyPx);
-      ctx.lineTo(toGripX + dxPx, toGripY + dyPx);
-      ctx.moveTo(toScreenX(SR_SHOULDER_R) + dxPx, toScreenY(SR_SHOULDER_R) + dyPx);
-      ctx.lineTo(toGripX + dxPx, toGripY + dyPx);
+      drawBresenhamLine(ctx, pose.x[SR_SHOULDER_L], pose.y[SR_SHOULDER_L], pose.gripX, pose.gripY, dxPx, dyPx);
+      drawBresenhamLine(ctx, pose.x[SR_SHOULDER_R], pose.y[SR_SHOULDER_R], pose.gripX, pose.gripY, dxPx, dyPx);
     } else {
       for (let s = 0; s < SEGMENTS.length; s++) {
         const [a, b] = SEGMENTS[s];
-        ctx.moveTo(toScreenX(a) + dxPx, toScreenY(a) + dyPx);
-        ctx.lineTo(toScreenX(b) + dxPx, toScreenY(b) + dyPx);
+        drawBresenhamLine(ctx, pose.x[a], pose.y[a], pose.x[b], pose.y[b], dxPx, dyPx);
       }
     }
-    ctx.stroke();
 
-    // Head: filled 5x5 square centred on the head point, pixel-snapped.
+    // 2. Head: filled 5x5 square centred on the head point, pixel-snapped.
     ctx.fillRect(
-      toScreenX(SR_HEAD) - halfHeadPx + dxPx,
-      toScreenY(SR_HEAD) - halfHeadPx + dyPx,
+      pose.x[SR_HEAD] - halfHeadPx + dxPx,
+      pose.y[SR_HEAD] - halfHeadPx + dyPx,
       headSizePx,
       headSizePx,
     );
   };
 
   ctx.save();
-  ctx.lineWidth = Math.max(1, Math.round(LIMB_THICKNESS_WORLD * scalePx));
-  ctx.lineCap = 'butt';
-  ctx.lineJoin = 'miter';
 
   // 1. Draw 1-pixel solid black outline in 4 cardinal directions (clipped corners).
   for (let n = 0; n < OUTLINE_NEIGHBOR_OFFSETS.length; n++) {
     const [ox, oy] = OUTLINE_NEIGHBOR_OFFSETS[n];
-    drawFigurePass(OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
+    drawPass(OUTLINE_COLOR, ox * outlineThicknessPx, oy * outlineThicknessPx);
   }
 
   // 2. Draw foreground figure in primary color (white or enemy crimson) on top.
-  drawFigurePass(color, 0, 0);
+  drawPass(color, 0, 0);
 
   ctx.restore();
 }

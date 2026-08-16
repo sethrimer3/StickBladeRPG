@@ -13,6 +13,8 @@ import { createStickRangerBody } from '../sim/clusters/stickRangerBody';
 import { renderStickRangerBody } from '../render/clusters/stickRangerRenderer';
 import { createWorldState, type WorldState } from '../sim/world';
 import { createClusterState, type ClusterState } from '../sim/clusters/state';
+import { computeWeaponGripAnchor, createWeaponGripAnchor } from '../sim/weapons/weaponGrip';
+import { getWeaponDef } from '../sim/weapons/weaponDefs';
 import type { WorldSnapshot } from '../render/snapshot';
 
 const DT_MS = 1000 / 60;
@@ -415,21 +417,20 @@ describe('held weapon poses', () => {
     const weaponCtx = createRecordingContext();
     new WeaponRenderer().render(weaponCtx.ctx, snapshot, OX, OY, ZOOM);
 
-    // The body's two-hand branch ends each forearm at the grip, so the grip is
-    // the destination of its forearm lineTo calls.
-    const bodyLineTos = bodyCtx.calls.filter(c => c.op === 'lineTo');
-    const gripX = bodyLineTos[bodyLineTos.length - 1].args[0] as number;
-    const gripY = bodyLineTos[bodyLineTos.length - 1].args[1] as number;
-
     // The weapon sprite is unavailable in Node, so the blade falls back to a
     // stroked line whose first moveTo is the grip end.
     const bladeStart = weaponCtx.calls.find(c => c.op === 'moveTo');
     assert.ok(bladeStart !== undefined, 'the blade should have been stroked');
 
+    const anchor = createWeaponGripAnchor();
+    computeWeaponGripAnchor(body, getWeaponDef('woodenSword')!, 1, anchor);
+    const expectedGripX = Math.round(anchor.xWorld * ZOOM + OX);
+    const expectedGripY = Math.round(anchor.yWorld * ZOOM + OY);
+
     assert.ok(
-      Math.abs((bladeStart.args[0] as number) - gripX) < 1e-6
-      && Math.abs((bladeStart.args[1] as number) - gripY) < 1e-6,
-      `blade starts at ${bladeStart.args[0]},${bladeStart.args[1]} but the hand is at ${gripX},${gripY}`,
+      Math.abs((bladeStart.args[0] as number) - expectedGripX) < 1e-6
+      && Math.abs((bladeStart.args[1] as number) - expectedGripY) < 1e-6,
+      `blade starts at ${bladeStart.args[0]},${bladeStart.args[1]} but the grip is at ${expectedGripX},${expectedGripY}`,
     );
   });
 
@@ -441,8 +442,7 @@ describe('held weapon poses', () => {
     const twoHandCtx = createRecordingContext();
     renderStickRangerBody(twoHandCtx.ctx, body, 0, 0, 1, true);
 
-    // Both should draw the stickman lines and head
-    assert.ok(countOps(twoHandCtx.calls, 'stroke') > 0);
+    // Both should draw the stickman pixels and head
     assert.ok(countOps(twoHandCtx.calls, 'fillRect') > 0);
     assert.equal(countOps(twoHandCtx.calls, 'save'), countOps(twoHandCtx.calls, 'restore'));
   });
