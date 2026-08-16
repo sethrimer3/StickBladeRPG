@@ -5,7 +5,8 @@
  * rotate, flip, multi-select, and rope-anchor hit-test operations.
  */
 
-import { EditorState, allocateUid } from './editorState';
+import { EditorState, allocateUid, type SelectedElement } from './editorState';
+import { markEditorPreviewDirtyBlocks } from './editorPreviewInvalidation';
 import { markLiquidBodiesDirty } from '../render/liquidBodyCache';
 import { getBrushCells, getFillBrushCells, FillKind } from './editorBrush';
 import { findTopEligibleHitCandidate, type EditorHitCandidate } from './editorTools';
@@ -123,6 +124,27 @@ export function deleteAtCursorBrushed(state: EditorState): boolean {
  *    intentionally left matching prior behaviour rather than given new,
  *    separately-defined semantics.
  */
+/**
+ * Block footprint of `element`, for the element types the editor's live
+ * preview actually renders (walls and background blocks). Returns null for
+ * everything else — those keep their editor overlay marker, so the preview has
+ * nothing to invalidate for them beyond the clicked cell.
+ */
+function previewTerrainBounds(
+  state: EditorState,
+  element: SelectedElement,
+): { xBlock: number; yBlock: number; wBlock: number; hBlock: number } | null {
+  const room = state.roomData;
+  if (room === null) return null;
+  if (element.type === 'wall') {
+    return room.interiorWalls.find(w => w.uid === element.uid) ?? null;
+  }
+  if (element.type === 'backgroundBlock') {
+    return (room.backgroundBlocks ?? []).find(b => b.uid === element.uid) ?? null;
+  }
+  return null;
+}
+
 function deleteAt(state: EditorState, bx: number, by: number): boolean {
   const room = state.roomData;
   if (room === null) return false;
@@ -147,7 +169,22 @@ function deleteAt(state: EditorState, bx: number, by: number): boolean {
   // they must never actually be deleted — check again here explicitly.
   if (isLayerLocked(state, getLayerForElementType(target.element.type))) return false;
 
-  return deleteResolvedCandidate(state, target, Math.floor(bx), Math.floor(by));
+  // Read the footprint BEFORE deleting — walls and background blocks are
+  // removed whole, and a merged one can be far larger than the clicked cell.
+  // Marking only the cell would leave the rest of its tiles stale in the live
+  // preview until the next whole-room invalidation.
+  const bounds = previewTerrainBounds(state, target.element);
+
+  const deleted = deleteResolvedCandidate(state, target, Math.floor(bx), Math.floor(by));
+  if (deleted) {
+    if (bounds !== null) {
+      markEditorPreviewDirtyBlocks(bounds.xBlock, bounds.yBlock,
+        bounds.xBlock + bounds.wBlock - 1, bounds.yBlock + bounds.hBlock - 1);
+    } else {
+      markEditorPreviewDirtyBlocks(bx, by, bx, by);
+    }
+  }
+  return deleted;
 }
 
 /**

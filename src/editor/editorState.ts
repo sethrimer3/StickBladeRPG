@@ -249,6 +249,16 @@ export interface EditorState {
    * editing convenience, like blockThemeSlots.
    */
   layers: EditorLayersState;
+  /**
+   * When true the editor canvas shows the live game-accurate room preview —
+   * real block sprites, lighting, seams, background blocks and custom blocks
+   * rendered from the room being edited (see editorPreviewRenderer.ts) — with
+   * the authoring overlays drawn on top of it. When false the editor falls
+   * back to its schematic wall/background outlines only.
+   *
+   * Editor-only session state, like `layers`: never written to room JSON.
+   */
+  isLivePreviewEnabled: boolean;
 }
 
 export function createEditorState(): EditorState {
@@ -310,6 +320,7 @@ export function createEditorState(): EditorState {
     customBlockRegistry: new Map(),
     customBlockUsage: new Map(),
     layers: createDefaultEditorLayers(),
+    isLivePreviewEnabled: true,
   };
 }
 

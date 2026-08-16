@@ -15,6 +15,7 @@ import {
   EditorDialogueTrigger, EditorGuideDustPath,
 } from './editorState';
 import { toNamespacedId } from '../levels/customBlocks';
+import { markEditorPreviewDirtyBlocks } from './editorPreviewInvalidation';
 import { createDefaultLight } from '../render/lighting/lightingTypes';
 import { placeEnemyAtCursor } from './editorEnemyPlacer';
 import { MAX_ROPE_SEGMENTS } from '../sim/world';
@@ -616,6 +617,13 @@ function placeAt(state: EditorState, bx: number, by: number): void {
   // that skipped its own `getPlacementStatus` check (or a preflight that's
   // out of sync) still can't cause a mutation past this point.
   if (wouldPlacementSucceedAt(state, bx, by) !== true) return;
+
+  // Report the footprint to the live preview so only the chunks around this
+  // cell rebuild. Marking from here (rather than from the controller) covers
+  // every brush mode and both the click and drag-paint paths with one call,
+  // and costs a min/max union. The tracker pads for neighbour-dependent tile
+  // appearance, which also covers items larger than one block.
+  markEditorPreviewDirtyBlocks(bx, by, bx, by);
 
   // ── Lighting layer ─────────────────────────────────────────────────────
   if (item.category === 'lighting') {

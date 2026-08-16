@@ -83,6 +83,7 @@ export function drawEditorWalls(
   zoom: number,
   viewport?: EditorViewport,
   wallGeometryRevision = -1,
+  isPreviewActive = false,
 ): void {
   const topology = getEditorWallTopology(room, wallGeometryRevision);
   const occupied = topology.occupied;
@@ -93,6 +94,11 @@ export function drawEditorWalls(
     if (!isElementInViewport(viewport, w.xBlock, w.yBlock, w.wBlock, w.hBlock)) continue;
     editorPerfCounters.overlayElementsDrawn++;
     const sel = isSelected('wall', w.uid);
+    // With the live preview on, the room's real block art is already on the
+    // canvas underneath, so the schematic coloured shape for an unselected
+    // wall would only obscure it. Selected walls keep their highlight — that
+    // is selection feedback, not a stand-in for the block's appearance.
+    if (isPreviewActive && !sel) continue;
     const isPlatform = w.isPlatformFlag === 1;
     const isStairs = w.stairsOrientation !== undefined;
     const isRamp = w.rampOrientation !== undefined || w.smoothRampOrientation !== undefined;
@@ -123,7 +129,13 @@ export function drawEditorWalls(
   // Surface Rim preview (default hard-coded exposed-edge bands, or a
   // per-block custom style) — drawn last so it sits on top, matching the
   // gameplay renderer's draw order (wall sprites, then the overlay pass).
-  drawEditorSurfaceRimOverlay(ctx, room, offsetXPx, offsetYPx, zoom, viewport, wallGeometryRevision);
+  //
+  // Redundant under the live preview: the gameplay wall renderer runs its own
+  // surface-edge overlay pass from the same layout, so drawing it again here
+  // would double the rim's opacity.
+  if (!isPreviewActive) {
+    drawEditorSurfaceRimOverlay(ctx, room, offsetXPx, offsetYPx, zoom, viewport, wallGeometryRevision);
+  }
 }
 
 // ============================================================================

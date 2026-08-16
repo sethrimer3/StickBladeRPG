@@ -63,6 +63,8 @@ import { createEditorUI, EditorUI } from './editorUI';
 import type { RoomEdge, EditorSessionUIState } from './editorUI';
 import { isPointOverEditorCanvas, type EditorUIHitRegionParams } from './editorUIHitRegions';
 import { renderEditorOverlays, renderEditorIndicator } from './editorRenderer';
+import { resetEditorPreviewRenderer } from './editorPreviewRenderer';
+import { markEditorPreviewFullyDirty } from './editorPreviewInvalidation';
 import { showEditorWorldMap } from './editorWorldMap';
 import { showVisualWorldMap } from './editorVisualMap';
 import { beginTransitionLink, completeTransitionLink, cancelTransitionLink } from './transitionLinker';
@@ -220,6 +222,12 @@ export interface EditorController {
   /** Lightweight per-frame backdrop view (Item E). Never triggers a full
    *  RoomDef conversion; rebuilt only when room content revision advances. */
   getBackdropRoom: () => EditorBackdropRoom | null;
+  /**
+   * Current wall-geometry revision. Read by the backdrop's terrain slot so the
+   * live preview's wall-layout cache can skip re-deriving its signature on
+   * frames where no wall geometry changed (see editorPreviewRenderer.ts).
+   */
+  getWallGeometryRevision: () => number;
   /** Continue an exit action immediately, or gate it behind the unexported-work decision. */
   requestExit: (onProceed: () => void) => void;
   /** Cleanup. */
@@ -944,6 +952,9 @@ export function createEditorController(
     state.isActive = !state.isActive;
 
     if (state.isActive) {
+      // The live preview shares the gameplay chunk caches, which currently
+      // hold whatever the last-played room baked. Start from a clean slate.
+      resetEditorPreviewRenderer();
       // Snapshot which rooms already exist so we can identify newly-added ones.
       initialRoomIds = new Set(ROOM_REGISTRY.keys());
       isWorldMapDirty = false;
@@ -1538,6 +1549,9 @@ export function createEditorController(
     discardPendingStrokeRevision(strokeRevision);
     resetDragTargetCache(dragTargets);
     resetEditorBackdropRoomCache(backdropRoomCache);
+    // Preview chunks were baked from edit data at the editor's zoom; gameplay
+    // must re-own the caches rather than inherit them.
+    resetEditorPreviewRenderer();
     originalRoomDef = null;
     pendingRoomEdits.clear();
     initialRoomIds = new Set();
@@ -1605,9 +1619,15 @@ export function createEditorController(
    */
   function applyEdits(
     changeKind: 'placement' | 'metadata' = 'metadata',
-    options?: { continuous?: boolean; wallGeometry?: boolean },
+    options?: { continuous?: boolean; wallGeometry?: boolean; previewDirty?: 'auto' | 'all' },
   ): void {
     if (!state.roomData) return;
+    // Live-preview invalidation (see editorPreviewInvalidation.ts). 'all' is
+    // the default because it is always correct: any edit whose footprint was
+    // not reported still shows up, just via a whole-room chunk rebuild. Only
+    // the paths that mutate through placeAt/deleteAt — which report their own
+    // footprint per cell — pass 'auto' and get the incremental path.
+    if (options?.previewDirty !== 'auto') markEditorPreviewFullyDirty();
     isCurrentRoomDirty = isHistoryDirty(history) || activePaintPending !== null;
     state.pendingComplexityCheck = true;
     const isWallGeometry = options?.wallGeometry !== undefined
@@ -1688,6 +1708,8 @@ export function createEditorController(
     // Room load invalidates derived summaries exactly once, and supersedes
     // (discards) any deferred stroke bump from the outgoing room.
     noteContentMutation(state, strokeRevision);
+    // A different room shares nothing with the outgoing one's preview.
+    resetEditorPreviewRenderer();
     if (usesCampaignStore && campaignSession?.campaignStore !== undefined) {
       const loaded = loadPersistedCampaignRoom(
         campaignSession,
@@ -2261,7 +2283,7 @@ export function createEditorController(
         } else if (state.activeTool === EditorTool.Place && state.selectedPaletteItem?.isPixelMaterialItem === 1) {
           const px = pixelFromCursor(state);
           const placed = placePixelMaterialAt(state, px.x, px.y, state.selectedPaletteItem.pixelMaterialId ?? 1);
-          if (placed) applyEdits('placement');
+          if (placed) applyEdits('placement', { previewDirty: 'auto' });
           lastDragPixelX = px.x;
           lastDragPixelY = px.y;
         } else if (state.activeTool === EditorTool.Place && state.selectedPaletteItem?.id === 'campaign_spawn') {
@@ -2329,7 +2351,7 @@ export function createEditorController(
               activePaintTracksCampaignSpawn = false;
             }
             const applyEditsStartMs = import.meta.env.DEV ? performance.now() : 0;
-            if (placed) applyEdits('placement');
+            if (placed) applyEdits('placement', { previewDirty: 'auto' });
             const applyEditsElapsedMs = import.meta.env.DEV ? performance.now() - applyEditsStartMs : 0;
             if (import.meta.env.DEV) {
               const totalElapsedMs = performance.now() - totalPlacementStartMs;
@@ -2386,14 +2408,14 @@ export function createEditorController(
         } else if (state.activeTool === EditorTool.Delete && state.selectedPaletteItem?.isPixelMaterialItem === 1) {
           const px = pixelFromCursor(state);
           const erased = erasePixelMaterialAt(state, px.x, px.y);
-          if (erased) applyEdits('placement');
+          if (erased) applyEdits('placement', { previewDirty: 'auto' });
           lastDragPixelX = px.x;
           lastDragPixelY = px.y;
         } else if (state.activeTool === EditorTool.Delete) {
           const deleted = deleteAtCursorBrushed(state);
           if (deleted) {
             syncCampaignSpawnToSessionAfterDelete(campaignSpawnCtx);
-            applyEdits('placement');
+            applyEdits('placement', { previewDirty: 'auto' });
           }
           lastDragBlockX = state.cursorBlockX;
           lastDragBlockY = state.cursorBlockY;
@@ -2430,7 +2452,7 @@ export function createEditorController(
           if (state.selectedPaletteItem?.isPixelMaterialItem !== 1) {
             syncCampaignSpawnToSessionAfterDelete(campaignSpawnCtx);
           }
-          applyEdits('placement');
+          applyEdits('placement', { previewDirty: 'auto' });
         }
         lastDragBlockX = state.cursorBlockX;
         lastDragBlockY = state.cursorBlockY;
@@ -2665,7 +2687,7 @@ export function createEditorController(
         );
         lastDragPixelX = px.x;
         lastDragPixelY = px.y;
-        if (changed) applyEdits('placement', { continuous: true });
+        if (changed) applyEdits('placement', { continuous: true, previewDirty: 'auto' });
       }
     } else if (canDragPaint) {
       if (state.cursorBlockX !== lastDragBlockX || state.cursorBlockY !== lastDragBlockY) {
@@ -2674,14 +2696,14 @@ export function createEditorController(
         if (state.activeTool === EditorTool.Place) {
           const placementStartMs = import.meta.env.DEV ? performance.now() : 0;
           const placed = placeAtCursor(state);
-          if (placed) applyEdits('placement', { continuous: true });
+          if (placed) applyEdits('placement', { continuous: true, previewDirty: 'auto' });
           if (import.meta.env.DEV) {
             logEditorPerf('editor placement mutation', placementStartMs);
           }
         } else if (state.activeTool === EditorTool.Delete) {
           const placementStartMs = import.meta.env.DEV ? performance.now() : 0;
           const deleted = deleteAtCursorBrushed(state);
-          if (deleted) applyEdits('placement', { continuous: true });
+          if (deleted) applyEdits('placement', { continuous: true, previewDirty: 'auto' });
           if (import.meta.env.DEV) {
             logEditorPerf('editor placement mutation', placementStartMs);
           }
@@ -2714,14 +2736,14 @@ export function createEditorController(
         );
         lastDragPixelX = px.x;
         lastDragPixelY = px.y;
-        if (changed) applyEdits('placement', { continuous: true });
+        if (changed) applyEdits('placement', { continuous: true, previewDirty: 'auto' });
       }
     } else if (canRightDragPaint) {
       if (state.cursorBlockX !== lastDragBlockX || state.cursorBlockY !== lastDragBlockY) {
         lastDragBlockX = state.cursorBlockX;
         lastDragBlockY = state.cursorBlockY;
         const deleted = deleteAtCursorBrushed(state);
-        if (deleted) applyEdits('placement', { continuous: true });
+        if (deleted) applyEdits('placement', { continuous: true, previewDirty: 'auto' });
       }
     }
 
@@ -2831,6 +2853,10 @@ export function createEditorController(
     return resolveEditorBackdropRoom(backdropRoomCache, state.roomData, strokeRevision.mutationSerial);
   }
 
+  function getWallGeometryRevision(): number {
+    return strokeRevision.wallGeometryRevision;
+  }
+
   function destroy(): void {
     window.removeEventListener('beforeunload', handleBeforeUnload);
     if (inputCleanup) { inputCleanup(); inputCleanup = null; }
@@ -2849,6 +2875,7 @@ export function createEditorController(
     loadRoomForEditing,
     getRoomDef,
     getBackdropRoom,
+    getWallGeometryRevision,
     requestExit,
     destroy,
   };

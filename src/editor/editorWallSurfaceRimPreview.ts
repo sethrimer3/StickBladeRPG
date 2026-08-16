@@ -36,7 +36,20 @@ function _signatureFor(walls: readonly EditorWall[], widthBlocks: number, height
   return s;
 }
 
-let _editorLayoutCache: { room: EditorRoomData | null; wallGeometryRevision: number; signature: string; layout: CachedWallLayout } | null = null;
+/**
+ * The editor's wall geometry, in the two forms renderers need: the
+ * `WallSnapshot` the gameplay wall-sprite renderer consumes, and the
+ * `CachedWallLayout` derived from it. Cached together so the live preview
+ * (editorPreviewRenderer.ts) and the Surface Rim overlay share one build.
+ */
+export interface EditorWallGeometry {
+  readonly snapshot: WallSnapshot;
+  readonly layout: CachedWallLayout;
+}
+
+let _editorLayoutCache:
+  | { room: EditorRoomData | null; wallGeometryRevision: number; signature: string; geometry: EditorWallGeometry }
+  | null = null;
 
 export function resetEditorWallLayoutCache(): void {
   _editorLayoutCache = null;
@@ -104,27 +117,36 @@ export function buildEditorWallSnapshot(room: EditorRoomData): WallSnapshot {
  * of the gameplay `blockWallLayoutCache.ts` singleton.
  */
 export function getEditorWallLayout(room: EditorRoomData, wallGeometryRevision = -1): CachedWallLayout {
+  return getEditorWallGeometry(room, wallGeometryRevision).layout;
+}
+
+/**
+ * Same cache as {@link getEditorWallLayout}, but also returns the
+ * `WallSnapshot` the layout was built from — the live preview needs both to
+ * call the gameplay wall-sprite renderer.
+ */
+export function getEditorWallGeometry(room: EditorRoomData, wallGeometryRevision = -1): EditorWallGeometry {
   if (
     _editorLayoutCache !== null &&
     _editorLayoutCache.room === room &&
     _editorLayoutCache.wallGeometryRevision === wallGeometryRevision &&
     wallGeometryRevision >= 0
   ) {
-    return _editorLayoutCache.layout;
+    return _editorLayoutCache.geometry;
   }
 
   const signature = _signatureFor(room.interiorWalls, room.widthBlocks, room.heightBlocks, room.blockTheme);
   if (_editorLayoutCache !== null && _editorLayoutCache.signature === signature) {
     _editorLayoutCache.room = room;
     _editorLayoutCache.wallGeometryRevision = wallGeometryRevision;
-    return _editorLayoutCache.layout;
+    return _editorLayoutCache.geometry;
   }
 
   editorPerfCounters.surfaceRimLayoutRebuilds++;
   const snapshot = buildEditorWallSnapshot(room);
   const layout = buildWallLayout(snapshot, BLOCK_SIZE_SMALL, room.widthBlocks, room.heightBlocks, signature);
-  _editorLayoutCache = { room, wallGeometryRevision, signature, layout };
-  return layout;
+  _editorLayoutCache = { room, wallGeometryRevision, signature, geometry: { snapshot, layout } };
+  return _editorLayoutCache.geometry;
 }
 
 /**

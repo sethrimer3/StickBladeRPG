@@ -50,6 +50,7 @@ import { getLayerForElementType } from './editorLayers';
 import type { SelectedElementType } from './editorElementTypes';
 import { buildEditorRenderMask } from './editorRenderMask';
 import { makeIsElementSelected } from './editorSelectionCache';
+import { isEditorLivePreviewActive } from './editorPreviewRenderer';
 
 /**
  * Renders all editor overlays on the 2D canvas.
@@ -84,6 +85,22 @@ export function renderEditorOverlays(
 
   ctx.save();
 
+  // O(1) membership: cached Set of `${type}:${uid}` keys, rebuilt only when
+  // the selection actually changes (see editorSelectionCache.ts). Previously
+  // this was an Array.some() scan run once per drawn element per frame.
+  const isElementSelected = makeIsElementSelected(state);
+
+  // Mask derived once from EditorState and passed down — no scattered direct
+  // isLayerVisible(state, ...) calls below (or in editorPlacementPreviewDrawer.ts).
+  const mask = buildEditorRenderMask(state);
+
+  // The live game-accurate room preview is NOT drawn here — it occupies the
+  // gameplay terrain slot in gameScreenEditorBackdrop.ts, so hazards, enemies
+  // and interactables keep drawing on top of the terrain exactly as they do
+  // in game. What this flag does here is suppress the schematic stand-ins the
+  // preview has made redundant (see editorPreviewRenderer.ts).
+  const isPreviewActive = isEditorLivePreviewActive(state);
+
   // ── Edge extension ghost tiles ────────────────────────────────────────────
   // Drawn before all other overlays so grid / wall borders sit on top.
   if (edgeExtensionCache !== null && edgeExtensionCache !== undefined) {
@@ -102,15 +119,6 @@ export function renderEditorOverlays(
     }
   }
 
-  // O(1) membership: cached Set of `${type}:${uid}` keys, rebuilt only when
-  // the selection actually changes (see editorSelectionCache.ts). Previously
-  // this was an Array.some() scan run once per drawn element per frame.
-  const isElementSelected = makeIsElementSelected(state);
-
-  // Mask derived once from EditorState and passed down — no scattered direct
-  // isLayerVisible(state, ...) calls below (or in editorPlacementPreviewDrawer.ts).
-  const mask = buildEditorRenderMask(state);
-
   // Per-element-type visibility gate driven by the editor layer panel. Most
   // drawEditor* functions below cover a single layer's worth of content and
   // are gated with a single `layerOn(...)` check; a few (spawn/tombs,
@@ -122,8 +130,8 @@ export function renderEditorOverlays(
   // ── Grid ─────────────────────────────────────────────────────────────────
   drawGrid(ctx, room, offsetXPx, offsetYPx, zoom, canvasWidth, canvasHeight);
 
-  if (layerOn('backgroundBlock')) drawEditorBackgroundBlocks(ctx, room, isElementSelected, offsetXPx, offsetYPx, zoom, viewport);
-  if (layerOn('wall')) drawEditorWalls(ctx, room, isElementSelected, offsetXPx, offsetYPx, zoom, viewport, wallGeometryRevision);
+  if (layerOn('backgroundBlock')) drawEditorBackgroundBlocks(ctx, room, isElementSelected, offsetXPx, offsetYPx, zoom, viewport, isPreviewActive);
+  if (layerOn('wall')) drawEditorWalls(ctx, room, isElementSelected, offsetXPx, offsetYPx, zoom, viewport, wallGeometryRevision, isPreviewActive);
   if (layerOn('enemy')) drawEditorEnemies(ctx, room, state, isElementSelected, offsetXPx, offsetYPx, zoom, viewport);
   if (layerOn('transition')) drawEditorTransitions(ctx, room, state, isElementSelected, offsetXPx, offsetYPx, zoom, viewport);
   drawEditorSpawnAndTombs(ctx, room, state, isElementSelected, isTypeVisible, offsetXPx, offsetYPx, zoom, viewport);

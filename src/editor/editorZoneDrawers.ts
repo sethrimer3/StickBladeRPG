@@ -942,6 +942,7 @@ export function drawEditorBackgroundBlocks(
   offsetYPx: number,
   zoom: number,
   viewport?: EditorViewport,
+  skipSpriteArt = false,
 ): void {
   const blocks = room.backgroundBlocks ?? [];
   if (blocks.length === 0) return;
@@ -957,30 +958,37 @@ export function drawEditorBackgroundBlocks(
 
     // Draw the real (40%-darkened) sprite art, cell by cell, at full opacity —
     // no teal/amber fill placeholder.
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.globalAlpha = 1;
-    for (let dy = 0; dy < b.hBlock; dy++) {
-      for (let dx = 0; dx < b.wBlock; dx++) {
-        const col = b.xBlock + dx;
-        const row = b.yBlock + dy;
-        const sx = col * bs + offsetXPx;
-        const sy = row * bs + offsetYPx;
-        let drawn = false;
-        if (isFolderBasedTheme(theme)) {
-          const sprite = getTheme1x1SpriteDarkened(theme, col, row, seed, OPEN_AIR_ALL_SIDES, BLOCK_SIZE_SMALL);
-          if (sprite !== null) {
-            ctx.drawImage(sprite, sx, sy, bs, bs);
-            drawn = true;
+    //
+    // Skipped when the live preview is on: it already drew this art through
+    // the chunk-cached gameplay background renderer, so redrawing every cell
+    // here each frame would be pure duplicated work. The outline overlay below
+    // still runs — that is the part the designer selects and edits by.
+    if (!skipSpriteArt) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.globalAlpha = 1;
+      for (let dy = 0; dy < b.hBlock; dy++) {
+        for (let dx = 0; dx < b.wBlock; dx++) {
+          const col = b.xBlock + dx;
+          const row = b.yBlock + dy;
+          const sx = col * bs + offsetXPx;
+          const sy = row * bs + offsetYPx;
+          let drawn = false;
+          if (isFolderBasedTheme(theme)) {
+            const sprite = getTheme1x1SpriteDarkened(theme, col, row, seed, OPEN_AIR_ALL_SIDES, BLOCK_SIZE_SMALL);
+            if (sprite !== null) {
+              ctx.drawImage(sprite, sx, sy, bs, bs);
+              drawn = true;
+            }
+          }
+          if (!drawn) {
+            ctx.fillStyle = BG_BLOCK_FALLBACK_FILL;
+            ctx.fillRect(sx, sy, bs, bs);
           }
         }
-        if (!drawn) {
-          ctx.fillStyle = BG_BLOCK_FALLBACK_FILL;
-          ctx.fillRect(sx, sy, bs, bs);
-        }
       }
+      ctx.restore();
     }
-    ctx.restore();
 
     // Outline-only overlay for selection and the light-blocking indicator —
     // never a fill, so the sprite art remains fully visible.

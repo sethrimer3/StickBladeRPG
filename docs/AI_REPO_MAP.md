@@ -22,6 +22,7 @@ Purpose: help agents choose the smallest useful file set before making changes. 
 | Shared enemy/challenge/heart/speed gates | `src/sim/gates/gateState.ts` | `src/levels/gateDefs.ts`, `src/screens/gameRoomChallenge.ts`, `src/render/gateRenderer.ts`, editor/schema/progression modules |
 | Enemy AI or pathing | `src/sim/clusters/` | `src/screens/gameEnemySpawn.ts`, room enemy definitions |
 | Editor palette / room authoring | `src/editor/editorController.ts` | `src/editor/editorDropdownData.ts`, `src/editor/editorPalettePreview.ts`, `src/editor/editorRoomBuilder.ts`, `src/editor/roomJsonSerializer.ts` |
+| Editor live game-accurate room preview | `src/editor/editorPreviewRenderer.ts` | `src/editor/editorPreviewInvalidation.ts`, `src/editor/editorWallSurfaceRimPreview.ts`, `src/screens/gameScreenEditorBackdrop.ts`, `src/render/walls/blockSpriteRenderer.ts` (`renderWallSpritesWithLayout`) |
 | Editor playtest room activation / edit invalidation | `src/screens/gameEditorRoomActivationCoordinator.ts` | `src/screens/gameScreen.ts`, `src/screens/residentBuildScheduler.ts`, `src/screens/residentRoomManager.ts`, `src/screens/roomRuntimeCache.ts`, `src/screens/zoneResidentLoader.ts` |
 | Room save format / migration / compression | `src/levels/roomSavedTypes.ts` | `src/levels/roomSchemaV2.ts`, `src/levels/roomSchemaHydrator.ts`, `src/levels/tileGridCompressor.ts`, `src/levels/roomFileAudit.ts`, `src/levels/roomRoundTripValidator.ts` |
 | Legacy skill-book-to-weave room JSON migration | `src/levels/legacySkillBookMigration.ts` | `src/editor/roomJson.ts`, `src/levels/roomJsonToRoomDef.ts` |
@@ -129,6 +130,8 @@ Risk: simulation is intended to be deterministic. Keep DOM, render objects, and 
 - `src/editor/editorDropdownData.ts`: palette item definitions.
 - `src/editor/editorPalettePreview.ts`: palette preview logic and audit helpers.
 - `src/editor/editorRoomBuilder.ts`: converts editor room data to runtime/editor geometry.
+- `src/editor/editorPreviewRenderer.ts`: live game-accurate room preview. Draws background blocks and wall sprites (real sprites, ambient shading, seams, surface rims) from live `EditorRoomData` through the gameplay renderers, in the backdrop's terrain slot. Owns wall/background chunk-cache invalidation itself — it passes a stable layout identity to `renderWallSpritesWithLayout` and flushes per-edit dirty regions — so placing a block rebuilds only nearby chunks. Toggled with `P` (`EditorState.isLivePreviewEnabled`).
+- `src/editor/editorPreviewInvalidation.ts`: pure, Node-safe dirty-region tracker for that preview. `placeAt`/`deleteAt` report footprints; anything else falls back to whole-room invalidation, which is always correct.
 - `src/editor/roomJsonSerializer.ts`: export serialization, including baked wall template generation.
 - `src/editor/roomJsonSchema.ts`: room JSON schema types.
 - `src/screens/gameEditorRoomActivationCoordinator.ts`: Node-safe orchestration boundary for applying an edited room to the live playtest runtime. It preserves spawn resolution, cache/resident/zone invalidation, radius-one rebuild ordering, room loading, and fresh active-world registration through injected ports.

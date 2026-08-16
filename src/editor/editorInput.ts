@@ -55,6 +55,8 @@ export interface EditorInputState {
   isDeleteSelectionPressed: boolean;
   /** F key pressed (one-shot) — flips the current placement horizontally. */
   isFlipPressed: boolean;
+  /** P key pressed (one-shot) — toggles the live game-accurate room preview. */
+  isPreviewTogglePressed: boolean;
   /** Q key pressed (one-shot) — rotates placement counter-clockwise. */
   isRotateLeftPressed: boolean;
   /** E key pressed (one-shot) — rotates placement clockwise. */
@@ -99,6 +101,7 @@ export function createEditorInputState(): EditorInputState {
     isPastePressed: false,
     isDeleteSelectionPressed: false,
     isFlipPressed: false,
+    isPreviewTogglePressed: false,
     isRotateLeftPressed: false,
     isRotateRightPressed: false,
     isZoomInPressed: false,
@@ -151,6 +154,7 @@ export function attachEditorInputListeners(
       e.preventDefault();
     }
     if (key === 'f' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isFlipPressed = true; e.preventDefault(); }
+    if (key === 'p' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isPreviewTogglePressed = true; e.preventDefault(); }
     if (key === 'q' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isRotateLeftPressed = true; e.preventDefault(); }
     if (key === 'e' && !e.ctrlKey && !e.metaKey && !e.repeat) { state.isRotateRightPressed = true; e.preventDefault(); }
     // Zoom shortcuts work regardless of active tool. e.key already covers the
@@ -257,6 +261,7 @@ export function clearEditorOneShots(state: EditorInputState): void {
   state.isPastePressed = false;
   state.isDeleteSelectionPressed = false;
   state.isFlipPressed = false;
+  state.isPreviewTogglePressed = false;
   state.isRotateLeftPressed = false;
   state.isRotateRightPressed = false;
   state.isZoomInPressed = false;

@@ -1044,9 +1044,48 @@ export function renderWallSprites(
   const walls = snapshot.walls;
   if (walls.count === 0) return;
 
-  if (import.meta.env?.DEV) clearWallCellDiag();
-
   const wallLayout = getWallLayoutCache(walls, blockSizePx, _activeRoomWidthBlocks, _activeRoomHeightBlocks);
+
+  // Gameplay uses the layout object itself as the chunk cache's layout
+  // identity: a rebuilt layout (signature change) means every chunk is
+  // stale, which is exactly right when wall geometry can change anywhere.
+  renderWallSpritesWithLayout(ctx, walls, wallLayout, wallLayout, offsetXPx, offsetYPx, scalePx, blockSizePx);
+}
+
+/**
+ * Renders wall sprites from a caller-owned {@link CachedWallLayout} and a
+ * caller-chosen chunk-cache layout identity.
+ *
+ * Exists for the editor's live room preview (see
+ * `editor/editorPreviewRenderer.ts`), which must not use the layout object as
+ * the cache identity. The editor rebuilds its layout whenever wall geometry
+ * changes — once per frame during a paint stroke — and a fresh layout object
+ * would mark *every* chunk dirty, discarding the whole cached room. Instead
+ * the editor passes a stable sentinel as `layoutRef` and invalidates only the
+ * chunks around the blocks it actually edited, via {@link invalidateChunkRect}.
+ *
+ * Callers that pass a stable `layoutRef` own invalidation completely: nothing
+ * here detects that `wallLayout` changed.
+ *
+ * @param walls       Wall geometry matching `wallLayout`.
+ * @param wallLayout  Layout built for `walls` (see `buildWallLayout`).
+ * @param layoutRef   Chunk-cache identity. Pass `wallLayout` for
+ *                    automatic full invalidation on every layout rebuild, or a
+ *                    stable object to own invalidation yourself.
+ */
+export function renderWallSpritesWithLayout(
+  ctx:         CanvasRenderingContext2D,
+  walls:       WallSnapshot,
+  wallLayout:  CachedWallLayout,
+  layoutRef:   unknown,
+  offsetXPx:   number,
+  offsetYPx:   number,
+  scalePx:     number,
+  blockSizePx: number,
+): void {
+  if (walls.count === 0) return;
+
+  if (import.meta.env?.DEV) clearWallCellDiag();
 
   // Populate module-level coveredBy2x2Keys from the cached solid2x2Map —
   // avoids allocating a new Set<string> every frame.
@@ -1065,7 +1104,7 @@ export function renderWallSprites(
   // blitted cheaply with a single drawImage call.
   _chunkCache.renderVisibleChunks(
     ctx,
-    wallLayout,   // identity used for layout-change detection
+    layoutRef,   // identity used for layout-change detection
     offsetXPx,
     offsetYPx,
     scalePx,

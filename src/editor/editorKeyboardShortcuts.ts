@@ -22,6 +22,7 @@ import { syncCampaignSpawnBlockFromSession } from './editorCampaignSpawn';
 import { syncCampaignSpawnToSessionAfterDelete } from './editorCampaignSpawn';
 import { deleteSelectedElements } from './editorDeleteTool';
 import { bumpSelectionRevision } from './editorSelectionCache';
+import { markEditorPreviewFullyDirty } from './editorPreviewInvalidation';
 
 /**
  * Process all keyboard shortcut inputs for one editor frame.
@@ -101,6 +102,14 @@ export function handleEditorKeyboardShortcuts(
         applyEdits();
       }
     }
+  }
+
+  // P key → toggle the live game-accurate room preview. Turning it off falls
+  // back to the schematic wall/background outlines, which can be easier to
+  // read while laying out geometry in a dense room.
+  if (inputState.isPreviewTogglePressed) {
+    state.isLivePreviewEnabled = !state.isLivePreviewEnabled;
+    markEditorPreviewFullyDirty();
   }
 
   // N key → world map list

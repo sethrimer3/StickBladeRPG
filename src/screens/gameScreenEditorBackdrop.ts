@@ -29,6 +29,7 @@ import type { RenderProfiler } from '../render/hud/renderProfiler';
 import { renderHighResolutionDebugOverlay } from './gameRenderDeviceOverlay';
 import { resetCanvasPass } from '../render/canvasViewport';
 import { buildEditorRenderMask } from '../editor/editorRenderMask';
+import { isEditorLivePreviewActive, renderEditorRoomPreview } from '../editor/editorPreviewRenderer';
 import { renderEditorDragDimensionsHighResolution } from '../editor/editorDragDimensionOverlay';
 
 /**
@@ -112,9 +113,30 @@ export function renderEditorBackdrop(
       renderCrystallineCracksBackground(ctx, virtualWidthPx, virtualHeightPx, performance.now());
     }
   }
+  // Terrain from the *sim world* reflects the room as it was last activated,
+  // not the edits made since. With the editor's live preview on, the terrain
+  // is drawn from live edit data instead — here, in the gameplay terrain slot,
+  // so hazards, enemies and interactables below still layer on top of it the
+  // way they do in game.
+  const editorRoomData = editorController.state.roomData;
   if (terrainVisible) {
-    renderWalls(ctx, snapshot, offsetXPx, offsetYPx, zoom, debugVisible);
-    renderCustomBlockSprites(ctx, currentRoom, offsetXPx, offsetYPx, zoom);
+    if (isEditorLivePreviewActive(layerState) && editorRoomData !== null) {
+      renderEditorRoomPreview(
+        ctx,
+        editorRoomData,
+        offsetXPx,
+        offsetYPx,
+        zoom,
+        virtualWidthPx,
+        virtualHeightPx,
+        editorController.getWallGeometryRevision(),
+      );
+      // Custom blocks are not part of the preview: the editor's own overlay
+      // pass already draws the same cached sprites (drawEditorCustomBlocks).
+    } else {
+      renderWalls(ctx, snapshot, offsetXPx, offsetYPx, zoom, debugVisible);
+      renderCustomBlockSprites(ctx, currentRoom, offsetXPx, offsetYPx, zoom);
+    }
   }
   if (hazardsVisible) {
     renderHazards(ctx, world, offsetXPx, offsetYPx, zoom, world.tick);
