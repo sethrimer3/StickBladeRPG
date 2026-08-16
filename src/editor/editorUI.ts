@@ -27,6 +27,7 @@ import { makePalettePreviewCard, auditPalettePreviews } from './editorPalettePre
 import { updateInspector } from './editorInspector';
 import { createEditorSpecialItemPickers } from './editorSpecialItemPickers';
 import { createEditorLightingPanel } from './editorUILightingPanel';
+import { createEditorWeatherPanel } from './editorUIWeatherPanel';
 import { createEditorLayersPanel } from './editorUILayersPanel';
 import { editorPerfCounters } from './editorPerfCounters';
 import type { TheroBackgroundEffect } from '../render/effects/theroBackgroundEffect';
@@ -726,7 +727,15 @@ export function createEditorUI(
   });
   songSelect.addEventListener('click', (e) => e.stopPropagation());
   songDiv.appendChild(songSelect);
-  const songSection = createCollapsibleSection('Room Song', { key: 'roomSong' });
+  // Weather controls share this always-visible section with the song
+  // dropdown (they used to live in the lighting palette category). The
+  // weather panel draws its own 'Weather' sub-heading with a top border,
+  // matching the Sunrays sub-heading separator in the lighting panel.
+  const weatherPanel = createEditorWeatherPanel(() => callbacks);
+  songDiv.appendChild(weatherPanel.weatherDiv);
+  // Section id stays 'roomSong' — it is persisted in saved workspace layouts
+  // and section-collapse preferences; only the human-readable title changed.
+  const songSection = createCollapsibleSection('Room Music/Weather', { key: 'roomSong' });
   songSection.body.appendChild(songDiv);
 
   // ── Layers panel (always visible — editor-only visibility/lock/solo/target) ──
@@ -1115,6 +1124,11 @@ export function createEditorUI(
         songSelect.value = currentSongId;
       }
     }
+
+    // Update weather controls (same always-visible section as the song
+    // dropdown). Cheap sig comparison inside; skips all DOM writes when
+    // nothing changed and never clobbers a focused control mid-drag.
+    weatherPanel.sync(state);
 
     // Update palette area — recreate only when the structural signature
     // changes (category, block theme/slots, or — for Custom Blocks — the
@@ -1541,6 +1555,7 @@ export function createEditorUI(
       lastRenderedBackgroundId = '';
       lastRenderedSongId = '';
       lightingPanel.resetState();
+      weatherPanel.resetState();
       dimWidthInput = null;
       dimHeightInput = null;
       if (animatedBackgroundPreviewFrame !== null) {

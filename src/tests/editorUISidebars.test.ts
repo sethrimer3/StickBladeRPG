@@ -145,7 +145,7 @@ test('every top-level panel is built with createCollapsibleSection (no ad-hoc du
     "createCollapsibleSection('Brush'",
     "createCollapsibleSection('Room Dimensions'",
     "createCollapsibleSection('Background'",
-    "createCollapsibleSection('Room Song'",
+    "createCollapsibleSection('Room Music/Weather'",
     "createCollapsibleSection('Categories'",
     "createCollapsibleSection('Palette'",
     "createCollapsibleSection('Inspector'",

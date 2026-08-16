@@ -24,7 +24,7 @@ test('every top-level collapsible section is keyed for session-state snapshot/re
     "createCollapsibleSection('Brush', { key: 'brush' })",
     "createCollapsibleSection('Room Dimensions', { key: 'roomDimensions' })",
     "createCollapsibleSection('Background', { key: 'background' })",
-    "createCollapsibleSection('Room Song', { key: 'roomSong' })",
+    "createCollapsibleSection('Room Music/Weather', { key: 'roomSong' })",
     "createCollapsibleSection('Categories', { key: 'categories' })",
     "createCollapsibleSection('Palette', { key: 'palette' })",
     "createCollapsibleSection('Inspector', { key: 'inspector' })",
