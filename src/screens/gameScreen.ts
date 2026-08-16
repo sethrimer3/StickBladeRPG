@@ -2255,10 +2255,23 @@ export function startGameScreen(
       }
     }
 
-    // Clear the gameplay-bake-forbidden flag before ending the frame so it
-    // does not persist into the next non-gameplay frame (e.g. paused frames
-    // that render immediately after a gameplay frame).
-    FP.setBakeForbiddenInGameplay(false);
+    // The gameplay-bake-forbidden flag is deliberately NOT cleared here.
+    //
+    // It used to be, to keep it from persisting into a following non-gameplay
+    // frame — but every non-gameplay branch above already clears it for itself,
+    // so that clear was redundant, and it was not free: setBakeForbiddenInGameplay()
+    // treats each true->false edge as a bake unlock and bumps the unlock
+    // generation.  Clearing here produced one such edge per gameplay frame, so
+    // RoomChunkCache._retryGameplayFallbackChunks() re-dirtied every chunk built
+    // during gameplay on the very next render.  The "exactly one retry once
+    // baking is allowed again" contract became "rebuild forever, every frame",
+    // which also meant a background prewarm task could never reach its
+    // rebuilt === 0 && skipped === 0 completion condition — so it never popped
+    // and blocked the head of the warm queue indefinitely.
+    //
+    // Leaving the flag true is the correct steady state for gameplay; the first
+    // genuinely non-gameplay frame clears it, and that edge is a real unlock.
+    // See the regression test in chunkRenderCacheOwnership.test.ts.
 
     // Commit freeze-profiler frame data; emits structured [freeze] LONG FRAME
     // console warning (dev-only) when the frame exceeds LONG_FRAME_WARN_MS.

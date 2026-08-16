@@ -1,5 +1,8 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import {
   CHUNK_SIZE_BLOCKS,
   RoomChunkCache,
@@ -160,6 +163,135 @@ test('gameplay fallback chunks remain drawable without perpetual rebuild churn',
   } finally {
     FP.setBakeForbiddenInGameplay(false);
   }
+});
+
+test('the real gameplay frame loop does not turn every frame into a bake unlock', () => {
+  // The test above holds the bake-forbidden flag true across both renders.
+  // gameScreen.ts does not: it sets the flag true mid-gameplay-frame
+  // (gameScreen.ts:2052) and clears it again before endFrame
+  // (gameScreen.ts:2261).  Because setBakeForbiddenInGameplay() increments the
+  // unlock generation on every true->false edge, that clear reads as "baking
+  // just became allowed" once per gameplay frame — so
+  // _retryGameplayFallbackChunks() re-dirties every gameplay-fallback chunk on
+  // the next render, and the "exactly one retry" contract the flag documents
+  // becomes "retry forever".
+  //
+  // This is what makes background chunk prewarm (driven from spare frame time
+  // at gameScreen.ts:2254, i.e. while the flag is true) unable to finish: its
+  // warm task waits for rebuilt === 0 && skipped === 0, which this churn never
+  // allows, so the task never pops and blocks the head of the warm queue.
+  const cache = new RoomChunkCache();
+  const layout = {};
+  const builtKeys: string[] = [];
+  // Mirrors the real renderer: it reports a fallback build only while baking
+  // is forbidden, and produces a genuine shaded bake once it is allowed.
+  // A stub that always reports a fallback would instead exercise the ordinary
+  // sprite-retry loop and mask what this test is about.
+  const build = (
+    ctx: CanvasRenderingContext2D, ox: number, oy: number, s: number,
+    bs: number, colMin: number, rowMin: number, colMax: number, rowMax: number,
+  ): boolean => makeBuildFn('gameplay-fallback', builtKeys, FP.isBakeForbiddenInGameplay())(
+    ctx, ox, oy, s, bs, colMin, rowMin, colMax, rowMax,
+  );
+
+  const renderOnce = (): DrawRecorder => {
+    const rec = makeRecorder();
+    cache.renderVisibleChunks(
+      rec.ctx, layout, 0, 0, 1, BLOCK_SIZE, SMALL_VIEWPORT, SMALL_VIEWPORT, build,
+    );
+    return rec;
+  };
+
+  /**
+   * One gameplay frame exactly as gameScreen.ts sequences it.  Note the
+   * absence of a clear at the end: that is the fix, and re-adding it here
+   * reproduces the churn this test guards against.
+   */
+  const gameplayFrame = (): DrawRecorder => {
+    FP.beginFrame(16);
+    FP.setBakeForbiddenInGameplay(true);   // gameScreen.ts:2052
+    return renderOnce();                   // ... prewarm slice, gameScreen.ts:2254
+  };
+
+  /** One non-gameplay frame (paused / loading / entry warm), which DOES unlock. */
+  const nonGameplayFrame = (): DrawRecorder => {
+    FP.beginFrame(16);
+    FP.setBakeForbiddenInGameplay(false);
+    return renderOnce();
+  };
+
+  try {
+    cache.activateContentOwnership(owner('room-a'));
+    cache.setMaxChunksPerFrame(0);
+    gameplayFrame();
+    assert.equal(builtKeys.length, 4, 'first frame builds the four chunks');
+
+    // Three more frames of the same steady state. Nothing has changed: no
+    // resize, no layout change, no dirtying by the caller.
+    const before = builtKeys.length;
+    gameplayFrame();
+    gameplayFrame();
+    const last = gameplayFrame();
+
+    assert.equal(
+      builtKeys.length,
+      before,
+      'a steady gameplay frame must not rebuild chunks that are already built; ' +
+        `got ${builtKeys.length - before} spurious rebuild(s) over three frames`,
+    );
+    assert.equal(
+      cache.stats.rebuiltThisFrame, 0,
+      'a settled prewarm pass must report zero rebuilds, or its warm task never completes',
+    );
+    assert.equal(
+      cache.stats.skippedThisFrame, 0,
+      'a settled prewarm pass must report zero skips, or its warm task never completes',
+    );
+    assert.equal(last.drawn.length, 4, 'the settled chunks stay drawable');
+
+    // The retry contract still holds: a genuine gameplay -> non-gameplay
+    // transition unlocks baking and buys each fallback chunk exactly one
+    // rebuild, which is the whole point of the generation counter.
+    const beforeUnlock = builtKeys.length;
+    nonGameplayFrame();
+    assert.equal(
+      builtKeys.length - beforeUnlock, 4,
+      'a real bake unlock must still retry every gameplay-fallback chunk exactly once',
+    );
+    const afterRetry = builtKeys.length;
+    nonGameplayFrame();
+    assert.equal(
+      builtKeys.length, afterRetry,
+      'and exactly once — a second non-gameplay frame is not another unlock',
+    );
+  } finally {
+    FP.setBakeForbiddenInGameplay(false);
+  }
+});
+
+test('gameScreen does not clear the bake-forbidden flag inside the gameplay frame path', () => {
+  // The test above models the frame sequencing in its own body, so it proves
+  // the mechanism but cannot notice if gameScreen.ts drifts back.  This one
+  // pins the actual call site: between the point the gameplay path forbids
+  // baking and the point it ends the frame, there must be no clear — each such
+  // true->false edge is read as a bake unlock and re-dirties every chunk built
+  // during gameplay (see the preceding test for what that costs).
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const src  = readFileSync(path.join(here, '..', 'screens', 'gameScreen.ts'), 'utf8');
+
+  const forbidIdx = src.indexOf('FP.setBakeForbiddenInGameplay(true)');
+  assert.ok(forbidIdx > 0, 'expected the gameplay path to forbid baking');
+  const endFrameIdx = src.indexOf('FP.endFrame()', forbidIdx);
+  assert.ok(endFrameIdx > forbidIdx, 'expected the gameplay path to end the frame');
+
+  const gameplayTail = src.slice(forbidIdx, endFrameIdx);
+  const clears = gameplayTail.match(/FP\.setBakeForbiddenInGameplay\(false\)/g) ?? [];
+  assert.deepEqual(
+    clears, [],
+    'the gameplay frame path must not clear the bake-forbidden flag before endFrame(); ' +
+      'every non-gameplay branch already clears it for itself, and a clear here ' +
+      'manufactures one spurious bake unlock per frame',
+  );
 });
 
 test('missing visible chunks converge before ordinary fallback retries can starve them', () => {
