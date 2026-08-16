@@ -588,29 +588,70 @@ export function syncStickmanCarryHands(world: WorldState): void {
 
   let left = 0;
   let right = 0;
+  let swingLeft = 0;
+  let swingRight = 0;
+  let swingLeftAngle = 0;
+  let swingRightAngle = 0;
 
   const mainDef = getEquippedWeaponDef(world.playerWeapon);
   if (mainDef !== null && mainDef.showWeapon !== false) {
     const hand = resolveGripHand(mainDef.grip, body.facingDirection);
+    const mainSwing = world.playerWeapon.swing;
+    const isMainSwinging = mainSwing.activeFlag === 1;
+    const mainAngle = mainSwing.currentAngleRad;
+
     if (hand === GRIP_HAND_BOTH) {
       left = 1;
       right = 1;
+      if (isMainSwinging) {
+        swingLeft = 1;
+        swingRight = 1;
+        swingLeftAngle = mainAngle;
+        swingRightAngle = mainAngle;
+      }
     } else if (hand === GRIP_HAND_LEFT) {
       left = 1;
+      if (isMainSwinging) {
+        swingLeft = 1;
+        swingLeftAngle = mainAngle;
+      }
     } else {
       right = 1;
+      if (isMainSwinging) {
+        swingRight = 1;
+        swingRightAngle = mainAngle;
+      }
     }
   }
 
   const offDef = getEquippedWeaponDef(world.playerOffHandWeapon);
   if (offDef !== null && offDef.showWeapon !== false) {
+    const offSwing = world.playerOffHandWeapon.swing;
+    const isOffSwinging = offSwing.activeFlag === 1;
+    const offAngle = offSwing.currentAngleRad;
+
     // The off hand is whichever the main hand did not take.
-    if (right === 1 && left === 0) left = 1;
-    else if (left === 1 && right === 0) right = 1;
+    if (right === 1 && left === 0) {
+      left = 1;
+      if (isOffSwinging) {
+        swingLeft = 1;
+        swingLeftAngle = offAngle;
+      }
+    } else if (left === 1 && right === 0) {
+      right = 1;
+      if (isOffSwinging) {
+        swingRight = 1;
+        swingRightAngle = offAngle;
+      }
+    }
   }
 
   body.carryHandLeftFlag = left as 0 | 1;
   body.carryHandRightFlag = right as 0 | 1;
+  body.swingArmLeftFlag = swingLeft as 0 | 1;
+  body.swingArmRightFlag = swingRight as 0 | 1;
+  body.swingArmLeftAngleRad = swingLeftAngle;
+  body.swingArmRightAngleRad = swingRightAngle;
 }
 
 /** Cooldown in ticks for a ranged weapon, floored at 1 so it cannot fire every tick. */

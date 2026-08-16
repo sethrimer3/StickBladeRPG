@@ -400,6 +400,28 @@ const CARRY_HAND_DAMPING = 0.25;
  * the arms going rigid against the stride.
  */
 const CARRY_POSE_BIAS = 0.20;
+
+/**
+ * Reach from the chest along the swing angle while swinging a weapon, world units.
+ *
+ * Straightens the arm noticeably (reaching ~7.6 vs the bent carry ~6.92),
+ * opening the elbow while staying well within the 9.6 maximum 2-link reach
+ * (4.8 upper arm + 4.8 forearm).
+ */
+const SWING_ARM_REACH = 7.6;
+/**
+ * Fore/aft split along the swing vector for two-handed swings, world units.
+ */
+const SWING_TWO_HAND_SPLIT = 0.6;
+/**
+ * Responsive pose bias for swinging hands to rapidly and dynamically follow the swing arc.
+ */
+const SWING_POSE_BIAS = 0.35;
+/**
+ * Damping applied to swinging hand velocity to keep the arc motion smooth.
+ */
+const SWING_HAND_DAMPING = 0.25;
+
 /** Half the standing foot gap — each foot is targeted this far to its own side. */
 const STAND_FOOT_SPREAD = 1.4;
 /** Standing foot depth below the hip — near the 9.6 full leg extension. */
@@ -575,6 +597,15 @@ export interface StickRangerBody {
    */
   carryHandLeftFlag: 0 | 1;
   carryHandRightFlag: 0 | 1;
+  /**
+   * 1 while that arm is actively swinging a weapon, causing it to straighten
+   * and follow the weapon swing arc (see `applyWeaponCarryBias`).
+   */
+  swingArmLeftFlag: 0 | 1;
+  swingArmRightFlag: 0 | 1;
+  /** Current swing angle (radians) for left / right arm. */
+  swingArmLeftAngleRad: number;
+  swingArmRightAngleRad: number;
   /** 1 while the figure hangs from a grapple rope by one hand. */
   grappleHangFlag: 0 | 1;
   /** Point index of the hand holding the rope — SR_HAND_L or SR_HAND_R. */
@@ -634,6 +665,10 @@ export function createStickRangerBody(
     ragdollFrames: 0,
     carryHandLeftFlag: 0,
     carryHandRightFlag: 0,
+    swingArmLeftFlag: 0,
+    swingArmRightFlag: 0,
+    swingArmLeftAngleRad: 0,
+    swingArmRightAngleRad: 0,
     grappleHangFlag: 0,
     grappleHandIndex: SR_HAND_R,
     grappleAnchorXWorld: 0,
@@ -678,6 +713,10 @@ export function resetStickRangerBody(body: StickRangerBody, hipX: number, hipY: 
   body.jumpsRemaining = body.hasDoubleJumpUnlock ? 2 : 1;
   body.isSwimmingFlag = 0;
   body.swimStrokeTimer = 0;
+  body.swingArmLeftFlag = 0;
+  body.swingArmRightFlag = 0;
+  body.swingArmLeftAngleRad = 0;
+  body.swingArmRightAngleRad = 0;
   detachStickRangerGrapple(body);
 }
 
@@ -1090,40 +1129,85 @@ function applyWeaponCarryBias(body: StickRangerBody): void {
   // the pair rotates freely and a shoulder is behind the body as often as
   // beside it. Measured against that, shoulder-relative targets moved the hand
   // somewhere different every frame. The chest is the one stable point above
-  // the hip, and the two-link arm reaches 9.6 from it, so a target ~6 out is
+  // the hip, and the two-link arm reaches 9.6 from it, so a target ~6-7.6 out is
   // comfortably inside the arm's range.
   const chestX = body.x[SR_CHEST];
   const chestY = body.y[SR_CHEST];
 
   // On a two-hander the hands share one haft, so they sit fore and aft of a
-  // single carry point; a single hand takes that point itself.
+  // single carry/swing point; a single hand takes that point itself.
   const isTwoHanded = holdsLeft && holdsRight;
-  const split = isTwoHanded ? CARRY_TWO_HAND_SPLIT : 0;
-  const leadingReach = CARRY_FORWARD_FROM_CHEST + split;
-  const trailingReach = CARRY_FORWARD_FROM_CHEST - split;
-  const leftReach = forward < 0 ? leadingReach : trailingReach;
-  const rightReach = forward < 0 ? trailingReach : leadingReach;
+  const carrySplit = isTwoHanded ? CARRY_TWO_HAND_SPLIT : 0;
+  const swingSplit = isTwoHanded ? SWING_TWO_HAND_SPLIT : 0;
 
-  const biasHand = (handIndex: number, reach: number): void => {
+  const leadingCarryReach = CARRY_FORWARD_FROM_CHEST + carrySplit;
+  const trailingCarryReach = CARRY_FORWARD_FROM_CHEST - carrySplit;
+  const leftCarryReach = forward < 0 ? leadingCarryReach : trailingCarryReach;
+  const rightCarryReach = forward < 0 ? trailingCarryReach : leadingCarryReach;
+
+  const leadingSwingReach = SWING_ARM_REACH + swingSplit;
+  const trailingSwingReach = SWING_ARM_REACH - swingSplit;
+  const leftSwingReach = forward < 0 ? leadingSwingReach : trailingSwingReach;
+  const rightSwingReach = forward < 0 ? trailingSwingReach : leadingSwingReach;
+
+  const biasHand = (
+    handIndex: number,
+    carryReach: number,
+    isSwinging: boolean,
+    swingAngleRad: number,
+    swingReach: number,
+  ): void => {
     // The rope owns a grappling hand; pulling it into a carry would either drag
     // the body or visibly detach the rope from the fist.
     if (body.grappleHangFlag === 1 && body.grappleHandIndex === handIndex) return;
-    const targetX = chestX + forward * reach;
-    const targetY = chestY + CARRY_BELOW_CHEST;
-    biasPointToward(body, handIndex, targetX, targetY, CARRY_POSE_BIAS, applied);
+
+    let targetX: number;
+    let targetY: number;
+    let poseBias: number;
+    let damping: number;
+
+    if (isSwinging) {
+      // During a swing, the arm straightens a little and follows the arc of the weapon
+      targetX = chestX + Math.cos(swingAngleRad) * swingReach;
+      targetY = chestY + Math.sin(swingAngleRad) * swingReach;
+      poseBias = SWING_POSE_BIAS;
+      damping = SWING_HAND_DAMPING;
+    } else {
+      targetX = chestX + forward * carryReach;
+      targetY = chestY + CARRY_BELOW_CHEST;
+      poseBias = CARRY_POSE_BIAS;
+      damping = CARRY_HAND_DAMPING;
+    }
+
+    biasPointToward(body, handIndex, targetX, targetY, poseBias, applied);
 
     // `biasPointToward` shifts position and previous position together, which
     // leaves the hand's velocity untouched — so on an arm, which is a pendulum,
     // the bias just adds energy and the hand rings back and forth through the
-    // carry instead of arriving at it. Measured: raising the bias alone made the
-    // average carry position WORSE, because the overshoot grew with it. Bleeding
-    // a little velocity out of a carried hand is what actually settles it.
-    body.prevX[handIndex] += (body.x[handIndex] - body.prevX[handIndex]) * CARRY_HAND_DAMPING;
-    body.prevY[handIndex] += (body.y[handIndex] - body.prevY[handIndex]) * CARRY_HAND_DAMPING;
+    // carry instead of arriving at it. Bleeding a little velocity out of a carried
+    // or swinging hand is what actually settles it.
+    body.prevX[handIndex] += (body.x[handIndex] - body.prevX[handIndex]) * damping;
+    body.prevY[handIndex] += (body.y[handIndex] - body.prevY[handIndex]) * damping;
   };
 
-  if (holdsLeft) biasHand(SR_HAND_L, leftReach);
-  if (holdsRight) biasHand(SR_HAND_R, rightReach);
+  if (holdsLeft) {
+    biasHand(
+      SR_HAND_L,
+      leftCarryReach,
+      body.swingArmLeftFlag === 1,
+      body.swingArmLeftAngleRad,
+      leftSwingReach,
+    );
+  }
+  if (holdsRight) {
+    biasHand(
+      SR_HAND_R,
+      rightCarryReach,
+      body.swingArmRightFlag === 1,
+      body.swingArmRightAngleRad,
+      rightSwingReach,
+    );
+  }
 
   cancelNetTranslation(body, applied);
 }

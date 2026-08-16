@@ -27,7 +27,13 @@ import {
 } from '../ai/stickmanBotAi';
 import { PATH_BLOCK_SIZE } from '../ai/gridPathfinding';
 import { getWeaponDef, getWeaponCooldownTicks, type WeaponDef } from '../weapons/weaponDefs';
-import { computeWeaponGripAnchor, createWeaponGripAnchor } from '../weapons/weaponGrip';
+import {
+  computeWeaponGripAnchor,
+  createWeaponGripAnchor,
+  resolveGripHand,
+  GRIP_HAND_BOTH,
+  GRIP_HAND_LEFT,
+} from '../weapons/weaponGrip';
 import { spawnWeaponProjectile } from '../weapons/weaponProjectiles';
 import { applyPlayerDamageWithKnockback } from '../playerDamage';
 import { getLeaderCluster } from '../party/partyWorld';
@@ -200,6 +206,33 @@ export function tickStickmanEnemy(
       }
     }
   }
+
+  // ── Sync weapon carry and swing arm state to body ───────────────────────────
+  const hand = resolveGripHand(def.grip, state.body.facingDirection);
+  let carryLeft = 0;
+  let carryRight = 0;
+  let swingLeft = 0;
+  let swingRight = 0;
+  if (hand === GRIP_HAND_BOTH) {
+    carryLeft = 1;
+    carryRight = 1;
+    if (state.isSwinging) {
+      swingLeft = 1;
+      swingRight = 1;
+    }
+  } else if (hand === GRIP_HAND_LEFT) {
+    carryLeft = 1;
+    if (state.isSwinging) swingLeft = 1;
+  } else {
+    carryRight = 1;
+    if (state.isSwinging) swingRight = 1;
+  }
+  state.body.carryHandLeftFlag = carryLeft as 0 | 1;
+  state.body.carryHandRightFlag = carryRight as 0 | 1;
+  state.body.swingArmLeftFlag = swingLeft as 0 | 1;
+  state.body.swingArmRightFlag = swingRight as 0 | 1;
+  state.body.swingArmLeftAngleRad = state.aimAngleRad;
+  state.body.swingArmRightAngleRad = state.aimAngleRad;
 
   // Step softbody and navigation
   stepStickmanBotAi(state.botAi, state.body, world.pixelMaterialSystem.solid, world.dtMs);
