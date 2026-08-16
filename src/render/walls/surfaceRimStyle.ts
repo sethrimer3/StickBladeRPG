@@ -14,8 +14,29 @@
 export type SurfaceRimMode = 'default' | 'none' | 'solid' | 'gradient' | 'inverted';
 export type SurfaceRimFalloff = 'hard' | 'linear' | 'smooth' | 'exponential';
 
+/**
+ * Which kind of Block Overlay a wall carries.
+ *
+ * An overlay is anything drawn along a block's exposed edges on top of its
+ * base sprite. The original exposed-edge highlight is simply the 'brighten'
+ * kind — it is not a separate system — so every kind shares this one per-wall
+ * style object, its room-level dedup table, and its serialization path.
+ *
+ *   'brighten' — the edge highlight (`mode`/`color`/`widthPx`/`opacity`/
+ *                `falloff`/`interiorDarkness` below configure it).
+ *   'grass'    — procedural grass on upward-facing edges; see
+ *                render/walls/proceduralGrass.ts.
+ */
+export type BlockOverlayKind = 'brighten' | 'grass';
+
+export const BLOCK_OVERLAY_KINDS: readonly BlockOverlayKind[] = ['brighten', 'grass'];
+
 export interface SurfaceRimStyle {
-  readonly mode: SurfaceRimMode;
+  /**
+   * Which overlay this wall draws. Defaults to 'brighten', so a style that
+   * omits it behaves exactly as the pre-overlay rim styles did.
+   */
+  readonly kind: BlockOverlayKind;
   /** Hex color WITHOUT a leading '#', e.g. "ff7a18". */
   readonly color: string;
   readonly widthPx: number;
@@ -38,12 +59,24 @@ export const SURFACE_RIM_MODES: readonly SurfaceRimMode[] = ['default', 'none', 
 export const SURFACE_RIM_FALLOFFS: readonly SurfaceRimFalloff[] = ['hard', 'linear', 'smooth', 'exponential'];
 
 export const DEFAULT_SURFACE_RIM_STYLE: SurfaceRimStyle = Object.freeze({
+  kind: 'brighten',
   mode: 'default',
   color: 'ffffff',
   widthPx: 3,
   opacity: 0.3,
   falloff: 'linear',
   interiorDarkness: 0.5,
+});
+
+/**
+ * The Grass overlay. It carries no per-wall knobs yet, so every grass wall
+ * canonicalizes to this one frozen object and the room's dedup table never
+ * grows more than a single grass entry. Its appearance comes entirely from
+ * `proceduralGrass.ts`, which derives everything from world position.
+ */
+export const GRASS_BLOCK_OVERLAY: SurfaceRimStyle = Object.freeze({
+  ...DEFAULT_SURFACE_RIM_STYLE,
+  kind: 'grass',
 });
 
 const _MIN_WIDTH_PX = 1;
@@ -71,6 +104,10 @@ export function normalizeSurfaceRimColor(color: string | undefined | null): stri
  */
 export function normalizeSurfaceRimStyle(input: Partial<SurfaceRimStyle> | undefined | null): SurfaceRimStyle {
   if (!input) return DEFAULT_SURFACE_RIM_STYLE;
+  // Kind is resolved first: a non-brighten overlay ignores every rim knob
+  // below, and grass canonicalizes to one shared object so all grass walls
+  // dedup to a single table entry.
+  if (input.kind === 'grass') return GRASS_BLOCK_OVERLAY;
   const mode: SurfaceRimMode = SURFACE_RIM_MODES.includes(input.mode as SurfaceRimMode)
     ? (input.mode as SurfaceRimMode)
     : DEFAULT_SURFACE_RIM_STYLE.mode;
@@ -80,6 +117,7 @@ export function normalizeSurfaceRimStyle(input: Partial<SurfaceRimStyle> | undef
     ? (input.falloff as SurfaceRimFalloff)
     : DEFAULT_SURFACE_RIM_STYLE.falloff;
   return {
+    kind: 'brighten',
     mode,
     color: normalizeSurfaceRimColor(input.color),
     widthPx: Math.round(_clamp(input.widthPx ?? DEFAULT_SURFACE_RIM_STYLE.widthPx, _MIN_WIDTH_PX, _MAX_WIDTH_PX)),
@@ -98,13 +136,16 @@ export function isDefaultSurfaceRimStyle(style: SurfaceRimStyle): boolean {
 
 /** Custom and none modes replace the production baked/default edge treatment. */
 export function surfaceRimSuppressesBakedEdge(style: SurfaceRimStyle | null | undefined): boolean {
-  return style !== null && style !== undefined && style.mode !== 'default';
+  return style !== null && style !== undefined
+    && (style.kind !== 'brighten' || style.mode !== 'default');
 }
 
 export function surfaceRimStylesEqual(a: SurfaceRimStyle, b: SurfaceRimStyle): boolean {
   const ca = normalizeSurfaceRimStyle(a);
   const cb = normalizeSurfaceRimStyle(b);
   if (ca === cb) return true;
+  if (ca.kind !== cb.kind) return false;
+  if (ca.kind !== 'brighten') return true; // non-brighten kinds carry no knobs yet
   if (ca.mode !== cb.mode) return false;
   if (ca.mode === 'none') return true;
   if (ca.color !== cb.color || ca.widthPx !== cb.widthPx || ca.opacity !== cb.opacity) return false;
@@ -125,6 +166,8 @@ export function hashSurfaceRimStyle(style: SurfaceRimStyle): number {
     h = Math.imul(h, 1664525) + 1013904223 | 0;
     h ^= n | 0;
   };
+  mix(BLOCK_OVERLAY_KINDS.indexOf(canonical.kind));
+  if (canonical.kind !== 'brighten') return h >>> 0;
   mix(SURFACE_RIM_MODES.indexOf(canonical.mode));
   if (canonical.mode === 'default' || canonical.mode === 'none') return h >>> 0;
   mix(parseInt(canonical.color, 16) | 0);
@@ -160,6 +203,7 @@ const _CODE_FALLOFF: readonly SurfaceRimFalloff[] = ['hard', 'linear', 'smooth',
  * omitting any that equal the default so common cases stay short.
  */
 export type CompactSurfaceRimStyle =
+  | readonly [kind: 'G']
   | readonly [mode: 'n']
   | readonly [mode: 's', color?: string, widthPx?: number, opacity?: number]
   | readonly [mode: 'g', color?: string, widthPx?: number, opacity?: number, falloff?: number]
@@ -167,6 +211,10 @@ export type CompactSurfaceRimStyle =
 
 export function encodeSurfaceRimStyle(style: SurfaceRimStyle): CompactSurfaceRimStyle {
   const canonical = normalizeSurfaceRimStyle(style);
+  // Non-brighten overlays encode as a single uppercase kind code, kept
+  // distinct from the lowercase brighten-mode codes so the two namespaces can
+  // never collide as more overlay kinds are added.
+  if (canonical.kind === 'grass') return ['G'];
   if (canonical.mode === 'default') {
     throw new Error('encodeSurfaceRimStyle: default styles must not be interned');
   }
@@ -189,6 +237,7 @@ export function encodeSurfaceRimStyle(style: SurfaceRimStyle): CompactSurfaceRim
 
 export function decodeSurfaceRimStyle(entry: unknown): SurfaceRimStyle {
   if (!Array.isArray(entry) || entry.length === 0) return DEFAULT_SURFACE_RIM_STYLE;
+  if (entry[0] === 'G') return GRASS_BLOCK_OVERLAY;
   const [codeRaw, colorRaw, widthRaw, opacityRaw, falloffRaw, interiorRaw] = entry;
   const mode = _CODE_MODE[codeRaw as string];
   if (mode === undefined) return DEFAULT_SURFACE_RIM_STYLE;
