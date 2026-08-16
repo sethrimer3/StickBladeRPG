@@ -365,9 +365,50 @@ test('stickman step-up progresses smoothly without teleporting', () => {
     prevFootR_Y = body.y[SR_FOOT_R];
   }
 
-  // Smooth stepping at ~0.85 px/frame instead of teleporting 5-8 px in a single frame
+  // Smooth stepping at ~0.65-0.85 px/frame instead of teleporting 5-8 px in a single frame
   assert.ok(
     maxSingleFrameFootRise <= 2.0,
     `maximum single-frame foot lift should be <= 2.0 px/frame (smooth), got ${maxSingleFrameFootRise}`,
+  );
+});
+
+test('stickman executes a wide lunge step with deep stride reach and high knee lift', () => {
+  const floorY = 100;
+  const stepTopY = 92;
+  const mask = createSteppedSolidMask(300, 150, floorY, { x0: 108, x1: 300, topY: stepTopY });
+  const body = createStickRangerBody(100, floorY - 9.6);
+
+  advanceBodyFrames(body, mask, 0, 30);
+
+  let maxLungeStrideLead = 0;
+  let maxKneeElevation = 0;
+
+  for (let frame = 0; frame < 90; frame++) {
+    const swingFoot = body.swingFoot;
+    const plantedFoot = swingFoot === SR_FOOT_L ? SR_FOOT_R : SR_FOOT_L;
+    const swingKnee = swingFoot === SR_FOOT_L ? SR_KNEE_L : SR_KNEE_R;
+
+    stepStickRangerBody(body, mask, 1, SR_FRAME_MS);
+
+    const strideLead = body.x[swingFoot] - body.x[plantedFoot];
+    if (strideLead > maxLungeStrideLead) {
+      maxLungeStrideLead = strideLead;
+    }
+
+    const kneeElevation = floorY - body.y[swingKnee];
+    if (kneeElevation > maxKneeElevation) {
+      maxKneeElevation = kneeElevation;
+    }
+  }
+
+  // Large lunge: deep stride lead >= 4.5 world units
+  assert.ok(
+    maxLungeStrideLead >= 4.5,
+    `lunge stride lead should reach >= 4.5 world units, got ${maxLungeStrideLead}`,
+  );
+  // High knee raise: knee lifts significantly above floor level (>= 7 world units)
+  assert.ok(
+    maxKneeElevation >= 7.0,
+    `swing knee should elevate high into lunge (>= 7.0), got ${maxKneeElevation}`,
   );
 });

@@ -1425,7 +1425,7 @@ function probeForStepUp(
   const hipX = body.x[SR_HIP];
   let best: StickmanStepUpInfo | null = null;
 
-  for (let d = 1; d <= 4; d++) {
+  for (let d = 1; d <= 6; d++) {
     const probeX = Math.round(originX + moveDirection * d);
 
     // If the wall continues higher than STICKMAN_STEP_UP_MAX_RISE above base floor,
@@ -1459,10 +1459,11 @@ function probeForStepUp(
       continue;
     }
 
-    const targetFootX = probeX + moveDirection * 1.5;
+    // Large lunge targets: foot reaches deep onto the tread, knee raises high and forward
+    const targetFootX = probeX + moveDirection * 3.0;
     const targetFootY = topSolidY - 0.5;
-    const targetKneeX = (hipX + targetFootX) * 0.5 + moveDirection * 0.8;
-    const targetKneeY = targetFootY - 4.2;
+    const targetKneeX = hipX + moveDirection * 2.8;
+    const targetKneeY = targetFootY - 5.5;
 
     const candidate: StickmanStepUpInfo = {
       targetFootX,
@@ -1857,30 +1858,30 @@ function stepBodyFrame(
     if (stepUp !== null) {
       const activeKnee = activeFoot === SR_FOOT_L ? SR_KNEE_L : SR_KNEE_R;
 
-      // 1. Smooth vertical lift of swing foot (natural 0.85 px/frame arc)
+      // 1. Slow, deliberate vertical lift of swing foot into high lunge
       if (body.y[activeFoot] > stepUp.targetFootY) {
-        const liftFootY = Math.min(body.y[activeFoot] - stepUp.targetFootY, 0.85);
+        const liftFootY = Math.min(body.y[activeFoot] - stepUp.targetFootY, 0.65);
         body.y[activeFoot] -= liftFootY;
         body.prevY[activeFoot] -= liftFootY;
       }
 
-      // 2. Smooth knee bend / leg raise animation
+      // 2. High knee raise / bent knee flexion for the lunge
       if (body.y[activeKnee] > stepUp.targetKneeY) {
-        const liftKneeY = Math.min(body.y[activeKnee] - stepUp.targetKneeY, 0.75);
+        const liftKneeY = Math.min(body.y[activeKnee] - stepUp.targetKneeY, 0.65);
         body.y[activeKnee] -= liftKneeY;
         body.prevY[activeKnee] -= liftKneeY;
       }
-      body.x[activeKnee] += moveDirection * 0.35;
-      body.prevX[activeKnee] += moveDirection * 0.35;
+      body.x[activeKnee] += moveDirection * 0.4;
+      body.prevX[activeKnee] += moveDirection * 0.4;
 
-      // 3. Smooth forward stride of swing foot onto the step
-      body.x[activeFoot] += moveDirection * 0.4;
-      body.prevX[activeFoot] += moveDirection * 0.4;
+      // 3. Large forward stride: swing foot reaches forward into a wide lunge
+      body.x[activeFoot] += moveDirection * 0.45;
+      body.prevX[activeFoot] += moveDirection * 0.45;
 
-      // 4. Smooth torso and hip elevation toward standing height atop the step
+      // 4. Torso leans forward into the lunge, hip rises smoothly onto the step
       const targetHipY = stepUp.targetFootY - 9.0;
       if (body.y[SR_HIP] > targetHipY) {
-        const hipLift = Math.min(body.y[SR_HIP] - targetHipY, 0.5);
+        const hipLift = Math.min(body.y[SR_HIP] - targetHipY, 0.38);
         body.y[SR_HIP] -= hipLift;
         body.prevY[SR_HIP] -= hipLift;
         body.y[SR_CHEST] -= hipLift;
@@ -1888,13 +1889,13 @@ function stepBodyFrame(
         body.y[SR_HEAD] -= hipLift;
         body.prevY[SR_HEAD] -= hipLift;
       }
-      body.x[SR_HIP] += moveDirection * 0.3;
-      body.x[SR_CHEST] += moveDirection * 0.25;
+      body.x[SR_HIP] += moveDirection * 0.22;
+      body.x[SR_CHEST] += moveDirection * 0.35;
 
-      // 5. Stride handoff once swing foot has completed the step onto the tread
+      // 5. Deep lunge stride handoff: once the foot reaches full forward lunge depth on the step tread
       const strideLead = (body.x[activeFoot] - body.x[plantedFoot]) * moveDirection;
-      const footPlacedOnStep = body.y[activeFoot] <= stepUp.targetFootY + 1.5 && strideLead >= 3.0;
-      if (footPlacedOnStep || body.swingFrames >= 20) {
+      const footPlacedOnStep = body.y[activeFoot] <= stepUp.targetFootY + 1.2 && strideLead >= 5.0;
+      if (footPlacedOnStep || body.swingFrames >= 26) {
         body.swingFoot = plantedFoot;
         body.swingFrames = 0;
       }
