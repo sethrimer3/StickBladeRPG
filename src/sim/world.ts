@@ -321,6 +321,13 @@ export interface WorldState extends ParticleBuffers, GrappleWorldState, HazardWo
    */
   lastPlayerBlockedTick: number;
 
+  /**
+   * World tick on which the player's most recent double jump fired.
+   * Initialised to -1 (no event yet). Written by playerVerticalMovement.ts;
+   * read by the renderer to spawn the golden double-jump pixel burst.
+   */
+  lastDoubleJumpTick: number;
+
   /** Set to 1 for exactly one tick to trigger attack launch. */
   playerAttackTriggeredFlag: 0 | 1;
   /** Normalized attack direction (world units, set when attack is triggered). */
@@ -734,6 +741,7 @@ export function createWorldState(dtMs: number, rngSeed = 42): WorldState {
     ropeSegPrevYWorld:      new Float32Array(MAX_ROPES * MAX_ROPE_SEGMENTS),
     ropeSegRestLenWorld:    new Float32Array(MAX_ROPES),
     lastPlayerBlockedTick: -1,
+    lastDoubleJumpTick: -1,
     playerAttackTriggeredFlag: 0,
     playerAttackDirXWorld: 1.0,
     playerAttackDirYWorld: 0.0,

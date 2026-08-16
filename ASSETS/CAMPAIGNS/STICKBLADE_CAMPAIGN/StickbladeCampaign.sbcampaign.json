@@ -2,8 +2,8 @@
   "v": 1,
   "kind": "StickBladeCampaign",
   "metadata": {
-    "version": 15,
-    "lastEditedAt": "2026-07-31T03:50:28.996Z"
+    "version": 16,
+    "lastEditedAt": "2026-08-16T00:05:02.191Z"
   },
   "campaign": {
     "id": "STICKBLADE_CAMPAIGN",
@@ -271,6 +271,13 @@
         "worldId": 1,
         "mapX": -301,
         "mapY": 565
+      },
+      {
+        "id": "glade",
+        "name": "Glade",
+        "worldId": 1,
+        "mapX": -20,
+        "mapY": 64
       }
     ]
   },
@@ -48302,11 +48309,125 @@
         ],
         "rimStyles": []
       }
+    },
+    {
+      "v": 3,
+      "id": "glade",
+      "name": "Glade",
+      "world": 1,
+      "size": [
+        120,
+        40
+      ],
+      "spawn": [
+        60,
+        20
+      ],
+      "solids": {
+        "byTheme": {}
+      },
+      "map": [
+        -20,
+        64
+      ],
+      "theme": "bk",
+      "bg": "brownRock",
+      "light": "Ambient",
+      "bakedWallTemplate": {
+        "schemaVersion": 2,
+        "sourceHash": "4d2ddf35",
+        "wallCount": 4,
+        "xWorld": [
+          0,
+          0,
+          0,
+          952
+        ],
+        "yWorld": [
+          0,
+          312,
+          8,
+          8
+        ],
+        "wWorld": [
+          960,
+          960,
+          8,
+          8
+        ],
+        "hWorld": [
+          8,
+          8,
+          304,
+          304
+        ],
+        "isPlatformFlag": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "platformEdge": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "themeIndex": [
+          255,
+          255,
+          255,
+          255
+        ],
+        "soundHardnessIndex": [
+          2,
+          2,
+          2,
+          2
+        ],
+        "isInvisibleFlag": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "rampOrientationIndex": [
+          255,
+          255,
+          255,
+          255
+        ],
+        "isPillarHalfWidthFlag": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "isIceFlag": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "isUltraIceFlag": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "rimStyleIndex": [
+          65535,
+          65535,
+          65535,
+          65535
+        ],
+        "rimStyles": []
+      }
     }
   ],
   "editor": {
-    "createdWithBuild": "594",
-    "lastEditedIso": "2026-07-31T03:50:28.996Z"
+    "createdWithBuild": "649",
+    "lastEditedIso": "2026-08-16T00:05:02.191Z"
   },
   "customBlockDefs": []
 }

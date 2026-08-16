@@ -68,7 +68,7 @@ import { applyStickBladeArchitectAI } from './clusters/stickBladeArchitectAi';
 import { applyVoidSingularityAI } from './clusters/voidSingularityAi';
 import { applyDustLeechAI } from './clusters/dustLeechAi';
 import { applySnakeAI } from './clusters/snakeAi';
-import { tickGrappleDisplayRadius } from './clusters/grappleShared';
+import { tickGrappleDisplayRadius, tickGrappleChargeCooldown } from './clusters/grappleShared';
 import { tickRopes } from './ropes/ropeSim';
 import { tickFallingBlocks } from './fallingBlocks/fallingBlockSim';
 import { tickKineticBlocks } from './kineticBlocks/kineticBlockSim';
@@ -95,6 +95,7 @@ export function tick(world: WorldState): void {
   if (world.zipImpactFxTicksLeft > 0) world.zipImpactFxTicksLeft -= 1;
   if (world.grappleRechargeRingTicksLeft > 0) world.grappleRechargeRingTicksLeft -= 1;
   if (world.grappleIceBounceTicksLeft > 0) world.grappleIceBounceTicksLeft -= 1;
+  tickGrappleChargeCooldown(world);
 
   // Drain last tick's cracked-block shatter events before this tick's
   // collision sweep (in applyClusterMovement, below) can record new ones.

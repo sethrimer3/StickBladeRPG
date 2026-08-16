@@ -14,6 +14,7 @@
 import type { WorldState } from '../../sim/world';
 import { TOP_BAR_ORIGIN_X_PX, TOP_BAR_ORIGIN_Y_PX, TOP_BAR_HEIGHT_PX } from './playerTopBar';
 import { getKeyboardBindings, displayKey } from '../../input/keybindings';
+import { GRAPPLE_RECHARGE_COOLDOWN_TICKS } from '../../sim/clusters/grappleShared';
 
 // ── Layout constants (virtual pixels) ───────────────────────────────────────
 
@@ -21,9 +22,6 @@ const ICON_GAP_BELOW_TOP_BAR_PX = 4;
 export const GRAPPLE_ICON_X_PX = TOP_BAR_ORIGIN_X_PX;
 export const GRAPPLE_ICON_Y_PX = TOP_BAR_ORIGIN_Y_PX + TOP_BAR_HEIGHT_PX + ICON_GAP_BELOW_TOP_BAR_PX;
 export const GRAPPLE_ICON_SIZE_PX = 14;
-
-/** Duration of the "recharging" diagonal-stripe animation loop, in ms. */
-const RECHARGE_STRIPE_CYCLE_MS = 900;
 
 /** Returns the current key bound to the grapple ability, for display. */
 export function getGrappleAbilityKeyLabel(): string {
@@ -37,7 +35,6 @@ export function getGrappleAbilityKeyLabel(): string {
 export function drawGrappleAbilityIcon(
   ctx: CanvasRenderingContext2D,
   world: WorldState,
-  nowMs: number,
 ): void {
   const x = GRAPPLE_ICON_X_PX;
   const y = GRAPPLE_ICON_Y_PX;
@@ -60,24 +57,19 @@ export function drawGrappleAbilityIcon(
   ctx.clip();
 
   if (!isCharged) {
-    // ── Recharging: looping diagonal stripes signal "in progress" — the
-    // grapple charge restores on ground contact rather than a fixed timer,
-    // so there is no fill fraction to animate toward; the stripes just need
-    // to read as "not ready yet, working on it".
-    const stripeOffset = (nowMs / RECHARGE_STRIPE_CYCLE_MS) % 1;
+    // ── Recharging: dim background plus a bottom-up teal fill that tracks
+    // the real 4-second post-release cooldown (grappleChargeCooldownTicksLeft
+    // counts down to 0, so progress runs from 0 → 1 as the fill rises).
     ctx.fillStyle = 'rgba(120,120,130,0.35)';
     ctx.fillRect(x, y, size, size);
-    ctx.fillStyle = 'rgba(200,200,215,0.28)';
-    const stripeSpacing = 5;
-    const travel = stripeOffset * stripeSpacing;
-    for (let sx = -size - travel; sx < size * 2; sx += stripeSpacing) {
-      ctx.beginPath();
-      ctx.moveTo(x + sx, y + size);
-      ctx.lineTo(x + sx + size, y);
-      ctx.lineTo(x + sx + size + 1.5, y);
-      ctx.lineTo(x + sx + 1.5, y + size);
-      ctx.closePath();
-      ctx.fill();
+
+    const cooldownProgress = 1 - Math.min(1, Math.max(0,
+      world.grappleChargeCooldownTicksLeft / GRAPPLE_RECHARGE_COOLDOWN_TICKS,
+    ));
+    const fillH = size * cooldownProgress;
+    if (fillH > 0) {
+      ctx.fillStyle = 'rgba(90,170,190,0.5)';
+      ctx.fillRect(x, y + size - fillH, size, fillH);
     }
   } else {
     // ── Ready: solid teal fill behind the glyph.

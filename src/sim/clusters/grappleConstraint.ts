@@ -118,8 +118,9 @@ export function applyGrappleClusterConstraint(world: WorldState): void {
   world.isGrappleQuietReleaseRequestedFlag = 0;
 
   // Consume the down triggered flag so it does not accumulate during grapple.
-  // (Retraction uses playerCrouchHeldFlag; playerDownTriggeredFlag was only
-  //  needed by the old double-tap zip detection which has been replaced by RMB.)
+  // (Down/S no longer retracts the rope — rope length is fixed at fire time —
+  //  and playerDownTriggeredFlag was only needed by the old double-tap zip
+  //  detection which has been replaced by RMB, so this just clears it.)
   world.playerDownTriggeredFlag = 0;
 
   // The stickman is a softbody, not an AABB: the cluster box is a derived view

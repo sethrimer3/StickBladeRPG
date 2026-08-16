@@ -22,8 +22,8 @@
  *
  * 3. Swing Momentum Preservation
  *    Movement V2 applies no passive damping to tangential velocity. Swing
- *    momentum persists indefinitely unless another gameplay force, collision,
- *    or rope retraction changes it.
+ *    momentum persists indefinitely unless another gameplay force or
+ *    collision changes it.
  *
  * 4. Jump Off Grapple
  *    While the grapple is active, pressing jump immediately releases the
@@ -31,16 +31,16 @@
  *    speed).  This lets the player "jump off" the rope at any point in their
  *    swing, combining their swing momentum with the upward boost.
  *
- * 5. Rope Retraction (Hold Down/S)
- *    While the grapple is active, holding down/S retracts the rope.  As the
- *    rope shortens, angular momentum is conserved (v_tang × radius = const),
- *    so the player swings faster.  If the accumulated retraction exceeds
- *    GRAPPLE_MAX_PULL_IN_WORLD the rope snaps.
+ * 5. Fixed Rope Length
+ *    The rope length is set once at fire time and cannot be changed by the
+ *    player mid-swing — holding down/S no longer retracts it.
  *
  * 6. Single Grapple Charge
- *    The player can only grapple once until they touch the ground or grapple
- *    onto a top surface (which instantly refreshes the charge).  This prevents
- *    infinite air grappling while still allowing ledge-to-ledge chaining.
+ *    The player can only grapple once until they touch the ground, grapple
+ *    onto a top surface, or GRAPPLE_RECHARGE_COOLDOWN_TICKS (4 seconds) pass
+ *    since letting go of the previous grapple — any of which instantly (or,
+ *    for the timer, eventually) refreshes the charge.  This prevents infinite
+ *    air grappling while still allowing ledge-to-ledge chaining.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  *
@@ -49,7 +49,6 @@
  *
  *   applyGrappleClusterConstraint  (step 0.25, after cluster movement)
  *     • If jump pressed: releases grapple with upward velocity impulse.
- *     • While down/S held: retracts the rope, conserving angular momentum.
  *     • Enforces the rope length: snaps the player back onto the rope circle
  *       and removes the outward radial velocity component.
  *     • Runs a post-constraint wall collision check to prevent ground clipping.

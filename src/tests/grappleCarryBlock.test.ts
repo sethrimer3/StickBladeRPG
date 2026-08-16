@@ -184,7 +184,7 @@ test('normal grapple tension pulls an unpinned carry block without strongly drag
   assert.equal(player.positionXWorld, 32);
 });
 
-test('reel pulls an unobstructed carry block toward the player', () => {
+test('holding down no longer reels an unobstructed carry block toward the player (retraction disabled)', () => {
   const world = createWorldState(1000 / 60, 123);
   const player = createClusterState(1, 32, 40, 1, 10);
   world.clusters.push(player);
@@ -198,11 +198,11 @@ test('reel pulls an unobstructed carry block toward the player', () => {
 
   applyGrappleClusterConstraint(world);
 
-  assert.ok(world.grappleCarryBlockVelXWorld[0] < 0);
+  assert.equal(world.grappleCarryBlockVelXWorld[0], 0);
   assert.equal(player.velocityXWorld, 0);
 });
 
-test('reel against a pinned carry block shortens rope for player pull instead of moving the block', () => {
+test('holding down against a pinned carry block no longer shortens the rope (retraction disabled)', () => {
   const world = createWorldState(1000 / 60, 123);
   const player = createClusterState(1, 32, 40, 1, 10);
   world.clusters.push(player);
@@ -219,7 +219,7 @@ test('reel against a pinned carry block shortens rope for player pull instead of
   applyGrappleClusterConstraint(world);
 
   assert.equal(world.grappleCarryBlockVelXWorld[0], 0);
-  assert.ok(world.grappleLengthWorld < 80);
+  assert.equal(world.grappleLengthWorld, 80);
 });
 
 test('zip-pulling an unpinned carry block continues across frames', () => {

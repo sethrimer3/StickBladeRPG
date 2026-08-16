@@ -642,15 +642,70 @@ ipcMain.handle("dw:read-all-room-files", (_event, campaignId, isOfficialCampaign
   }
 });
 
+// ── Splash window ─────────────────────────────────────────────────────────────
+// A frameless banner shown while Electron boots and the renderer loads, the way
+// older desktop games did it. It is closed as soon as the game window is ready
+// to paint; the in-page loading bar takes over from there.
+
+const SPLASH_WIDTH = 836;
+const SPLASH_HEIGHT = 470;
+/** Hard cap so a failed renderer load can never strand the splash on screen. */
+const SPLASH_MAX_LIFETIME_MS = 20000;
+
+function resolveSplashBannerPath() {
+  return path.resolve(app.getAppPath(), "ASSETS", "SPRITES", "GameLoadingBanner", "StickBlade_Banner.png");
+}
+
+/** Returns the splash BrowserWindow, or null if the banner could not be read. */
+function createSplashWindow() {
+  let bannerDataUrl;
+  try {
+    bannerDataUrl = `data:image/png;base64,${fs.readFileSync(resolveSplashBannerPath()).toString("base64")}`;
+  } catch (err) {
+    console.error("Splash banner unavailable:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+
+  const splash = new BrowserWindow({
+    width: SPLASH_WIDTH,
+    height: SPLASH_HEIGHT,
+    frame: false,
+    resizable: false,
+    movable: false,
+    center: true,
+    show: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: "#050403",
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+
+  const html = `<!doctype html><meta charset="utf-8"><style>
+    html,body{margin:0;height:100%;background:#050403;overflow:hidden;}
+    body{display:flex;align-items:center;justify-content:center;}
+    img{width:100%;height:100%;object-fit:contain;display:block;-webkit-user-select:none;}
+  </style><img src="${bannerDataUrl}" alt="StickBlade">`;
+  splash.loadURL(`data:text/html;base64,${Buffer.from(html, "utf8").toString("base64")}`);
+  splash.once("ready-to-show", () => {
+    if (!splash.isDestroyed()) {
+      splash.show();
+    }
+  });
+  return splash;
+}
+
 // ── Window factory ────────────────────────────────────────────────────────────
 
 function createWindow() {
+  const splash = createSplashWindow();
+
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
     icon: resolveAppIconPath(),
     backgroundColor: "#000000",
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -674,6 +729,24 @@ function createWindow() {
   win.webContents.on("console-message", (event) => {
     console.log(`[renderer] ${event.message} (${event.sourceId}:${event.lineNumber})`);
   });
+
+  let splashDismissed = false;
+  const dismissSplash = () => {
+    if (splashDismissed) {
+      return;
+    }
+    splashDismissed = true;
+    if (splash !== null && !splash.isDestroyed()) {
+      splash.destroy();
+    }
+    if (!win.isDestroyed()) {
+      win.show();
+      win.focus();
+    }
+  };
+
+  win.once("ready-to-show", dismissSplash);
+  setTimeout(dismissSplash, SPLASH_MAX_LIFETIME_MS);
 
   if (IS_ELECTRON_DEV_SERVER) {
     win.loadURL(ELECTRON_DEV_SERVER_URL);

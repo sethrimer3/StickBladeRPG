@@ -19,7 +19,6 @@ import {
   preloadMenuAnimationFrames,
   type MenuAnimationLoadProgress,
 } from './ui/menuAnimationFrames';
-import { LOADING_BANNER_ASSETS } from './ui/animatedAssetPaths';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui-root') as HTMLDivElement;
@@ -45,13 +44,9 @@ function createStartupLoadingScreen(): {
 
   if (existingOverlay !== null) {
     overlay = existingOverlay;
-    const bannerImg = document.getElementById('startup-loading-banner') as HTMLImageElement | null;
-    status = (document.getElementById('startup-loading-status') as HTMLDivElement | null) ?? document.createElement('div');
+    status =(document.getElementById('startup-loading-status') as HTMLDivElement | null) ?? document.createElement('div');
     track = (document.getElementById('startup-loading-track') as HTMLDivElement | null) ?? document.createElement('div');
     fill = (document.getElementById('startup-loading-fill') as HTMLDivElement | null) ?? document.createElement('div');
-    if (bannerImg !== null && !bannerImg.getAttribute('src')) {
-      bannerImg.src = LOADING_BANNER_ASSETS.bannerUrl;
-    }
   } else {
     overlay = document.createElement('div');
     overlay.id = 'startup-loading-overlay';
@@ -62,16 +57,6 @@ function createStartupLoadingScreen(): {
       "font-family:'Cinzel',serif", 'letter-spacing:0.12em',
       'transition:opacity 0.3s ease-out', 'user-select:none',
     ].join(';');
-
-    const bannerContainer = document.createElement('div');
-    bannerContainer.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;max-width:min(90vw,840px);max-height:55vh;';
-
-    const bannerImg = document.createElement('img');
-    bannerImg.id = 'startup-loading-banner';
-    bannerImg.src = LOADING_BANNER_ASSETS.bannerUrl;
-    bannerImg.alt = 'StickBlade';
-    bannerImg.style.cssText = 'max-width:100%;max-height:55vh;width:auto;height:auto;object-fit:contain;display:block;filter:drop-shadow(0 0 24px rgba(212,168,75,0.25));border-radius:4px;';
-    bannerContainer.appendChild(bannerImg);
 
     status = document.createElement('div');
     status.id = 'startup-loading-status';
@@ -86,7 +71,7 @@ function createStartupLoadingScreen(): {
     fill.style.cssText = 'height:100%;width:0;background:#d4a84b;transition:width .1s linear;box-shadow:0 0 16px rgba(212,168,75,.7);';
     track.appendChild(fill);
 
-    overlay.append(bannerContainer, status, track);
+    overlay.append(status, track);
     uiRoot.appendChild(overlay);
   }
 

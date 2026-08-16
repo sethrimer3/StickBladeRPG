@@ -1,11 +1,11 @@
 {
   "campaignId": "STICKBLADE_CAMPAIGN",
   "campaignName": "StickBlade",
-  "campaignHash": "8c4df1382d114dd0",
-  "campaignVersion": 15,
+  "campaignHash": "0e9a4a75d2f66e84",
+  "campaignVersion": 16,
   "campaignSchemaVersion": 1,
   "roomCacheVersion": 1,
-  "exportedAt": "2026-08-11T21:12:23.654Z",
+  "exportedAt": "2026-08-16T00:05:02.218Z",
   "rooms": {
     "lobby": {
       "roomId": "lobby",
@@ -198,6 +198,12 @@
       "file": "dark_depths_room.json",
       "hash": "7f6c8fb886bf07ff",
       "updatedAt": "2026-07-26T06:14:45.942Z"
+    },
+    "glade": {
+      "roomId": "glade",
+      "file": "glade_room.json",
+      "hash": "5bfca79e6578dfd4",
+      "updatedAt": "2026-08-16T00:05:02.218Z"
     }
   },
   "adjacency": {
