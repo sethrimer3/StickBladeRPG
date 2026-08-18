@@ -517,6 +517,33 @@ export function drawMarker(
 }
 
 /**
+ * Draws a hollow selection ring on the block at (xBlock, yBlock).
+ *
+ * The unfilled counterpart to {@link drawMarker}, for elements whose real
+ * game art is already on screen (live preview — see editorPreviewRenderer.ts).
+ * A filled marker would hide exactly the art the designer wants to judge, so
+ * selection is indicated by an outline instead.
+ */
+export function drawSelectionRing(
+  ctx: CanvasRenderingContext2D,
+  xBlock: number, yBlock: number,
+  ox: number, oy: number, zoom: number,
+  color: string,
+): void {
+  const cx = (xBlock + 0.5) * BLOCK_SIZE_SMALL * zoom + ox;
+  const cy = (yBlock + 0.5) * BLOCK_SIZE_SMALL * zoom + oy;
+  const r = BLOCK_SIZE_SMALL * zoom * 0.45;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
  * Draws a filled + outlined footprint rectangle for an object whose sprite is
  * centered on the block at (xBlock, yBlock).  The object occupies
  * (wBlocks × hBlocks) blocks centered on the block-center point.

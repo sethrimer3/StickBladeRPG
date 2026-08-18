@@ -26,6 +26,7 @@ import {
   DIALOGUE_TRIGGER_COLOR, DIALOGUE_TRIGGER_SELECTED,
   GUIDE_DUST_PATH_COLOR, GUIDE_DUST_PATH_SELECTED, GUIDE_DUST_POINT_COLOR,
   drawMarker,
+  drawSelectionRing,
   drawStairsShape,
   isElementInViewport,
   type EditorViewport,
@@ -713,6 +714,7 @@ export function drawEditorEnvironmentItems(
   offsetYPx: number,
   zoom: number,
   viewport?: EditorViewport,
+  isPreviewActive = false,
 ): void {
   // Decorations (mushroom, glowGrass, vine) — Foreground layer
   if (isTypeVisible('decoration')) for (const d of (room.decorations ?? [])) {
@@ -720,6 +722,14 @@ export function drawEditorEnvironmentItems(
     if (!isElementInViewport(viewport, d.xBlock, d.yBlock, 1, 1)) continue;
     editorPerfCounters.overlayElementsDrawn++;
     const sel = isSelected('decoration', d.uid);
+    // With the live preview on, the real decoration sprite is already drawn
+    // (see editorPreviewRenderer.ts). The emoji marker would cover it, so it
+    // is reduced to a selection ring — an unselected decoration needs no
+    // stand-in at all once the actual art is on screen.
+    if (isPreviewActive) {
+      if (sel) drawSelectionRing(ctx, d.xBlock, d.yBlock, offsetXPx, offsetYPx, zoom, 'rgba(80,220,130,0.95)');
+      continue;
+    }
     const emoji = d.kind === 'mushroom' ? '🍄' : d.kind === 'glowGrass' ? '🌿' : d.kind === 'tallGrass' ? '🌾' : '🌱';
     const color = sel ? 'rgba(80,220,130,0.9)' : 'rgba(60,170,90,0.55)';
     drawMarker(ctx, d.xBlock, d.yBlock, offsetXPx, offsetYPx, zoom, color, emoji);
@@ -744,7 +754,12 @@ export function drawEditorEnvironmentItems(
         const hPx = sprite.naturalHeight * zoom;
         ctx.save();
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(sprite, Math.round(screenX), Math.round(screenY), Math.round(wPx), Math.round(hPx));
+        // Under the live preview the same sprite has already been drawn by
+        // `renderDecorativeObjects`, in the correct gameplay draw order —
+        // only the selection outline is still this pass's job.
+        if (!isPreviewActive) {
+          ctx.drawImage(sprite, Math.round(screenX), Math.round(screenY), Math.round(wPx), Math.round(hPx));
+        }
         if (sel) {
           ctx.strokeStyle = '#ffd85a';
           ctx.lineWidth = 2;

@@ -130,6 +130,8 @@ export function renderEditorBackdrop(
         virtualWidthPx,
         virtualHeightPx,
         editorController.getWallGeometryRevision(),
+        editorController.getMutationSerial(),
+        mask,
       );
       // Custom blocks are not part of the preview: the editor's own overlay
       // pass already draws the same cached sprites (drawEditorCustomBlocks).

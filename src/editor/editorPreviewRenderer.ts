@@ -43,10 +43,12 @@
  *
  * ## Coverage
  *
- * Drawn from live edit data: background blocks, and walls / platforms / ramps
- * / stairs with real sprites, ambient light shading, seam blending, and
- * surface rims. Custom blocks are left to `drawEditorCustomBlocks`, which
- * already draws the same cached sprites the gameplay renderer uses.
+ * Drawn from live edit data: background blocks; walls / platforms / ramps /
+ * stairs with real sprites, ambient light shading, seam blending and surface
+ * rims; and environment objects (decorations and decorative objects) through
+ * the same renderers gameplay uses, at zero sway. Custom blocks are left to
+ * `drawEditorCustomBlocks`, which already draws the same cached sprites the
+ * gameplay renderer uses.
  *
  * Everything else — enemies, hazards, particles, interactables — keeps its
  * existing editor overlay marker, which is also what stays selectable and
@@ -56,7 +58,7 @@
 
 import type { EditorRoomData } from './editorElementTypes';
 import type { EditorState } from './editorState';
-import { buildEditorRenderMask } from './editorRenderMask';
+import { buildEditorRenderMask, type EditorRenderMask } from './editorRenderMask';
 import { BLOCK_SIZE_SMALL } from '../levels/roomDef';
 import type { RoomDef } from '../levels/roomDef';
 import {
@@ -85,6 +87,12 @@ import {
   DEFAULT_BACKGROUND_LIGHT_SPILL,
   DEFAULT_SOLID_LIGHT_SOFTNESS,
 } from '../render/walls/ambientLightDepths';
+import {
+  buildRoomDecorations,
+  renderDecorationSprites,
+  type WallDecoration,
+} from '../render/effects/wallDecorations';
+import { renderDecorativeObjects } from '../render/decorativeObjects/decorativeObjectRenderer';
 import { getEditorWallGeometry } from './editorWallSurfaceRimPreview';
 import {
   getEditorPreviewDirtyState,
@@ -135,6 +143,15 @@ let _appliedRoomId: string | null = null;
 let _appliedZoom = -1;
 
 /**
+ * Decorations converted to the renderer's anchored form. Unlike walls these
+ * are drawn live every frame (no chunk cache), so the only thing worth caching
+ * is the conversion itself — rebuilt when the editor's mutation serial
+ * advances, not per frame.
+ */
+let _cachedDecorations: WallDecoration[] = [];
+let _cachedDecorationsSerial = -1;
+
+/**
  * Drops all cached preview state. Call when the editor opens or closes, or
  * when a different room is loaded for editing, so nothing survives into a
  * context it was not built for.
@@ -143,6 +160,8 @@ export function resetEditorPreviewRenderer(): void {
   _appliedRenderStateKey = null;
   _appliedRoomId = null;
   _appliedZoom = -1;
+  _cachedDecorations = [];
+  _cachedDecorationsSerial = -1;
   markEditorPreviewFullyDirty();
 }
 
@@ -207,6 +226,14 @@ export function isEditorLivePreviewActive(state: {
  * @param wallGeometryRevision Wall-geometry revision, forwarded to the shared
  *   editor wall geometry cache so a frame with no geometry change reuses the
  *   existing layout instead of re-deriving its signature.
+ * @param mutationSerial Per-mutation counter, bumped by every edit including
+ *   mid-stroke ones (unlike `roomContentRevision`, which defers to the end of a
+ *   stroke). Gates the decoration conversion cache so a newly painted decoration
+ *   appears on the very next frame.
+ * @param mask Editor layer visibility. The preview draws content belonging to
+ *   three different layers, so each pass is gated separately — hiding
+ *   Background or Foreground in the layers panel must hide it here too, not
+ *   just its editor overlay marker.
  */
 export function renderEditorRoomPreview(
   ctx: CanvasRenderingContext2D,
@@ -217,6 +244,8 @@ export function renderEditorRoomPreview(
   canvasWidthPx: number,
   canvasHeightPx: number,
   wallGeometryRevision: number,
+  mutationSerial: number,
+  mask: EditorRenderMask,
 ): void {
   const { blockerKeys, darkBlockerKeys } = _buildEditorBlockerKeys(room);
 
@@ -309,15 +338,17 @@ export function renderEditorRoomPreview(
   // only the fields in `PreviewRoomView`; the cast narrows that contract to
   // what this view actually provides.
   const view = _previewRoomView as PreviewRoomView as RoomDef;
-  renderBackgroundBlocks(
-    ctx,
-    view,
-    offsetXPx,
-    offsetYPx,
-    zoom,
-    canvasWidthPx,
-    canvasHeightPx,
-  );
+  if (mask.isLayerVisible('background')) {
+    renderBackgroundBlocks(
+      ctx,
+      view,
+      offsetXPx,
+      offsetYPx,
+      zoom,
+      canvasWidthPx,
+      canvasHeightPx,
+    );
+  }
 
   const geometry = getEditorWallGeometry(room, wallGeometryRevision);
   renderWallSpritesWithLayout(
@@ -330,6 +361,43 @@ export function renderEditorRoomPreview(
     zoom,
     BLOCK_SIZE_SMALL,
   );
+
+  // ── Environment objects ─────────────────────────────────────────────────
+  // Same slot gameplay draws them in (right after the wall pass, before
+  // entities), through the same renderers. `renderDecorationSprites` is called
+  // without a wave state, so every stem sits at zero sway — the frozen pose,
+  // matching the rest of the preview.
+  const isForegroundVisible = mask.isLayerVisible('foreground');
+  if (isForegroundVisible) {
+    // Rebuild the anchored form only when an edit has landed. Keyed on the
+    // mutation serial (not the array's identity, which never changes — the
+    // editor mutates `room.decorations` in place) so a deletion is picked up
+    // as reliably as an addition.
+    if (_cachedDecorationsSerial !== mutationSerial) {
+      _cachedDecorations = buildRoomDecorations(room.decorations, BLOCK_SIZE_SMALL);
+      _cachedDecorationsSerial = mutationSerial;
+    }
+    renderDecorationSprites(
+      ctx,
+      _cachedDecorations,
+      offsetXPx,
+      offsetYPx,
+      zoom,
+      BLOCK_SIZE_SMALL,
+      undefined,
+      canvasWidthPx,
+      canvasHeightPx,
+    );
+    renderDecorativeObjects(
+      ctx,
+      room.decorativeObjects,
+      offsetXPx,
+      offsetYPx,
+      zoom,
+      canvasWidthPx,
+      canvasHeightPx,
+    );
+  }
 
   renderDarkAmbientBlockerOverlay(
     ctx,

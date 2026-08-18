@@ -153,7 +153,7 @@ export function renderEditorOverlays(
   if (state.activeTool === EditorTool.Place && state.selectedPaletteItem?.isPixelMaterialItem === 1) {
     drawPixelGrid(ctx, room, offsetXPx, offsetYPx, zoom, canvasWidth, canvasHeight);
   }
-  drawEditorEnvironmentItems(ctx, room, isElementSelected, isTypeVisible, offsetXPx, offsetYPx, zoom, viewport);
+  drawEditorEnvironmentItems(ctx, room, isElementSelected, isTypeVisible, offsetXPx, offsetYPx, zoom, viewport, isPreviewActive);
   if (layerOn('rope')) drawEditorRopes(ctx, room, state, isElementSelected, offsetXPx, offsetYPx, zoom, viewport);
   if (layerOn('dialogueTrigger')) drawEditorDialogueTriggers(ctx, room, isElementSelected, offsetXPx, offsetYPx, zoom, viewport);
   if (layerOn('guideDustPath')) drawEditorGuideDustPaths(ctx, room, state, offsetXPx, offsetYPx, zoom, viewport);

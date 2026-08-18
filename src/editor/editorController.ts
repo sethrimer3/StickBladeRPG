@@ -228,6 +228,13 @@ export interface EditorController {
    * frames where no wall geometry changed (see editorPreviewRenderer.ts).
    */
   getWallGeometryRevision: () => number;
+  /**
+   * Per-mutation counter, bumped by every edit including mid-stroke ones.
+   * Read by the backdrop's terrain slot to keep the live preview's derived
+   * per-room data (decoration anchors) fresh during a drag-paint stroke, which
+   * `roomContentRevision` deliberately does not track until release.
+   */
+  getMutationSerial: () => number;
   /** Continue an exit action immediately, or gate it behind the unexported-work decision. */
   requestExit: (onProceed: () => void) => void;
   /** Cleanup. */
@@ -2883,6 +2890,10 @@ export function createEditorController(
     return strokeRevision.wallGeometryRevision;
   }
 
+  function getMutationSerial(): number {
+    return strokeRevision.mutationSerial;
+  }
+
   function destroy(): void {
     window.removeEventListener('beforeunload', handleBeforeUnload);
     if (inputCleanup) { inputCleanup(); inputCleanup = null; }
@@ -2902,6 +2913,7 @@ export function createEditorController(
     getRoomDef,
     getBackdropRoom,
     getWallGeometryRevision,
+    getMutationSerial,
     requestExit,
     destroy,
   };
